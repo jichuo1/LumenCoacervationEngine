@@ -62,3 +62,10 @@ check(LumenEngine.CONTRACT_VERSION == 1) { "凝光视效引擎契约已变化，
 2. 如有 API 变化，同步 `API.md`；如有标准变化，同步 `INTEGRATION_STANDARD.md`。
 3. 跑构建门禁（`ENGINEERING_RULES.md` §11）和 DEX 审计（§2.4）。
 4. `./gradlew publishAllPublicationsToProjectLocalRepository --no-daemon`，产物在 `build/repo`。
+5. 提交并推送，然后**打与 `lumen.version` 同名的 tag**：
+   `git tag x.y.z && git push origin x.y.z`，再 `gh release create x.y.z`。
+   - JitPack 按 tag 构建，`com.github.jichuo1.LumenCoacervationEngine:<模块>:x.y.z` 即坐标。
+   - **tag 必须等于 `lumen.version`**：不一致时产物会装进 `lumen.version` 的目录，按 tag 拉取会失败。
+   - tag 发布后不可删除或移动，JitPack 构建不可变。
+   - 首次请求该 tag 会触发构建，可先 `curl` 一下 pom 地址预热：
+     `https://jitpack.io/com/github/jichuo1/LumenCoacervationEngine/lumen-engine/x.y.z/`
