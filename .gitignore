@@ -11,3 +11,25 @@ captures/
 # Python 工具脚本缓存
 __pycache__/
 *.pyc
+
+# 签名材料与发布产物（绝不入库）
+*.keystore
+*.jks
+*.pem
+*.apk
+*.aab
+output.json
+mapping.txt
+
+# 日志、临时文件与内存转储
+*.log
+*.tmp
+*.bak
+*.hprof
+
+# 原生构建与其它 IDE 残留
+.cxx/
+.externalNativeBuild/
+.classpath
+.project
+.settings/
