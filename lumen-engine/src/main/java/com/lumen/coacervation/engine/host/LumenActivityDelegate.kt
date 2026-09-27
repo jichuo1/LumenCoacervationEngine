@@ -14,6 +14,7 @@ import androidx.annotation.MainThread
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.glow.GlowEngine
 import com.lumen.coacervation.engine.material.ModernMaterialDrawables
+import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.model.SurfaceRole
@@ -41,20 +42,31 @@ import com.lumen.coacervation.engine.runtime.SkinSessionDiagnostics
  * 线程：全部在主线程调用。
  *
  * @param paletteProvider 首次需要配色时调用一次，结果在本 Activity 生命周期内缓存。
+ * @param effectTuningProvider 首次需要视效调参时调用一次，结果在本 Activity 生命周期内缓存；改动后重建 Activity 生效。
+ *   默认 [LumenEffectTuning.DEFAULT]（引擎原样）。
  */
 @MainThread
-public class LumenActivityDelegate(
+public class LumenActivityDelegate @JvmOverloads constructor(
     private val activity: Activity,
-    private val paletteProvider: () -> LumenPalette
+    private val paletteProvider: () -> LumenPalette,
+    private val effectTuningProvider: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
 ) {
     private var session: ActivitySkinSession? = null
     private var paletteOrNull: LumenPalette? = null
+    private var effectTuningOrNull: LumenEffectTuning? = null
     private var lifecycleEnded = false
     private val density: Float get() = activity.resources.displayMetrics.density
 
     /** 本 Activity 使用的配色；未准备会话时也可用（授权前的界面同样需要中性配色）。 */
     public val palette: LumenPalette
         get() = paletteOrNull ?: paletteProvider().also { paletteOrNull = it }
+
+    /**
+     * 本 Activity 使用的视效调参（边缘高光、长按拖动光晕）。与 [palette] 一样首次读取后缓存，
+     * 会话、未准备时的静态表面、`LumenElasticInteraction` 的默认值都读它。
+     */
+    public val effectTuning: LumenEffectTuning
+        get() = effectTuningOrNull ?: effectTuningProvider().also { effectTuningOrNull = it }
 
     /** 是否已准备会话。 */
     public val isPrepared: Boolean get() = session != null && !lifecycleEnded
@@ -67,7 +79,7 @@ public class LumenActivityDelegate(
      */
     public fun prepare() {
         if (lifecycleEnded || session != null) return
-        session = ActivitySkinSession.create(activity, palette)
+        session = ActivitySkinSession.create(activity, palette, effectTuning)
     }
 
     /**
@@ -122,7 +134,8 @@ public class LumenActivityDelegate(
     /** 按语义角色取表面背景。未准备会话时返回等价的静态材质，调用方无需判断。 */
     public fun surface(color: Int, radiusDp: Float, role: SurfaceRole): Drawable =
         session?.surfaceBackground(color, radiusDp, role)
-            ?: ModernMaterialDrawables.fallback(color, radiusDp.coerceAtLeast(0f) * density, density, role, isDark)
+            ?: ModernMaterialDrawables.fallback(color, radiusDp.coerceAtLeast(0f) * density, density, role, isDark,
+                effectTuning)
 
     public fun cardBackground(color: Int = palette.surface, radiusDp: Float = 15f): Drawable =
         surface(color, radiusDp, SurfaceRole.CARD)
@@ -150,7 +163,7 @@ public class LumenActivityDelegate(
     /** 悬浮栏里的圆形按钮、选中指示：轻量叠层，不做逐个光学采样。 */
     public fun chromeOverlayBackground(color: Int = palette.surface, radiusDp: Float, selected: Boolean = false): Drawable =
         ModernMaterialDrawables.chromeOverlay(color, radiusDp * density, density,
-            if (selected) SurfaceRole.SELECTED_ITEM else SurfaceRole.FLOATING, isDark)
+            if (selected) SurfaceRole.SELECTED_ITEM else SurfaceRole.FLOATING, isDark, effectTuning)
 
     /** 授权前也可用的窗口背景：只用配色，不读材质偏好、不做位图工作。 */
     public fun neutralWindowBackground(): Drawable = ModernMaterialDrawables.neutralWindow(palette)

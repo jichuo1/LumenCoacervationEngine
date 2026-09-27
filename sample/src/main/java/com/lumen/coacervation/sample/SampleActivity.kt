@@ -58,10 +58,14 @@ import com.lumen.coacervation.engine.widget.NavigationBarSurface
  */
 class SampleActivity : AppCompatActivity() {
 
+    // §2.5 视效调参由宿主存储；边缘高光随会话读取，长按光晕每次长按现读。
+    internal val tuning by lazy(LazyThreadSafetyMode.NONE) { SampleTuningStore(this) }
     // §2 组合式接入：一个委托，六个回调转发给它。
-    internal val lumen = LumenActivityDelegate(this, ::resolvePalette)
-    // §12 全局长按弹性：Activity 与弹窗窗口共用一个实例。
-    internal val elastic by lazy(LazyThreadSafetyMode.NONE) { LumenElasticInteraction(this, lumen) }
+    internal val lumen = LumenActivityDelegate(this, ::resolvePalette) { tuning.current }
+    // §12 全局长按弹性：Activity 与弹窗窗口共用一个实例。光晕调参现读，滑块改动即时生效。
+    internal val elastic by lazy(LazyThreadSafetyMode.NONE) {
+        LumenElasticInteraction(this, lumen, effectTuning = { tuning.current })
+    }
     // §13 弹窗的打开与关闭；弹窗内容同样交给 lumen-controls 换装。
     internal val modals by lazy(LazyThreadSafetyMode.NONE) {
         LumenModalPresenter(this, lumen, elastic = elastic, styleContent = { LumenControls.style(it, lumen) })
@@ -317,6 +321,8 @@ class SampleActivity : AppCompatActivity() {
     private fun buildMaterialPage(content: LinearLayout, palette: LumenPalette) {
         content.addView(caption("当前材质：" + if (lumen.isLiquidEffective) "高级材质（${lumen.backendName}）" else "柔光"))
         content.addView(caption("长按任意卡片或按钮后拖动：卡片跟手形变、触点高光流动，松手弹簧回弹（§12）。"))
+        // §2.5 边缘高光厚度/亮度与长按光晕强度/半径。
+        content.addView(tuningCard(palette), cardParams())
         // §13.1 条目 → 卡片形变：弹窗标题与条目标题**同一段文字**才会做标题迁移。
         content.addView(entryRow(palette, "形变面板", "条目长成屏幕中央的卡片；面板里还能再开覆盖式子面板") { row ->
             showMorphPanel(row)

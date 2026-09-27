@@ -1,5 +1,7 @@
 package com.lumen.coacervation.engine.material
 
+import com.lumen.coacervation.engine.model.LumenEffectTuning
+import com.lumen.coacervation.engine.model.LumenEffectTuningPolicy
 import com.lumen.coacervation.engine.model.SurfaceRole
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -47,6 +49,20 @@ internal object ModernMaterialPolicy {
             else h = (MAX_BACKDROP_PIXELS / w).coerceAtLeast(1)
         }
         return w to h
+    }
+
+    /** 边框描边宽度（px）：原值 `max(density, 1) × 0.65`，按厚度倍率缩放。 */
+    fun edgeStrokePx(density: Float, widthScale: Float): Float =
+        density.coerceAtLeast(1f) * .65f * (if (widthScale.isFinite() && widthScale > 0f) widthScale else 1f)
+
+    /** 同 [surface]，边框顶/底 alpha 按 [LumenEffectTuning.edgeHighlightIntensity] 缩放。 */
+    fun surface(role: SurfaceRole, dark: Boolean, tuning: LumenEffectTuning): ModernSurfaceStyle {
+        val base = surface(role, dark)
+        if (tuning.edgeHighlightIntensity == 1f) return base
+        return base.copy(
+            upperEdgeAlpha = LumenEffectTuningPolicy.edgeAlpha(base.upperEdgeAlpha, tuning),
+            lowerEdgeAlpha = LumenEffectTuningPolicy.edgeAlpha(base.lowerEdgeAlpha, tuning)
+        )
     }
 
     fun surface(role: SurfaceRole, dark: Boolean): ModernSurfaceStyle {

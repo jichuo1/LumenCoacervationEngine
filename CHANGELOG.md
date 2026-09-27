@@ -4,8 +4,16 @@
 
 ## [未发布]
 
+新增公开 API，按 `docs/VERSIONING.md` 属次版本（1.1.0）。
+
 ### 新增
 
+- **视效调参 `LumenEffectTuning`**（适配标准 §2.5）：四个相对默认值的倍率，默认 1 即引擎原样。
+  - `edgeHighlightWidth`（0.25～4）/ `edgeHighlightIntensity`（0～3）：表面边缘高光的厚度与亮度。柔光缩放边框描边；高级材质缩放折射 rim 带、轮廓描边与廉价路径的高光带，镜面、菲涅尔强度同比缩放；rim 加厚时采样 padding 同步撑大。
+  - `dragGlowIntensity`（0～4）/ `dragGlowRadius`（0.5～2）：长按拖动时触点光晕的亮度与半径，每次长按开始时读取，可即时生效。
+  - 接入：`LumenActivityDelegate` 第三个参数 `effectTuningProvider`（`@JvmOverloads`，旧写法不变）、`LumenActivity.resolveEffectTuning()`、`LumenElasticInteraction` / `ElasticInteractionController` 的 `effectTuning` 参数（带默认值，源码兼容）。
+  - `LumenEffectTuning.clamped(...)` 把滑块等连续输入收进范围。
+- **示例应用**：材质页新增「视效调参」卡片，四个滑块；边缘高光松手后重建，长按光晕拖动即生效。
 - **持续集成**：`.github/workflows/ci.yml` 在推送与 PR 上跑构建门禁（`ENGINEERING_RULES.md` §11）。
 - **仓库规范**：`.editorconfig`（UTF-8、LF、4 空格缩进）与 PR 模板（对照发布检查与工程规则的自查清单）。
 

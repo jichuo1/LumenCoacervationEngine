@@ -5,6 +5,7 @@ import java.util.WeakHashMap
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.exp
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tanh
@@ -140,6 +141,18 @@ internal object ElasticMotionPolicy {
         ) return 0f
         return ((current - previous) * 1000f / elapsedMillis).coerceIn(-limit * 20f, limit * 20f)
     }
+}
+
+/**
+ * 长按拖动光晕的调参换算（[com.lumen.coacervation.engine.model.LumenEffectTuning] 的两个 drag 倍率）。
+ * 倍率为 1 时逐位返回原值。
+ */
+internal object ElasticGlowTuning {
+    /** 基准 alpha（0..255）；越界堆积的增益由光晕策略在此之上叠加，最终仍钳在 255。 */
+    fun baseAlpha(base: Int, intensity: Float): Int =
+        if (intensity == 1f) base else (base * intensity).roundToInt().coerceIn(0, 255)
+
+    fun radius(base: Float, scale: Float): Float = if (scale == 1f) base else base * scale
 }
 
 /** Exact damped-spring solution; stepping twice is consistent with one frame of the same duration. */

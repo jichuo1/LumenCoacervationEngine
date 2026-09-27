@@ -39,6 +39,8 @@ import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.model.LiquidParameters
 import com.lumen.coacervation.engine.model.LiquidRenderBackend
 import com.lumen.coacervation.engine.model.SurfaceRole
+import com.lumen.coacervation.engine.model.LumenEffectTuning
+import com.lumen.coacervation.engine.model.LumenEffectTuningPolicy
 import com.lumen.coacervation.engine.model.LumenPalette
 import java.util.WeakHashMap
 import java.lang.ref.WeakReference
@@ -112,7 +114,8 @@ private fun postProcessRealtimeCapture(
  */
 internal class LiquidActivityRenderer(
     private val activity: Activity,
-    private val palette: LumenPalette
+    private val palette: LumenPalette,
+    private val effectTuning: LumenEffectTuning = LumenEffectTuning.DEFAULT
 ) : GlowEngine {
     override val skin: SkinId get() = SkinId.LIQUID
     private val density = activity.resources.displayMetrics.density
@@ -136,10 +139,13 @@ internal class LiquidActivityRenderer(
     private val backgroundWorker = Executors.newSingleThreadExecutor { runnable ->
         Thread(runnable, "Lumen-LiquidBackground").apply { isDaemon = true }
     }
-    private val parameters: LiquidParameters = LiquidTokenResolver.resolve(
-        tuning = visualTuning,
-        profile = effectProfile,
-        dark = darkPalette
+    private val parameters: LiquidParameters = LumenEffectTuningPolicy.applyTo(
+        LiquidTokenResolver.resolve(
+            tuning = visualTuning,
+            profile = effectProfile,
+            dark = darkPalette
+        ),
+        effectTuning
     )
     /** 渲染后端的准备、降级链与底图绑定，见 [LiquidBackendSet]。 */
     private val backends = LiquidBackendSet(
@@ -889,7 +895,8 @@ internal class LiquidActivityRenderer(
                 // 光晕带只是一层极淡的内圈辉光，不是亮环。单层 10dp 描边内缩半宽
                 // 使外侧与表面边缘齐平（无需 clipPath），alpha 压到同一量级，
                 // 只保留"边缘微微泛光"的读感，避免出现硬边描边轮廓。
-                val bandW = OPTICAL_EDGE_BAND_DP * density
+                val bandW = LumenEffectTuningPolicy.bandWidth(OPTICAL_EDGE_BAND_DP * density, effectTuning,
+                    minOf(bounds.width(), bounds.height()) * 0.5f)
                 edgeBandPaint.strokeWidth = bandW
                 edgeBandPaint.alpha =
                     (edgeAlpha * OPTICAL_EDGE_BAND_ALPHA).toInt().coerceIn(0, 255)

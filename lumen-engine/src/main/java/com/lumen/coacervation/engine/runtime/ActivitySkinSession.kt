@@ -14,6 +14,7 @@ import com.lumen.coacervation.engine.material.FrostedMaterialRenderer
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.model.UiTokens
+import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenPalette
 
 /** 当前 Activity 创建皮肤令牌时使用的配置摘要，不持有 Resources 或 Context。 */
@@ -270,7 +271,8 @@ internal class ActivitySkinSession private constructor(
         @MainThread
         fun create(
             activity: Activity,
-            materialPalette: LumenPalette
+            materialPalette: LumenPalette,
+            effectTuning: LumenEffectTuning = LumenEffectTuning.DEFAULT
         ): ActivitySkinSession {
             val requestedSkin = SkinRepository.resolveRequestedSkin(activity)
             val configuration = activity.resources.configuration
@@ -278,7 +280,7 @@ internal class ActivitySkinSession private constructor(
                 SkinRepository.claimLiquidRenderSession(activity)
             } else null
             val renderer = if (owner != null) {
-                runCatching { LiquidActivityRenderer(activity, materialPalette) }.getOrNull()
+                runCatching { LiquidActivityRenderer(activity, materialPalette, effectTuning) }.getOrNull()
             } else null
             val initializationFailed = requestedSkin == SkinId.LIQUID && renderer == null
             if (initializationFailed && owner != null) {
@@ -294,7 +296,8 @@ internal class ActivitySkinSession private constructor(
                 activity = activity,
                 liquidOwner = owner.takeIf { renderer != null },
                 liquidRenderer = renderer,
-                materialRenderer = FrostedMaterialRenderer(materialPalette, activity.resources.displayMetrics.density),
+                materialRenderer = FrostedMaterialRenderer(materialPalette, activity.resources.displayMetrics.density,
+                    effectTuning),
                 initialLiquidFailure = initializationFailed
             ).also(LumenMemoryPressureHub::addListener)
         }

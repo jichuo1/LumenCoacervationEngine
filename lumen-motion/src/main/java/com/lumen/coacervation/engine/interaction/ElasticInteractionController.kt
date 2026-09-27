@@ -26,6 +26,7 @@ import android.widget.EditText
 import android.widget.RadioButton
 import android.widget.TextView
 import androidx.annotation.MainThread
+import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.touch.GlowConfig
 import com.lumen.coacervation.engine.touch.GlowFrame
 import com.lumen.coacervation.engine.touch.GlowState
@@ -51,7 +52,9 @@ public class ElasticInteractionController(
     private val root: View,
     private val notifyPositionChanged: (View) -> Unit = {},
     private val isExcluded: (View) -> Boolean = { it.tag == EXCLUDED_TAG },
-    private val highlightColor: Int = Color.WHITE
+    private val highlightColor: Int = Color.WHITE,
+    /** 每次长按开始时读取一次：触点光晕的亮度与半径倍率（[LumenEffectTuning.dragGlowIntensity] / [LumenEffectTuning.dragGlowRadius]）。 */
+    private val effectTuning: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
 ) {
     private enum class Motion { NONE, PRESS, DRAG, RELEASE }
 
@@ -321,7 +324,9 @@ public class ElasticInteractionController(
             yAxis.reset(observed.translationY - owned.original.translationY)
             pressAxis.reset(((1f - observed.scaleX / owned.original.scaleX) /
                 ElasticMotionPolicy.PRESS_DEPTH).coerceIn(0f, 1f))
-            highlight = TouchHighlight(view, density, highlightColor)
+            highlight = effectTuning().let { tuning ->
+                TouchHighlight(view, density, highlightColor, tuning.dragGlowIntensity, tuning.dragGlowRadius)
+            }
             view.addOnAttachStateChangeListener(targetAttachListener)
         }
         highlightHost = view
@@ -725,10 +730,17 @@ public class ElasticInteractionController(
      * `edgeBandPx = 0`（clipPath 本就把高亮裁在控件圆角内，不需要第二道边缘衰减）、
      * `travelEpsPx = 0`（位移输入已减掉 touchSlop）。裁剪路径 [clip] 保持不变。
      */
-    private class TouchHighlight(private val view: View, density: Float, color: Int) : Drawable() {
+    private class TouchHighlight(
+        private val view: View,
+        density: Float,
+        color: Int,
+        glowIntensity: Float,
+        glowRadiusScale: Float
+    ) : Drawable() {
         private val width = view.width.toFloat()
         private val height = view.height.toFloat()
-        private val radius = maxOf(width, height) * .7f
+        private val radius = ElasticGlowTuning.radius(maxOf(width, height) * .7f, glowRadiusScale)
+        private val baseAlpha = ElasticGlowTuning.baseAlpha(HIGHLIGHT_BASE_ALPHA, glowIntensity)
         private val renderer = TouchGlowRenderer(color, radius)
         private val state = GlowState()
         private val frame = GlowFrame()
@@ -822,7 +834,7 @@ public class ElasticInteractionController(
                 metrics.widthPixels, metrics.heightPixels,
                 touchX, touchY, width, height
             )
-            state.update(frame, dt, radius, HIGHLIGHT_BASE_ALPHA, config)
+            state.update(frame, dt, radius, baseAlpha, config)
             invalidateSelf()
         }
 
