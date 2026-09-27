@@ -7,7 +7,7 @@ plugins {
 }
 
 val lumenVersion = providers.gradleProperty("lumen.version").get()
-group = "com.lumen.coacervation.engine"
+group = providers.gradleProperty("lumen.group").orElse("com.lumen.coacervation.engine").get()
 version = lumenVersion
 
 android {

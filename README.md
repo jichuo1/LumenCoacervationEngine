@@ -102,10 +102,33 @@ flowchart TD
   F --> E
 ```
 
-**1. 依赖**：两种方式任选其一，详见适配标准 §1.1。
+**1. 依赖**：三种方式任选其一，详见适配标准 §1.1。
+
+方式 A —— JitPack（版本号即 git tag）：
 
 ```kotlin
-// settings.gradle.kts：复合构建
+// settings.gradle.kts
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        mavenCentral()
+        maven { url = uri("https://jitpack.io") }
+    }
+}
+
+// app/build.gradle.kts
+dependencies {
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.0.0")
+    // 可选模块，版本号保持一致
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.0.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.0.0")
+}
+```
+
+方式 B —— 复合构建（本地联调）：
+
+```kotlin
+// settings.gradle.kts
 includeBuild("../LumenCoacervationEngine")
 
 // app/build.gradle.kts
@@ -113,6 +136,8 @@ dependencies {
     implementation("com.lumen.coacervation.engine:lumen-engine:1.0.0")
 }
 ```
+
+方式 C —— 本地 maven 仓：`./gradlew publishAllPublicationsToProjectLocalRepository`，产物在 `build/repo`，加进 `repositories` 后按 `com.lumen.coacervation.engine` 坐标引用。
 
 **2. Activity**：组合式委托，任何 Activity 基类都能用。
 

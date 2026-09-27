@@ -6,7 +6,7 @@ plugins {
     `maven-publish`
 }
 
-group = "com.lumen.coacervation.engine"
+group = providers.gradleProperty("lumen.group").orElse("com.lumen.coacervation.engine").get()
 version = providers.gradleProperty("lumen.version").get()
 
 android {
