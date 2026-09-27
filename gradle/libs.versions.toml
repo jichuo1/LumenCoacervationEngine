@@ -1,0 +1,18 @@
+[versions]
+agp = "9.4.0"
+kotlin = "2.3.10"
+androidx-core-ktx = "1.19.0"
+androidx-appcompat = "1.8.0"
+androidx-recyclerview = "1.4.0"
+junit = "4.13.2"
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "androidx-core-ktx" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "androidx-appcompat" }
+androidx-recyclerview = { group = "androidx.recyclerview", name = "recyclerview", version.ref = "androidx-recyclerview" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }

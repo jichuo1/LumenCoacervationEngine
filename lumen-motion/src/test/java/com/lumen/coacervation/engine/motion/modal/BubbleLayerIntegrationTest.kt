@@ -1,0 +1,145 @@
+package com.lumen.coacervation.engine.motion.modal
+
+import com.lumen.coacervation.engine.contract.MotionSource
+import com.lumen.coacervation.engine.contract.SourceContract
+import com.lumen.coacervation.engine.contract.after
+import com.lumen.coacervation.engine.contract.before
+import java.io.File
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+/** 结构门禁不代替设备上的 Liquid/IME/图标尾帧验收。 */
+class BubbleLayerIntegrationTest {
+    private fun source(name: String): String {
+        return MotionSource.file(name)
+    }
+
+    @Test fun bubbleContentIsNotScaledWithItsSkinSurface() {
+        val controller = source("BubbleMotionController")
+        assertFalse(controller.contains(".scaleX ="))
+        assertFalse(controller.contains(".scaleY ="))
+        val layer = source("BubblePanelLayer")
+        assertTrue(layer.contains("row.view.alpha = row.alpha * fraction"))
+        assertTrue(layer.contains("row.y - rowTravel * (1f - fraction)"))
+        assertTrue(layer.contains("rows.forEach(Row::restore)"))
+        assertTrue(layer.contains("viewport.blocked = false"))
+    }
+
+    @Test fun bubbleBorrowsTheModalSkinInsteadOfReplacingItWithAnOpaquePath() {
+        val main = source("LumenModalPresenter")
+        val bubble = main.after("fun applyBubbleSurface(").before("val morphLayer =")
+        assertFalse(bubble.contains("BubbleSurfaceDrawable("))
+        assertTrue(bubble.contains("modalBackground ?: lumen.modalBackground"))
+        assertTrue(bubble.contains("lumen.modalBackground(surfaceColor, 0f)"))
+        val surface = source("BubbleSkinSurfaceView")
+        assertTrue(surface.contains("surface.callback = this"))
+        assertTrue(surface.contains("who === surface || super.verifyDrawable(who)"))
+        assertTrue(surface.contains("surface.callback = null"))
+        assertTrue(surface.contains("LiquidMotionSurfaceFrameProvider"))
+        assertFalse(surface.contains("LayerDrawable"))
+        assertFalse(surface.contains("LiquidActivityRenderer("))
+    }
+
+    @Test fun fadingAndContourMasksAreBoundedInsteadOfUsingWholeWindowAlpha() {
+        val surface = source("BubbleSkinSurfaceView")
+        assertTrue(surface.contains("frameOpacity == 255"))
+        assertTrue(surface.contains("fadeBounds.intersect(0f, 0f, width.toFloat(), height.toFloat())"))
+        assertTrue(surface.contains("canvas.getClipBounds(canvasClipBounds)"))
+        assertTrue(surface.contains("surface.alpha = 255"))
+        val layer = source("BubblePanelLayer")
+        assertTrue(layer.contains("PorterDuff.Mode.DST_IN"))
+        assertTrue(layer.contains("canvas.saveLayer(boundedLayer"))
+        assertTrue(layer.contains("boundedLayer.intersect(0f, 0f, width.toFloat(), height.toFloat())"))
+    }
+
+    @Test fun iconSnapshotOnlyDrawsTheRealDrawableAndDoesNotIncludeRippleOrBadge() {
+        val icon = source("BubbleIconProxy")
+        assertTrue(icon.contains("MAX_CAPTURE_SIDE = 192"))
+        assertTrue(icon.contains("if (prepared) return"))
+        assertTrue(icon.contains("concat(matrix)"))
+        assertTrue(icon.contains("drawable.draw(this)"))
+        assertTrue(icon.contains("PorterDuff.Mode.SRC_IN"))
+        assertFalse(icon.contains("source.draw("))
+        assertFalse(icon.contains("drawable.setBounds("))
+        assertFalse(icon.contains(".recycle()"))
+        val frame = icon.after("fun updateFrame(").before("fun drawIcon(")
+        assertFalse(frame.contains("Bitmap.createBitmap"))
+    }
+
+    @Test fun closingAndWindowFallbackRestoreRowsAndOriginalIconAlpha() {
+        val controller = source("BubbleMotionController")
+        assertTrue(controller.contains("layer.settleExpanded()"))
+        assertTrue(controller.contains("layer.dispose()"))
+        val layer = source("BubblePanelLayer")
+        assertTrue(layer.contains("icon?.settleExpanded()"))
+        assertTrue(layer.contains("icon?.dispose()"))
+        val icon = source("BubbleIconProxy")
+        assertTrue(icon.contains("source.alpha = originalAlpha"))
+        // 原始 alpha 按 View 记账而不是每个代理各记一份：硬关时 Dialog 只把收尾监听器 post
+        // 出去，新代理会在真正 dispose 之前构造，把动画中途的 alpha 当成"原始值"，
+        // 连续打断后图标永久消失。
+        assertTrue(icon.contains("SourceIconAlpha.acquire(source)"))
+        assertTrue(icon.contains("SourceIconAlpha.release(source)"))
+        assertTrue(icon.contains("WeakHashMap<ImageView, Entry>"))
+        // 惰性代理（捕获失败）不许替别人还原，dispose 的记账必须幂等。
+        assertTrue(icon.contains("if (!tookOver) return"))
+        assertTrue(icon.contains("if (disposed) {"))
+    }
+
+    /**
+     * 系统返回（手势）必须和三键返回走同一条退场动画。
+     *
+     * 回归：注册发生在 `dialog.show()` 之前，那时 decor 还没挂上 `ViewRootImpl`，
+     * API 33 也没有 API 34 才加的 `ProxyOnBackInvokedDispatcher` 缓存 attach 前的注册，
+     * 于是注册被丢弃、`Dialog.show()` 自己那个 system 级默认回调（直接 dismiss、无动画）
+     * 赢下手势派发；而三键返回走 `Dialog.dispatchKeyEvent` → `mOnKeyListener`，仍有动画。
+     */
+    @Test fun systemBackGestureIsRegisteredAfterTheWindowIsAttached() {
+        // 按花括号配对精确取这一个函数：原来的"到 createContainer 为止"会随着
+        // 邻居搬迁或可见性放宽而失配，而 substringBefore 失配后返回原串，窗口会悄悄
+        // 扩大到整份文件——断言照样通过，护栏静默失效。
+        val present = MotionSource.function("present")
+        val show = present.indexOf("dialog.show()")
+        val register = present.indexOf("registerBackCallback()", show)
+        assertTrue("dialog.show() not found", show > 0)
+        assertTrue("back callback must be registered after dialog.show()", register > show)
+        // 注册前不能有第二处抢跑
+        assertEquals(-1, present.substring(0, show).indexOf(".registerOnBackInvokedCallback("))
+        // 注销必须冲着当时注册成功的那个 dispatcher，而不是重新取一次
+        assertTrue(present.contains("val dispatcher = registeredBackDispatcher"))
+        assertTrue(present.contains("PredictiveBackApi33.unregister(dispatcher, callback)"))
+        // "不许重新取一次"现在可以正面断言：取 dispatcher 的动作整体搬进了隔离层，
+        // 这个函数里不该再出现它（2026-09-11 的 NoClassDefFoundError 修复，API 33
+        // 类型只许留在 PredictiveBackApi33 里）。
+        assertEquals(-1, present.indexOf("onBackInvokedDispatcher"))
+        // 失败不许再静默
+        assertTrue(present.contains("register OnBackInvokedCallback failed"))
+        // 三键/按键回退路径保留
+        assertTrue(present.contains("keyCode == KeyEvent.KEYCODE_BACK"))
+    }
+
+    /**
+     * 需要弹输入法的面板在 `onExpanded` 里再弹（宿主义务，见适配标准 §13.1；来源工程断言的是搜索气泡）。
+     * 这里守住引擎侧：`onExpanded` 只在第一次落定时回调，收起路径绝不回调它。
+     */
+    @Test fun keyboardWaitsForFirstSettledEntryWithoutADelayedCloseRace() {
+        for (name in listOf("BubbleMotionController", "IconAnchoredMotionController")) {
+            assertTrue(source(name).contains("if (!entryNotified)"))
+            val close = source(name).after("fun requestClose(")
+                .before("fun handleWindowSizeChange(")
+            assertFalse(close.contains("onExpanded()"))
+        }
+    }
+
+    @Test fun independentGeometryRefreshWaitsForActualLayoutAndKeepsPendingChanges() {
+        val code = source("LumenModalPresenter").after("fun updateBubbleGeometry(): Boolean")
+            .before("val bubbleLayoutListener")
+        assertTrue(code.contains("bubbleGeometryPending || geometryChanged || actualBoundsChanged"))
+        assertTrue(code.contains("!layoutChanged && !container.isLayoutRequested"))
+        assertTrue(code.indexOf("bubbleLayer?.setAnchor(localAnchor)") < code.indexOf("handleWindowSizeChange()"))
+        assertTrue(code.indexOf("container.layoutParams = params") < code.indexOf("handleWindowSizeChange()"))
+        assertTrue(code.contains("previousBubbleBottom = container.bottom"))
+    }
+}

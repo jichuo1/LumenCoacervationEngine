@@ -1,0 +1,13 @@
+# 本机 SDK 路径与构建产物
+local.properties
+.gradle/
+build/
+*/build/
+.idea/
+*.iml
+.kotlin/
+captures/
+
+# Python 工具脚本缓存
+__pycache__/
+*.pyc
