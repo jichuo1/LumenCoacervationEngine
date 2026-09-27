@@ -2,6 +2,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
+## [未发布]
+
+### 新增
+
+- **持续集成**：`.github/workflows/ci.yml` 在推送与 PR 上跑构建门禁（`ENGINEERING_RULES.md` §11）。
+- **仓库规范**：`.editorconfig`（UTF-8、LF、4 空格缩进）与 PR 模板（对照发布检查与工程规则的自查清单）。
+
 ## [1.0.0] - 2026-09-27
 
 首个独立版本，从 Bilibili Innocent Lab 模块中抽离，详见 `docs/PORTABILITY_AUDIT.md`。契约版本 1。
