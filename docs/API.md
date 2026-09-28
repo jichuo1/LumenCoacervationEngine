@@ -39,11 +39,14 @@
 
 ## 2. Activity 接入（`com.lumen.coacervation.engine.host`）
 
-### `LumenActivityDelegate(activity: Activity, paletteProvider: () -> LumenPalette)`
+### `LumenActivityDelegate(activity: Activity, paletteProvider: () -> LumenPalette, effectTuningProvider: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT })`
+
+第三个参数自 1.1.0；构造函数带 `@JvmOverloads`，两参数的写法与旧二进制保持可用。
 
 | 分组 | 成员 | 标准 |
 |---|---|---|
 | 状态 | `val palette: LumenPalette`、`val isPrepared: Boolean`、`val engine: GlowEngine?`（每次现取，**不得缓存**） | §2.2、§6 |
+| | `val effectTuning: LumenEffectTuning`（自 1.1.0；首次读取后缓存） | §2.5 |
 | 会话 | `fun prepare()`、`fun bindRoot(root: View, onFailure: (() -> Unit)? = null): Boolean` | §2.3、§2.4 |
 | 通知 | `fun onDispatchTouchEvent(event: MotionEvent)`、`fun notifyPositionChanged()`、`fun bindContentSource(view: View)` | §4、§6.1 |
 | 表面 | `fun surface(color, radiusDp, role: SurfaceRole): Drawable` | §5 |
@@ -59,6 +62,7 @@
 
 - `val lumen: LumenActivityDelegate`：懒创建。
 - `protected open fun resolvePalette(): LumenPalette`：默认返回 `LumenPalette.neutral(系统深浅色)`。
+- `protected open fun resolveEffectTuning(): LumenEffectTuning`：默认 `LumenEffectTuning.DEFAULT`（自 1.1.0）。
 - 已接好 §2.1 的全部转发。
 
 ## 3. 数据类型（`com.lumen.coacervation.engine.model`）
@@ -68,6 +72,9 @@
 | `LumenPalette(primary, onPrimary, secondary, tertiary, surface, background, surfaceVariant, textPrimary, textSecondary)` | 宿主配色（ARGB Int） |
 | `LumenPalette.modern(primary, onPrimary, secondary, tertiary, dark): LumenPalette` | 宿主给强调色，表面与文字用引擎推荐的中性色 |
 | `LumenPalette.neutral(dark): LumenPalette` | 引擎自带的中性配色 |
+| `LumenEffectTuning(edgeHighlightWidth = 1f, edgeHighlightIntensity = 1f, dragGlowIntensity = 1f, dragGlowRadius = 1f)` | 视效调参倍率（自 1.1.0，§2.5）；超范围构造抛 `IllegalArgumentException` |
+| `LumenEffectTuning.DEFAULT`、`LumenEffectTuning.clamped(...)` | 引擎原样；把任意输入收进范围（非有限值按 1） |
+| `LumenEffectTuning.MIN_EDGE_WIDTH` / `MAX_EDGE_WIDTH` / `MAX_EDGE_INTENSITY` / `MAX_DRAG_GLOW_INTENSITY` / `MIN_DRAG_GLOW_RADIUS` / `MAX_DRAG_GLOW_RADIUS` | 范围常量：0.25 / 4 / 3 / 4 / 0.5 / 2 |
 | `enum SkinId { MATERIAL_YOU("material_you"), LIQUID("liquid_v1") }` | `storageValue` 属于持久化协议，永不复用 |
 | `SkinId.fromStorageValue(value: String?): SkinId?` | 严格解析 |
 | `enum SurfaceRole { WINDOW, CARD, MODAL, TOP_BAR, CHIP, FILLED_BUTTON, TEXT_BUTTON, SELECTED_ITEM, FLOATING, MOTION_SURFACE }` | 表面语义 |
@@ -149,9 +156,9 @@
 
 | 声明 | 说明 | 标准 |
 |---|---|---|
-| `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG })` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()` | §12 |
+| `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning })` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取 | §12、§2.5 |
 | `ElasticInteractionController.EXCLUDED_TAG` / `CONTAINER_TAG` | 不参与弹性 / 只承载、自己不形变 | §12.1 |
-| `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor)` | 底层控制器（一个窗口一个）；宿主通常用上面的封装 | §12 |
+| `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT })` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0 | §12 |
 
 ### 11.2 可打断动画内核（`com.lumen.coacervation.engine.motion`）
 

@@ -31,6 +31,7 @@ import androidx.core.graphics.createBitmap
 import com.lumen.coacervation.engine.background.AmbientBackdropScene
 import com.lumen.coacervation.engine.glow.GlowEngine
 import com.lumen.coacervation.engine.glow.GlowEngineCallbacks
+import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.liquid.LiquidMotionSurfaceFrameProvider
 import com.lumen.coacervation.engine.geometry.SamplingMatrixMath
@@ -50,7 +51,11 @@ import kotlin.math.roundToInt
  * 静态部分只采窗口底图（不含文字、其他窗口）；悬浮/顶栏表面另由 [LiveBackdropSampler] 对宿主用
  * [bindContentSource] 指定的内容层做低分辨率透镜采样，让从胶囊下方穿过的内容被模糊与折射。
  */
-internal class FrostedMaterialRenderer(private val palette: LumenPalette, private val density: Float) : GlowEngine {
+internal class FrostedMaterialRenderer(
+    private val palette: LumenPalette,
+    private val density: Float,
+    private val effectTuning: LumenEffectTuning = LumenEffectTuning.DEFAULT
+) : GlowEngine {
     override val skin: SkinId get() = SkinId.MATERIAL_YOU
 
     private val dark = ColorUtils.calculateLuminance(palette.background) < .5
@@ -143,7 +148,8 @@ internal class FrostedMaterialRenderer(private val palette: LumenPalette, privat
     }
 
     override fun surface(fallbackColor: Int, radiusDp: Float, role: SurfaceRole): Drawable =
-        ModernSurfaceDrawable(this, fallbackColor, radiusDp * density, density, ModernMaterialPolicy.surface(role, dark))
+        ModernSurfaceDrawable(this, fallbackColor, radiusDp * density, density,
+            ModernMaterialPolicy.surface(role, dark, effectTuning), effectTuning.edgeHighlightWidth)
 
     private fun requestBackdrop(newWidth: Int, newHeight: Int) {
         if (!lifecycle.canWork || newWidth <= 0 || newHeight <= 0 || (width == newWidth && height == newHeight && (frame != null || work != null))) return
@@ -478,12 +484,14 @@ private class ModernSurfaceDrawable(
     private val radius: Float,
     private val density: Float,
     private val style: ModernSurfaceStyle,
+    /** [LumenEffectTuning.edgeHighlightWidth]；边框 alpha 已由 [ModernMaterialPolicy.surface] 换算进 [style]。 */
+    edgeWidthScale: Float = 1f,
     private val tintOnly: Boolean = false
 ) : Drawable() {
     private val rect = RectF()
     private val edgeRect = RectF()
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style = Paint.Style.STROKE; strokeWidth = density.coerceAtLeast(1f) * .65f }
+    private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { this.style = Paint.Style.STROKE; strokeWidth = ModernMaterialPolicy.edgeStrokePx(density, edgeWidthScale) }
     private val edgeShader = LinearGradient(0f, 0f, 0f, 1f,
         ColorUtils.setAlphaComponent(Color.WHITE, style.upperEdgeAlpha),
         ColorUtils.setAlphaComponent(Color.WHITE, style.lowerEdgeAlpha), Shader.TileMode.CLAMP)
@@ -577,8 +585,10 @@ internal object FrostedMotionSurfaceAlpha {
 
 internal object ModernMaterialDrawables {
     /** 胶囊内部只叠着色和边框，继承父胶囊的实时光学图，不另采静态/旧帧背景。 */
-    fun chromeOverlay(color: Int, radiusPx: Float, density: Float, role: SurfaceRole, dark: Boolean): Drawable =
-        ModernSurfaceDrawable(null, color, radiusPx, density, ModernMaterialPolicy.surface(role, dark), tintOnly = true)
+    fun chromeOverlay(color: Int, radiusPx: Float, density: Float, role: SurfaceRole, dark: Boolean,
+                      tuning: LumenEffectTuning = LumenEffectTuning.DEFAULT): Drawable =
+        ModernSurfaceDrawable(null, color, radiusPx, density, ModernMaterialPolicy.surface(role, dark, tuning),
+            tuning.edgeHighlightWidth, tintOnly = true)
 
     // 与 ModernBackdropFactory 同一套色阶语言：顶部向 surface 轻抬、底部沉向
     // surfaceVariant——条款同意页等无皮肤兜底背景也不再是一块纯色。
@@ -589,6 +599,8 @@ internal object ModernMaterialDrawables {
             ColorUtils.blendARGB(palette.background, palette.surfaceVariant, .3f)
         ))
 
-    fun fallback(color: Int, radiusPx: Float, density: Float, role: SurfaceRole, dark: Boolean): Drawable =
-        ModernSurfaceDrawable(null, color, radiusPx, density, ModernMaterialPolicy.surface(role, dark))
+    fun fallback(color: Int, radiusPx: Float, density: Float, role: SurfaceRole, dark: Boolean,
+                 tuning: LumenEffectTuning = LumenEffectTuning.DEFAULT): Drawable =
+        ModernSurfaceDrawable(null, color, radiusPx, density, ModernMaterialPolicy.surface(role, dark, tuning),
+            tuning.edgeHighlightWidth)
 }

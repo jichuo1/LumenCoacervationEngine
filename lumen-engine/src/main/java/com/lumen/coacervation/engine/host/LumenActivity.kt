@@ -3,6 +3,7 @@ package com.lumen.coacervation.engine.host
 import android.app.Activity
 import android.content.res.Configuration
 import android.view.MotionEvent
+import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenPalette
 
 /**
@@ -18,7 +19,7 @@ public abstract class LumenActivity : Activity() {
 
     /** 本 Activity 的视效委托。 */
     public val lumen: LumenActivityDelegate by lazy(LazyThreadSafetyMode.NONE) {
-        LumenActivityDelegate(this, ::resolvePalette)
+        LumenActivityDelegate(this, ::resolvePalette, ::resolveEffectTuning)
     }
 
     /**
@@ -28,6 +29,12 @@ public abstract class LumenActivity : Activity() {
     protected open fun resolvePalette(): LumenPalette = LumenPalette.neutral(
         dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
     )
+
+    /**
+     * 本 Activity 的视效调参（边缘高光厚度与亮度、长按拖动光晕）。默认引擎原样；在第一次需要时调用一次，
+     * 改动后重建 Activity 生效。
+     */
+    protected open fun resolveEffectTuning(): LumenEffectTuning = LumenEffectTuning.DEFAULT
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         lumen.onDispatchTouchEvent(event)
