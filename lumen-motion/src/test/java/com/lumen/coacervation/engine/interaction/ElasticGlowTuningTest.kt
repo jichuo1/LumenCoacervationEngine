@@ -25,7 +25,7 @@ class ElasticGlowTuningTest {
     }
 
     /**
-     * 倍率每次长按开始时读取（设置页滑块可即时预览），并真正进入光晕的半径与基准 alpha；
+     * 倍率每次按下时读取（设置页滑块可即时预览），并真正进入光晕的半径与基准 alpha；
      * 两个窗口入口（Activity、弹窗）都把同一个来源传给控制器。空白折叠后比对。
      */
     @Test fun tuningIsReadPerPressAndReachesTheGlow() {

@@ -20,7 +20,7 @@ import com.lumen.coacervation.engine.model.LumenEffectTuning
  *
  * 弹窗窗口由 [installDialog] 接入（`LumenModalPresenter` 会自动调用）。
  *
- * 触点光晕的亮度与半径取自 [effectTuning]，**每次长按开始时**读取一次：默认跟随委托的
+ * 触点光晕的亮度与半径取自 [effectTuning]，**每次按下时**读取一次（拖动中途不变）：默认跟随委托的
  * [LumenActivityDelegate.effectTuning]（Activity 内固定）；需要设置页滑块即时预览时，传入读取宿主当前值的 lambda。
  */
 @MainThread

@@ -138,11 +138,11 @@
 |---|---|---|---|
 | `edgeHighlightWidth` | 0.25～4 | 表面边缘高光的厚度。柔光缩放边框描边；高级材质缩放折射 rim 带（菲涅尔、镜面的铺展宽度）与轮廓描边 | 会话创建时 |
 | `edgeHighlightIntensity` | 0～3 | 表面边缘高光的亮度；0 关闭 | 会话创建时 |
-| `dragGlowIntensity` | 0～4 | 长按拖动时触点光晕的亮度；0 关闭光晕，形变照常 | 每次长按开始时 |
-| `dragGlowRadius` | 0.5～2 | 长按拖动时触点光晕的半径 | 每次长按开始时 |
+| `dragGlowIntensity` | 0～4 | 长按拖动时触点光晕的亮度；0 关闭光晕，形变照常 | 每次按下时 |
+| `dragGlowRadius` | 0.5～2 | 长按拖动时触点光晕的半径 | 每次按下时 |
 
 - 调参经 `LumenActivityDelegate` 的第三个参数 `effectTuningProvider` 传入（继承式接入覆盖 `LumenActivity.resolveEffectTuning()`）。它与 `paletteProvider` 一样只在首次需要时调用一次，结果在本 Activity 生命周期内缓存；边缘高光的改动**必须**重建 Activity 生效（与 §3.2 切换材质相同）。
-- `LumenElasticInteraction` 的 `effectTuning` 参数默认读委托的缓存值。设置页需要滑块即时预览时，宿主**可以**传入读取自己当前值的 lambda；它在每次长按开始时调用一次，**不应**在里面做 I/O。
+- `LumenElasticInteraction` 的 `effectTuning` 参数默认读委托的缓存值。设置页需要滑块即时预览时，宿主**可以**传入读取自己当前值的 lambda；它在每次按下时调用一次，**不应**在里面做 I/O。
 - 构造时超出范围会抛 `IllegalArgumentException`。来自滑块等连续输入的值**应当**先经 `LumenEffectTuning.clamped(...)` 收进范围。
 - 引擎**不**持久化调参；存哪里、怎么迁移由宿主决定。
 - 调参只影响高光，不影响 §6 悬浮栏的可读性补偿（暗边、加厚色罩）与控件描边（§5.3）。

@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
 /**
  * 视效调参的宿主侧存储（适配标准 §2.5）。引擎不持久化调参；真实应用把它接进自己的设置。
  *
- * [current] 每次现读：长按拖动光晕在每次长按开始时取值，所以滑块改动即时生效；
+ * [current] 每次现读：长按拖动光晕在每次按下时取值，所以滑块改动即时生效；
  * 边缘高光在会话创建时读取，改动后需要重建 Activity。
  */
 internal class SampleTuningStore(context: Context) {
@@ -86,15 +86,18 @@ private fun SampleActivity.tuningSlider(
         textSize = 13f
         setTextColor(palette.textSecondary)
     }
-    fun valueOf(progress: Int) = (from + (to - from) * progress / SLIDER_STEPS).coerceIn(from, to)
+    // 固定 0.05 一档：每个范围的端点与默认值 1 都落在整档上。用 progress / 20 而不是 0.05 × progress，
+    // 默认档精确等于 1f（0.05f 不能精确表示），拖回原位就是引擎原样。
+    val steps = ((to - from) * STEPS_PER_UNIT).roundToInt()
+    fun valueOf(progress: Int) = (from + progress / STEPS_PER_UNIT).coerceIn(from, to)
     fun show(value: Float) {
         title.text = String.format(Locale.ROOT, "%s  ×%.2f", label, value)
     }
     show(initial)
     addView(title)
     addView(SeekBar(context).apply {
-        max = SLIDER_STEPS
-        progress = ((initial - from) / (to - from) * SLIDER_STEPS).roundToInt().coerceIn(0, SLIDER_STEPS)
+        max = steps
+        progress = ((initial - from) * STEPS_PER_UNIT).roundToInt().coerceIn(0, steps)
         setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: SeekBar, progress: Int, fromUser: Boolean) {
                 if (!fromUser) return
@@ -115,4 +118,4 @@ private fun SampleActivity.tuningSlider(
     }, LinearLayout.LayoutParams(-1, -2))
 }
 
-private const val SLIDER_STEPS = 100
+private const val STEPS_PER_UNIT = 20f

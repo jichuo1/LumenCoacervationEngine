@@ -9,7 +9,7 @@ package com.lumen.coacervation.engine.model
  * 生效时机：
  * - 表面边缘高光（[edgeHighlightWidth]、[edgeHighlightIntensity]）在会话创建时读取，改动后宿主需要重建
  *   Activity（与切换材质相同）；
- * - 长按拖动光晕（[dragGlowIntensity]、[dragGlowRadius]）在每次长按开始时读取，可以即时生效，见
+ * - 长按拖动光晕（[dragGlowIntensity]、[dragGlowRadius]）在每次按下时读取，可以即时生效，见
  *   `LumenElasticInteraction` 的 `effectTuning` 参数。
  *
  * 超出范围的值在构造时抛出 [IllegalArgumentException]；来自滑块等连续输入时先用 [clamped] 收进范围。

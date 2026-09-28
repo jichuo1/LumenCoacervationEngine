@@ -53,7 +53,7 @@ public class ElasticInteractionController(
     private val notifyPositionChanged: (View) -> Unit = {},
     private val isExcluded: (View) -> Boolean = { it.tag == EXCLUDED_TAG },
     private val highlightColor: Int = Color.WHITE,
-    /** 每次长按开始时读取一次：触点光晕的亮度与半径倍率（[LumenEffectTuning.dragGlowIntensity] / [LumenEffectTuning.dragGlowRadius]）。 */
+    /** 每次按下时读取一次：触点光晕的亮度与半径倍率（[LumenEffectTuning.dragGlowIntensity] / [LumenEffectTuning.dragGlowRadius]）。 */
     private val effectTuning: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
 ) {
     private enum class Motion { NONE, PRESS, DRAG, RELEASE }
