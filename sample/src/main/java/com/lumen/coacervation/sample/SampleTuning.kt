@@ -12,7 +12,7 @@ import kotlin.math.roundToInt
 /**
  * 视效调参的宿主侧存储（适配标准 §2.5）。引擎不持久化调参；真实应用把它接进自己的设置。
  *
- * [current] 每次现读：长按拖动光晕在每次按下时取值，所以滑块改动即时生效；
+ * [current] 每次现读：长按拖动的形变与光晕在每次按下时取值，所以滑块改动即时生效；
  * 边缘高光在会话创建时读取，改动后需要重建 Activity。
  */
 internal class SampleTuningStore(context: Context) {
@@ -25,7 +25,8 @@ internal class SampleTuningStore(context: Context) {
         edgeHighlightWidth = preferences.getFloat(KEY_EDGE_WIDTH, 1f),
         edgeHighlightIntensity = preferences.getFloat(KEY_EDGE_INTENSITY, 1f),
         dragGlowIntensity = preferences.getFloat(KEY_GLOW_INTENSITY, 1f),
-        dragGlowRadius = preferences.getFloat(KEY_GLOW_RADIUS, 1f)
+        dragGlowRadius = preferences.getFloat(KEY_GLOW_RADIUS, 1f),
+        dragDeformation = preferences.getFloat(KEY_DEFORMATION, 1f)
     )
 
     fun update(value: LumenEffectTuning) {
@@ -35,6 +36,7 @@ internal class SampleTuningStore(context: Context) {
             .putFloat(KEY_EDGE_INTENSITY, value.edgeHighlightIntensity)
             .putFloat(KEY_GLOW_INTENSITY, value.dragGlowIntensity)
             .putFloat(KEY_GLOW_RADIUS, value.dragGlowRadius)
+            .putFloat(KEY_DEFORMATION, value.dragDeformation)
             .apply()
     }
 
@@ -43,11 +45,12 @@ internal class SampleTuningStore(context: Context) {
         const val KEY_EDGE_INTENSITY = "edge_intensity"
         const val KEY_GLOW_INTENSITY = "glow_intensity"
         const val KEY_GLOW_RADIUS = "glow_radius"
+        const val KEY_DEFORMATION = "drag_deformation"
     }
 }
 
 /**
- * 视效调参卡片：四个滑块。边缘高光两项松手后重建 Activity；长按光晕两项拖动时即时生效。
+ * 视效调参卡片：五个滑块。边缘高光两项松手后重建 Activity；长按形变与光晕三项拖动时即时生效。
  * 滑块（`AbsSeekBar`）本身不参与长按弹性（§12.1）。
  */
 internal fun SampleActivity.tuningCard(palette: LumenPalette) = LinearLayout(this).apply {
@@ -63,6 +66,8 @@ internal fun SampleActivity.tuningCard(palette: LumenPalette) = LinearLayout(thi
         tuning.current.edgeHighlightWidth, recreateOnRelease = true) { tuning.current.copy(edgeHighlightWidth = it) })
     addView(tuningSlider(palette, "边缘高光亮度", 0f, LumenEffectTuning.MAX_EDGE_INTENSITY,
         tuning.current.edgeHighlightIntensity, recreateOnRelease = true) { tuning.current.copy(edgeHighlightIntensity = it) })
+    addView(tuningSlider(palette, "长按形变程度", 0f, LumenEffectTuning.MAX_DRAG_DEFORMATION,
+        tuning.current.dragDeformation, recreateOnRelease = false) { tuning.current.copy(dragDeformation = it) })
     addView(tuningSlider(palette, "长按光晕强度", 0f, LumenEffectTuning.MAX_DRAG_GLOW_INTENSITY,
         tuning.current.dragGlowIntensity, recreateOnRelease = false) { tuning.current.copy(dragGlowIntensity = it) })
     addView(tuningSlider(palette, "长按光晕半径", LumenEffectTuning.MIN_DRAG_GLOW_RADIUS,

@@ -132,12 +132,13 @@
 
 ### 2.5 视效调参（自 1.1）
 
-宿主**可以**通过 `LumenEffectTuning` 调整边缘高光与长按拖动光晕。四个字段都是相对引擎默认值的**倍率**，默认 1 即引擎原样：
+宿主**可以**通过 `LumenEffectTuning` 调整边缘高光、长按拖动的形变与光晕。五个字段都是相对引擎默认值的**倍率**，默认 1 即引擎原样：
 
 | 字段 | 范围 | 作用 | 生效时机 |
 |---|---|---|---|
 | `edgeHighlightWidth` | 0.25～4 | 表面边缘高光的厚度。柔光缩放边框描边；高级材质缩放折射 rim 带（菲涅尔、镜面的铺展宽度）与轮廓描边 | 会话创建时 |
 | `edgeHighlightIntensity` | 0～3 | 表面边缘高光的亮度；0 关闭 | 会话创建时 |
+| `dragDeformation` | 0～2 | 长按拖动时控件的形变程度：跟手位移行程、按压收缩与拉伸一起缩放；0 关闭形变，光晕照常。位移仍不越过相邻卡片（§14.1），拉伸仍受绝对上限约束 | 每次按下时 |
 | `dragGlowIntensity` | 0～4 | 长按拖动时触点光晕的亮度；0 关闭光晕，形变照常 | 每次按下时 |
 | `dragGlowRadius` | 0.5～2 | 长按拖动时触点光晕的半径 | 每次按下时 |
 
@@ -442,7 +443,7 @@ root（bindRoot）
 - **必须**在 `onPause`、`onStop` 里调用 `clear()`；在委托的 `onDestroy()` 之前调用 `dispose()`。
 - 弹窗窗口用 `installDialog(dialog)` 接入。`LumenModalPresenter` 会自动调用；宿主自建的 Dialog 要在 `setContentView` 之后自己调用。
 - 控制器只在按下时检查视图树；之后每帧只校验缓存的路径，并写四个属性和一层 overlay。它不截图，也不开空闲轮询。
-- 触点光晕的亮度与半径**可以**用 §2.5 的 `dragGlowIntensity`、`dragGlowRadius` 调整。
+- 形变程度与触点光晕的亮度、半径**可以**用 §2.5 的 `dragDeformation`、`dragGlowIntensity`、`dragGlowRadius` 调整。
 
 ### 12.1 参与与排除
 
