@@ -24,13 +24,14 @@
 </div>
 
 > [!NOTE]
-> 本项目抽离自 [Bilibili Innocent Lab](https://github.com/jichuo1/Bilibili_Innocent_Lab)，由原作者以 Apache-2.0 重新授权发布。详见 [出处与许可](#出处与许可)。
+> 本项目创意与具体实现抽离自 [Bilibili Innocent Lab](https://github.com/jichuo1/Bilibili_Innocent_Lab)，以 Apache-2.0 单独授权发布。详见 [出处与许可](#出处与许可)。
 
 ---
 
 ## 功能
 
-宿主只需声明"这块表面是什么"，由引擎决定怎样画。
+使用中只需要声明对应的组件，引擎将自动配置并协调绘制，非常便捷。
+对于大量的动效经过了项目多场景验证，可以保证效果稳定性和美观度，也提供包括边缘高光，长按拖动回弹形变程度等诸多参数的自定义设置，后续将会开放更多自定义能力并进一步完善统一性。
 
 <table>
 <tr>
