@@ -9,7 +9,7 @@ package com.lumen.coacervation.engine.model
  * 生效时机：
  * - 表面边缘高光（[edgeHighlightWidth]、[edgeHighlightIntensity]）在会话创建时读取，改动后宿主需要重建
  *   Activity（与切换材质相同）；
- * - 长按拖动光晕（[dragGlowIntensity]、[dragGlowRadius]）在每次按下时读取，可以即时生效，见
+ * - 长按拖动的形变与光晕（[dragDeformation]、[dragGlowIntensity]、[dragGlowRadius]）在每次按下时读取，可以即时生效，见
  *   `LumenElasticInteraction` 的 `effectTuning` 参数。
  *
  * 超出范围的值在构造时抛出 [IllegalArgumentException]；来自滑块等连续输入时先用 [clamped] 收进范围。
@@ -17,6 +17,8 @@ package com.lumen.coacervation.engine.model
  * @property edgeHighlightWidth 表面边缘高光的厚度倍率，范围 [MIN_EDGE_WIDTH]..[MAX_EDGE_WIDTH]。
  *   柔光材质缩放边框描边；高级材质同时缩放折射 rim 带（菲涅尔、镜面高光铺展的宽度）与轮廓描边。
  * @property edgeHighlightIntensity 表面边缘高光的亮度倍率，范围 0..[MAX_EDGE_INTENSITY]；0 关闭边缘高光。
+ * @property dragDeformation 长按拖动时控件形变程度的倍率（跟手位移行程、按压收缩与拉伸），
+ *   范围 0..[MAX_DRAG_DEFORMATION]；0 关闭形变（光晕照常）。位移仍不越过相邻卡片，拉伸仍受绝对上限约束。
  * @property dragGlowIntensity 长按拖动时触点光晕的亮度倍率，范围 0..[MAX_DRAG_GLOW_INTENSITY]；0 关闭光晕，形变照常。
  * @property dragGlowRadius 长按拖动时触点光晕的半径倍率，范围 [MIN_DRAG_GLOW_RADIUS]..[MAX_DRAG_GLOW_RADIUS]。
  */
@@ -24,13 +26,15 @@ public data class LumenEffectTuning(
     val edgeHighlightWidth: Float = 1f,
     val edgeHighlightIntensity: Float = 1f,
     val dragGlowIntensity: Float = 1f,
-    val dragGlowRadius: Float = 1f
+    val dragGlowRadius: Float = 1f,
+    val dragDeformation: Float = 1f
 ) {
     init {
         requireIn("edgeHighlightWidth", edgeHighlightWidth, MIN_EDGE_WIDTH, MAX_EDGE_WIDTH)
         requireIn("edgeHighlightIntensity", edgeHighlightIntensity, 0f, MAX_EDGE_INTENSITY)
         requireIn("dragGlowIntensity", dragGlowIntensity, 0f, MAX_DRAG_GLOW_INTENSITY)
         requireIn("dragGlowRadius", dragGlowRadius, MIN_DRAG_GLOW_RADIUS, MAX_DRAG_GLOW_RADIUS)
+        requireIn("dragDeformation", dragDeformation, 0f, MAX_DRAG_DEFORMATION)
     }
 
     public companion object {
@@ -40,6 +44,7 @@ public data class LumenEffectTuning(
         public const val MAX_DRAG_GLOW_INTENSITY: Float = 4f
         public const val MIN_DRAG_GLOW_RADIUS: Float = 0.5f
         public const val MAX_DRAG_GLOW_RADIUS: Float = 2f
+        public const val MAX_DRAG_DEFORMATION: Float = 2f
 
         /** 引擎原样。 */
         @JvmField
@@ -52,12 +57,14 @@ public data class LumenEffectTuning(
             edgeHighlightWidth: Float = 1f,
             edgeHighlightIntensity: Float = 1f,
             dragGlowIntensity: Float = 1f,
-            dragGlowRadius: Float = 1f
+            dragGlowRadius: Float = 1f,
+            dragDeformation: Float = 1f
         ): LumenEffectTuning = LumenEffectTuning(
             edgeHighlightWidth = edgeHighlightWidth.finiteOrOne().coerceIn(MIN_EDGE_WIDTH, MAX_EDGE_WIDTH),
             edgeHighlightIntensity = edgeHighlightIntensity.finiteOrOne().coerceIn(0f, MAX_EDGE_INTENSITY),
             dragGlowIntensity = dragGlowIntensity.finiteOrOne().coerceIn(0f, MAX_DRAG_GLOW_INTENSITY),
-            dragGlowRadius = dragGlowRadius.finiteOrOne().coerceIn(MIN_DRAG_GLOW_RADIUS, MAX_DRAG_GLOW_RADIUS)
+            dragGlowRadius = dragGlowRadius.finiteOrOne().coerceIn(MIN_DRAG_GLOW_RADIUS, MAX_DRAG_GLOW_RADIUS),
+            dragDeformation = dragDeformation.finiteOrOne().coerceIn(0f, MAX_DRAG_DEFORMATION)
         )
 
         private fun Float.finiteOrOne(): Float = if (isFinite()) this else 1f

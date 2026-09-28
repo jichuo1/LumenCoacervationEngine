@@ -155,6 +155,29 @@ internal object ElasticGlowTuning {
     fun radius(base: Float, scale: Float): Float = if (scale == 1f) base else base * scale
 }
 
+/**
+ * 长按拖动形变程度（[com.lumen.coacervation.engine.model.LumenEffectTuning.dragDeformation]）的换算。
+ * 倍率为 1 时逐位返回原值；0 时行程为 0、缩放恒为 1。
+ */
+internal object ElasticDeformationTuning {
+    /** 跟手位移的行程上限。相邻卡片与父容器的钳制在此之后照常生效。 */
+    fun travelLimit(base: Float, deformation: Float): Float = if (deformation == 1f) base else base * deformation
+
+    /** 按压收缩与拉伸：相对 1 的偏移按倍率缩放；拉伸的绝对上限在此之后照常生效。 */
+    fun scale(base: Float, deformation: Float): Float =
+        if (deformation == 1f) base else 1f + (base - 1f) * deformation
+
+    /**
+     * 从控件当前的缩放比（相对原始值）反推按压进度 0..1，与 [scale] 互逆（只看按压收缩那一项）。
+     * 倍率为 1 时与引入调参前的 `(1 - ratio) / PRESS_DEPTH` 逐位一致；倍率为 0 时没有按压深度，返回 0。
+     */
+    fun pressFromScale(ratio: Float, deformation: Float): Float {
+        if (deformation <= 0f || !ratio.isFinite()) return 0f
+        val depth = if (deformation == 1f) ElasticMotionPolicy.PRESS_DEPTH else ElasticMotionPolicy.PRESS_DEPTH * deformation
+        return ((1f - ratio) / depth).coerceIn(0f, 1f)
+    }
+}
+
 /** Exact damped-spring solution; stepping twice is consistent with one frame of the same duration. */
 internal class ElasticSpringAxis(var value: Float = 0f, var velocity: Float = 0f) {
     fun advance(seconds: Float, target: Float, stiffness: Float = 310f, dampingRatio: Float = .7f) {

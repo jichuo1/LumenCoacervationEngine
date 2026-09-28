@@ -92,16 +92,20 @@ class LumenEffectTuningTest {
             { LumenEffectTuning(edgeHighlightIntensity = -.1f) },
             { LumenEffectTuning(dragGlowIntensity = Float.NaN) },
             { LumenEffectTuning(dragGlowRadius = Float.POSITIVE_INFINITY) },
-            { LumenEffectTuning(dragGlowRadius = .1f) }
+            { LumenEffectTuning(dragGlowRadius = .1f) },
+            { LumenEffectTuning(dragDeformation = -.01f) },
+            { LumenEffectTuning(dragDeformation = 2.01f) }
         ).forEach { build -> assertTrue(runCatching(build).exceptionOrNull() is IllegalArgumentException) }
         val clamped = LumenEffectTuning.clamped(
             edgeHighlightWidth = 100f, edgeHighlightIntensity = -3f,
-            dragGlowIntensity = Float.NaN, dragGlowRadius = 0f
+            dragGlowIntensity = Float.NaN, dragGlowRadius = 0f, dragDeformation = 9f
         )
         assertEquals(LumenEffectTuning.MAX_EDGE_WIDTH, clamped.edgeHighlightWidth, 0f)
         assertEquals(0f, clamped.edgeHighlightIntensity, 0f)
         assertEquals(1f, clamped.dragGlowIntensity, 0f)
         assertEquals(LumenEffectTuning.MIN_DRAG_GLOW_RADIUS, clamped.dragGlowRadius, 0f)
+        assertEquals(LumenEffectTuning.MAX_DRAG_DEFORMATION, clamped.dragDeformation, 0f)
+        assertEquals(0f, LumenEffectTuning(dragDeformation = 0f).dragDeformation, 0f)
         assertEquals(LumenEffectTuning.DEFAULT, LumenEffectTuning.clamped())
     }
 

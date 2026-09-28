@@ -72,9 +72,9 @@
 | `LumenPalette(primary, onPrimary, secondary, tertiary, surface, background, surfaceVariant, textPrimary, textSecondary)` | 宿主配色（ARGB Int） |
 | `LumenPalette.modern(primary, onPrimary, secondary, tertiary, dark): LumenPalette` | 宿主给强调色，表面与文字用引擎推荐的中性色 |
 | `LumenPalette.neutral(dark): LumenPalette` | 引擎自带的中性配色 |
-| `LumenEffectTuning(edgeHighlightWidth = 1f, edgeHighlightIntensity = 1f, dragGlowIntensity = 1f, dragGlowRadius = 1f)` | 视效调参倍率（自 1.1.0，§2.5）；超范围构造抛 `IllegalArgumentException` |
+| `LumenEffectTuning(edgeHighlightWidth = 1f, edgeHighlightIntensity = 1f, dragGlowIntensity = 1f, dragGlowRadius = 1f, dragDeformation = 1f)` | 视效调参倍率（自 1.1.0，§2.5）；超范围构造抛 `IllegalArgumentException` |
 | `LumenEffectTuning.DEFAULT`、`LumenEffectTuning.clamped(...)` | 引擎原样；把任意输入收进范围（非有限值按 1） |
-| `LumenEffectTuning.MIN_EDGE_WIDTH` / `MAX_EDGE_WIDTH` / `MAX_EDGE_INTENSITY` / `MAX_DRAG_GLOW_INTENSITY` / `MIN_DRAG_GLOW_RADIUS` / `MAX_DRAG_GLOW_RADIUS` | 范围常量：0.25 / 4 / 3 / 4 / 0.5 / 2 |
+| `LumenEffectTuning.MIN_EDGE_WIDTH` / `MAX_EDGE_WIDTH` / `MAX_EDGE_INTENSITY` / `MAX_DRAG_GLOW_INTENSITY` / `MIN_DRAG_GLOW_RADIUS` / `MAX_DRAG_GLOW_RADIUS` / `MAX_DRAG_DEFORMATION` | 范围常量：0.25 / 4 / 3 / 4 / 0.5 / 2 / 2 |
 | `enum SkinId { MATERIAL_YOU("material_you"), LIQUID("liquid_v1") }` | `storageValue` 属于持久化协议，永不复用 |
 | `SkinId.fromStorageValue(value: String?): SkinId?` | 严格解析 |
 | `enum SurfaceRole { WINDOW, CARD, MODAL, TOP_BAR, CHIP, FILLED_BUTTON, TEXT_BUTTON, SELECTED_ITEM, FLOATING, MOTION_SURFACE }` | 表面语义 |

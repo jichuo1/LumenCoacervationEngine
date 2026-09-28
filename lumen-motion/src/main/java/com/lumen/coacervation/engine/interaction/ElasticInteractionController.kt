@@ -53,7 +53,10 @@ public class ElasticInteractionController(
     private val notifyPositionChanged: (View) -> Unit = {},
     private val isExcluded: (View) -> Boolean = { it.tag == EXCLUDED_TAG },
     private val highlightColor: Int = Color.WHITE,
-    /** 每次按下时读取一次：触点光晕的亮度与半径倍率（[LumenEffectTuning.dragGlowIntensity] / [LumenEffectTuning.dragGlowRadius]）。 */
+    /**
+     * 每次按下新控件时读取一次：形变程度与触点光晕的倍率（[LumenEffectTuning.dragDeformation]、
+     * [LumenEffectTuning.dragGlowIntensity]、[LumenEffectTuning.dragGlowRadius]）。
+     */
     private val effectTuning: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
 ) {
     private enum class Motion { NONE, PRESS, DRAG, RELEASE }
@@ -93,6 +96,8 @@ public class ElasticInteractionController(
     private var windowContentWidth = 0
     private var windowContentHeight = 0
     private var limit = 0f
+    /** 本次按压的形变倍率，按下新控件时取自 [effectTuning]；回弹中重新抓住同一控件时沿用。 */
+    private var deformation = 1f
     private var lastMoveTime = 0L
     private var motionStartedAt = 0L
     private var lastFrameNanos = 0L
@@ -314,6 +319,8 @@ public class ElasticInteractionController(
             stopFrames()
             path.clear()
         } else {
+            // 先取调参：宿主 lambda 抛异常时还没有动过任何视觉与租约。
+            val tuning = effectTuning()
             removeVisual(restore = true, releaseLease = true)
             leases.owner(group)?.relinquish(group)
             val observed = ElasticTransform(group.translationX, group.translationY, group.scaleX, group.scaleY)
@@ -322,11 +329,11 @@ public class ElasticInteractionController(
             target = group
             xAxis.reset(observed.translationX - owned.original.translationX)
             yAxis.reset(observed.translationY - owned.original.translationY)
-            pressAxis.reset(((1f - observed.scaleX / owned.original.scaleX) /
-                ElasticMotionPolicy.PRESS_DEPTH).coerceIn(0f, 1f))
-            highlight = effectTuning().let { tuning ->
-                TouchHighlight(view, density, highlightColor, tuning.dragGlowIntensity, tuning.dragGlowRadius)
-            }
+            deformation = tuning.dragDeformation
+            // 接手回弹中的控件：按本次倍率下的按压深度反推，渲染尺寸才连续。
+            pressAxis.reset(ElasticDeformationTuning.pressFromScale(
+                observed.scaleX / owned.original.scaleX, deformation))
+            highlight = TouchHighlight(view, density, highlightColor, tuning.dragGlowIntensity, tuning.dragGlowRadius)
             view.addOnAttachStateChangeListener(targetAttachListener)
         }
         highlightHost = view
@@ -341,7 +348,8 @@ public class ElasticInteractionController(
         xAxis.velocity = 0f
         yAxis.velocity = 0f
         lastMoveTime = event.eventTime
-        limit = ElasticMotionPolicy.positionLimit(group.width, group.height, density)
+        limit = ElasticDeformationTuning.travelLimit(
+            ElasticMotionPolicy.positionLimit(group.width, group.height, density), deformation)
         groupWidth = group.width
         groupHeight = group.height
         captureGroupGaps(group)
@@ -423,10 +431,10 @@ public class ElasticInteractionController(
         val capPx = ElasticMotionGroupPolicy.STRETCH_CAP_DP * density
         val tx = original.translationX + xAxis.value
         val ty = original.translationY + yAxis.value
-        val sx = original.scaleX *
-            ElasticMotionGroupPolicy.cappedScale(scale.x, groupWidth, capPx)
-        val sy = original.scaleY *
-            ElasticMotionGroupPolicy.cappedScale(scale.y, groupHeight, capPx)
+        val sx = original.scaleX * ElasticMotionGroupPolicy.cappedScale(
+            ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, capPx)
+        val sy = original.scaleY * ElasticMotionGroupPolicy.cappedScale(
+            ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, capPx)
         owned.record(tx, ty, sx, sy)
         view.translationX = tx
         view.translationY = ty
