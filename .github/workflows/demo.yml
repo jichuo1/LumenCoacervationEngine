@@ -14,12 +14,14 @@ on:
       - '*.gradle.kts'
       - 'gradle.properties'
       - '.github/workflows/demo.yml'
+      - '.github/scripts/run-smoke.sh'
   push:
     branches: [main]
     paths:
       - 'sample/**'
       - 'lumen-*/src/main/**'
       - '.github/workflows/demo.yml'
+      - '.github/scripts/run-smoke.sh'
   release:
     types: [published]
   workflow_dispatch:
@@ -93,8 +95,12 @@ jobs:
           arch: x86_64
           # 长按弹性在系统动画关闭时不启用（它按 ValueAnimator.areAnimatorsEnabled 门控），测试需要动画开着。
           disable-animations: false
+          # 默认 RAM 偏小：高级材质的实时取样三缓冲加上两套材质来回重建，给足内存免得模拟器中途被杀。
+          ram-size: 4096M
+          heap-size: 576M
+          disk-size: 4096M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
-          script: ./gradlew :sample:connectedReleaseAndroidTest --console=plain --no-daemon
+          script: bash .github/scripts/run-smoke.sh
 
       - name: Upload test reports
         if: always()
