@@ -2,6 +2,12 @@
 # 在已启动的模拟器上跑演示包冒烟测试；无论成败都把逐条测试结果打进日志，失败时附上崩溃相关的 logcat。
 set -u
 
+# 可选：指定 HWUI 渲染后端（skiagl / skiavk），用于区分模拟器图形栈问题与引擎问题。
+if [ -n "${HWUI_RENDERER:-}" ]; then
+  adb shell setprop debug.hwui.renderer "$HWUI_RENDERER" || true
+  echo "debug.hwui.renderer=$(adb shell getprop debug.hwui.renderer)"
+fi
+
 adb logcat -c || true
 adb logcat -v threadtime > logcat.txt 2>&1 &
 logcat_pid=$!

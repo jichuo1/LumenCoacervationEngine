@@ -7,6 +7,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.net.Uri
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
@@ -168,6 +169,7 @@ class DemoSmokeTest {
         )
         for (material in SkinId.entries) {
             for (tuning in extremes) {
+                Log.i(TAG, "drag round: $material $tuning")
                 selectMaterial(material)
                 SampleTuningStore(context).update(tuning)
                 ActivityScenario.launch(SampleActivity::class.java).use { scenario ->
@@ -292,6 +294,10 @@ class DemoSmokeTest {
         }
     }
 
+    private companion object {
+        const val TAG = "DemoSmokeTest"
+    }
+
     private fun settle(millis: Long) {
         SystemClock.sleep(millis)
         instrumentation.waitForIdleSync()
@@ -321,6 +327,7 @@ class DemoSmokeTest {
 
     /** 真实的触摸流：按下、停留过长按阈值、分步拖动、抬起。坐标取 View 当前在屏幕上的中心。 */
     private fun longPressDrag(view: View, dxDp: Float, dyDp: Float) {
+        Log.i(TAG, "longPressDrag ${view.javaClass.simpleName} (${dxDp}dp, ${dyDp}dp)")
         val location = IntArray(2)
         var density = 1f
         instrumentation.runOnMainSync {
