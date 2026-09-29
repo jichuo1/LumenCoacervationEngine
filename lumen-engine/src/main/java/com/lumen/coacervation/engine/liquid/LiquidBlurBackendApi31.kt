@@ -32,9 +32,10 @@ internal class LiquidBlurBackendApi31(
         check(!source.isClosed) { "Cannot bind a closed Liquid backdrop" }
         val node = renderNode ?: RenderNode("Lumen-LiquidBackdrop")
         node.discardDisplayList()
-        check(node.setPosition(0, 0, source.bitmap.width, source.bitmap.height)) {
-            "Unable to position Liquid blur RenderNode"
-        }
+        // setPosition 的返回值是"位置是否变化"，不是"是否成功"：同尺寸重绑（实时取样每次换缓冲）
+        // 返回 false。曾经 check 它，第二次绑定就抛异常，BLUR 被永久淘汰，API 31–32 设备
+        // 一律退到 TRANSLUCENT（演示包冒烟测试在 API 31 模拟器上发现）。
+        node.setPosition(0, 0, source.bitmap.width, source.bitmap.height)
         val recordingCanvas = node.beginRecording(source.bitmap.width, source.bitmap.height)
         try {
             recordingCanvas.drawBitmap(source.bitmap, 0f, 0f, bitmapPaint)

@@ -29,4 +29,17 @@ class LiquidBackendDiagnosticsContractTest {
         val runtime = source.after("fun advanceAfterFailure(").before("fun advanceToTranslucent()")
         assertTrue(runtime.contains("failures.getOrPut(failed) { \"runtime-draw-failed\" }"))
     }
+
+    /**
+     * RenderNode.setPosition 返回"值是否变化"。把它当成功标志去 check，会让同尺寸的第二次绑定抛异常，
+     * BLUR 后端在 API 31–32 上永远活不过第一次重绑。
+     */
+    @Test fun renderNodeSetPositionIsNeverTreatedAsASuccessFlag() {
+        val sources = listOf("liquid/LiquidBlurBackendApi31.kt", "glow/GlowBackdropTarget.kt", "glow/GlowChromeGlassApi31.kt")
+            .map { SourceContract.read(it) }
+        sources.forEach { text ->
+            assertTrue(!Regex("""(check|require)\s*\(\s*\w+\.setPosition\(""").containsMatchIn(text))
+            assertTrue(!Regex("""if\s*\(\s*!?\s*\w+\.setPosition\(""").containsMatchIn(text))
+        }
+    }
 }
