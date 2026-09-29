@@ -8,6 +8,13 @@ if [ -n "${HWUI_RENDERER:-}" ]; then
   echo "debug.hwui.renderer=$(adb shell getprop debug.hwui.renderer)"
 fi
 
+# 构建机资源采样：每 15 秒记录主机空闲内存与模拟器进程的常驻内存，定位模拟器被杀的原因。
+( while true; do
+    echo "$(date +%T) free=$(free -m | awk '/Mem:/ {print $7}')MB emulator_rss=$(ps -C qemu-system-x86_64 -o rss= 2>/dev/null | awk '{s+=$1} END {print int(s/1024)}')MB java_rss=$(ps -C java -o rss= 2>/dev/null | awk '{s+=$1} END {print int(s/1024)}')MB"
+    sleep 15
+  done ) > host-usage.txt 2>&1 &
+sampler_pid=$!
+
 adb logcat -c || true
 adb logcat -v threadtime > logcat.txt 2>&1 &
 logcat_pid=$!
@@ -15,7 +22,11 @@ logcat_pid=$!
 ./gradlew :sample:connectedReleaseAndroidTest --console=plain --no-daemon
 status=$?
 
-kill "$logcat_pid" 2>/dev/null || true
+kill "$logcat_pid" "$sampler_pid" 2>/dev/null || true
+
+echo "::group::主机资源采样"
+cat host-usage.txt || true
+echo "::endgroup::"
 
 echo "::group::测试结果"
 python3 - <<'PY'
@@ -44,6 +55,9 @@ echo "::endgroup::"
 if [ "$status" -ne 0 ]; then
   echo "::group::logcat：崩溃、ANR 与测试进度"
   grep -E "FATAL|AndroidRuntime|Fatal signal|am_crash|am_anr|ANR in|TestRunner|DemoSmokeTest|Lumen|lowmemorykiller|Out of memory" logcat.txt | tail -n 500 || true
+  echo "::endgroup::"
+  echo "::group::主机内核日志（OOM killer 等）"
+  sudo dmesg -T 2>/dev/null | grep -iE "oom|killed process|out of memory|qemu|emulator|segfault" | tail -n 60 || true
   echo "::endgroup::"
   echo "::group::logcat 最后 200 行"
   tail -n 200 logcat.txt || true
