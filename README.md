@@ -19,7 +19,7 @@
 [![JitPack](https://jitpack.io/v/jichuo1/LumenCoacervationEngine.svg)](https://jitpack.io/#jichuo1/LumenCoacervationEngine)
 [![Issues](https://img.shields.io/github/issues/jichuo1/LumenCoacervationEngine?style=flat-square)](https://github.com/jichuo1/LumenCoacervationEngine/issues)
 
-[功能](#功能) · [材质](#两套材质) · [要求](#要求) · [接入](#接入) · [构建](#构建) · [文档](#文档) · [出处与许可](#出处与许可)
+[功能](#功能) · [下载 Demo](#下载-demo) · [材质](#两套材质) · [要求](#要求) · [接入](#接入) · [构建](#构建) · [文档](#文档) · [出处与许可](#出处与许可)
 
 </div>
 
@@ -63,6 +63,28 @@
 
 ---
 
+## 下载 Demo
+
+不接入也能先看效果：到 [Releases](https://github.com/jichuo1/LumenCoacervationEngine/releases) 下载演示包 **`lumen-demo-<版本>.apk`** 直接安装（1.0.0 版：[`lumen-demo-1.0.0.apk`](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.0.0/lumen-demo-1.0.0.apk)）。
+
+| 页 | 可以看到 |
+|:---|:---|
+| 材质 | 两套材质、全部表面角色（卡片 / 悬浮 / 顶栏 / 弹窗 / 选中项 / 标签 / 按钮 / 形变表面）、控件换装与状态标签、形变面板与二级面板、条目形变成全屏页 |
+| 动效 | 可打断翻页与文字链、手风琴（半途倒带）、分段档位条、微动效、定位并高亮 |
+| 列表 | 长按拖拽排序：竖向列表与三列网格 |
+| 排布 | 两列网格、大小混排、横向轮播、卡中卡、网格里的手风琴 |
+| 自适应 | 按窗口宽度变化的网格列数、宽屏双栏列表-详情、窗口信息；旋转与分屏后停留在原页 |
+| 设置 | 材质与实时取样、深浅色、强调色、弹窗背景模糊、自定义背景、五项视效调参（边缘高光厚度 / 亮度、长按形变程度、长按光晕强度 / 半径）、诊断信息 |
+
+> [!TIP]
+> 任意卡片、按钮都可以**长按后拖动**：跟手形变、触点光晕流动、松手弹簧回弹。高级材质需要 Android 12+（折射需 Android 13+），不支持时自动回到柔光，「设置 → 诊断」会给出原因。
+
+- 演示包基于 `main` 分支构建，可能包含尚未发版的特性（以 [`CHANGELOG.md`](CHANGELOG.md) 的「未发布」为准）；源码即 [`sample/`](sample)。
+- 每个演示包发布前都会在 Android 8.1、12、14 的模拟器上跑完整的冒烟测试（[`demo.yml`](.github/workflows/demo.yml)）。
+- 演示包用构建机的调试签名，不同版本签名可能不同：覆盖安装失败时先卸载旧版。
+
+---
+
 ## 两套材质
 
 | 材质 | 标识 | 实现 | 设备要求 |
@@ -89,7 +111,7 @@
 | `lumen-engine` | 引擎本体（必需） |
 | `lumen-motion` | 可选：交互与动效（依赖 `lumen-engine`） |
 | `lumen-controls` | 可选：`SwitchCompat` / `CheckBox` / `EditText` 换装、翻页器开关识别、拖拽排序 |
-| `sample` | 最小接入示例，每一步都标注了适配标准的节号 |
+| `sample` | 接入示例兼演示包（[下载](#下载-demo)），每一步都标注了适配标准的节号 |
 
 ---
 
@@ -224,6 +246,8 @@ cd LumenCoacervationEngine
 | 产物 | 命令 / 入口 |
 |:---|:---|
 | Debug 构建 + 单测 + Lint | `./gradlew assembleDebug testDebugUnitTest lintDebug` |
+| 演示包 | `./gradlew :sample:assembleRelease` → `sample/build/outputs/apk/release/` |
+| 演示包冒烟测试（需连接设备或模拟器） | `./gradlew :sample:connectedReleaseAndroidTest` |
 | 本地 maven 产物 | `./gradlew publishAllPublicationsToProjectLocalRepository` → `build/repo` |
 
 本机 SDK 路径写在 `local.properties` 里，该文件不入库。

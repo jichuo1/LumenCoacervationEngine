@@ -223,7 +223,7 @@ private fun SampleActivity.tile(
 }
 
 /** 从任意卡片形变出来的面板：标题与卡片标题同文字，做标题迁移（§13.3）。 */
-private fun SampleActivity.showTilePanel(anchor: View, title: String) {
+internal fun SampleActivity.showTilePanel(anchor: View, title: String) {
     val dialog = Dialog(this)
     val container = modals.createContainer()
     container.addView(TextView(this).apply {

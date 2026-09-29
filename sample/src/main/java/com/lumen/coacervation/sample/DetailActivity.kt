@@ -47,13 +47,8 @@ class DetailActivity : AppCompatActivity() {
 
     private fun resolvePalette(): LumenPalette {
         val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-        return LumenPalette.modern(
-            primary = if (dark) 0xFF9ECAFF.toInt() else 0xFF2A5EA8.toInt(),
-            onPrimary = if (dark) 0xFF003258.toInt() else 0xFFFFFFFF.toInt(),
-            secondary = if (dark) 0xFFBBC7DB.toInt() else 0xFF535F70.toInt(),
-            tertiary = if (dark) 0xFFD6BEE4.toInt() else 0xFF6B5778.toInt(),
-            dark = dark
-        )
+        // 与来源页同一个强调色：形变两端的表面与标题颜色才接得上。
+        return SampleSettingsStore(this).accent.palette(dark)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

@@ -15,10 +15,12 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.widget.SwitchCompat
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
+import androidx.core.view.doOnLayout
 import androidx.core.view.WindowInsetsCompat
 import com.lumen.coacervation.engine.LumenEngine
 import com.lumen.coacervation.engine.controls.LumenControls
@@ -33,6 +35,7 @@ import com.lumen.coacervation.engine.interaction.LumenElasticInteraction
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.motion.modal.LumenModalPresenter
+import com.lumen.coacervation.engine.motion.modal.LumenModalStyle
 import com.lumen.coacervation.engine.motion.morph.ContainerMorphLauncher
 import com.lumen.coacervation.engine.motion.pager.LumenPagePager
 import com.lumen.coacervation.engine.motion.pager.LumenPageScrollView
@@ -58,8 +61,14 @@ import com.lumen.coacervation.engine.widget.NavigationBarSurface
  */
 class SampleActivity : AppCompatActivity() {
 
-    // §2.5 视效调参由宿主存储；边缘高光随会话读取，长按光晕每次长按现读。
+    // §2.5 视效调参由宿主存储；边缘高光随会话读取，长按形变与光晕每次按下现读。
     internal val tuning by lazy(LazyThreadSafetyMode.NONE) { SampleTuningStore(this) }
+    // 宿主自己的外观设置：强调色、弹窗背景模糊（深浅色由 SampleApplication 在启动时应用）。
+    internal val settings by lazy(LazyThreadSafetyMode.NONE) { SampleSettingsStore(this) }
+    // 自定义背景的图片选择：结果交给后台线程导入（LiquidBackgroundStore）。
+    internal val backgroundPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) importBackgroundImage(uri)
+    }
     // §2 组合式接入：一个委托，六个回调转发给它。
     internal val lumen = LumenActivityDelegate(this, ::resolvePalette) { tuning.current }
     // §12 全局长按弹性：Activity 与弹窗窗口共用一个实例。光晕调参现读，滑块改动即时生效。
@@ -68,7 +77,8 @@ class SampleActivity : AppCompatActivity() {
     }
     // §13 弹窗的打开与关闭；弹窗内容同样交给 lumen-controls 换装。
     internal val modals by lazy(LazyThreadSafetyMode.NONE) {
-        LumenModalPresenter(this, lumen, elastic = elastic, styleContent = { LumenControls.style(it, lumen) })
+        LumenModalPresenter(this, lumen, style = LumenModalStyle(backdropBlur = settings.modalBackdropBlur),
+            elastic = elastic, styleContent = { LumenControls.style(it, lumen) })
     }
     // §13.8 定位并高亮。
     internal val reveal by lazy(LazyThreadSafetyMode.NONE) { LumenReveal(lumen.palette.primary) }
@@ -87,16 +97,10 @@ class SampleActivity : AppCompatActivity() {
     internal val density get() = resources.displayMetrics.density
     internal fun dp(value: Int) = (value * density).toInt()
 
-    /** §2.2 配色由宿主提供：固定强调色 + 引擎推荐的中性表面。真实应用接自己的主题系统。 */
+    /** §2.2 配色由宿主提供：设置页选的强调色 + 引擎推荐的中性表面。真实应用接自己的主题系统。 */
     private fun resolvePalette(): LumenPalette {
         val dark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
-        return LumenPalette.modern(
-            primary = if (dark) 0xFF9ECAFF.toInt() else 0xFF2A5EA8.toInt(),
-            onPrimary = if (dark) 0xFF003258.toInt() else 0xFFFFFFFF.toInt(),
-            secondary = if (dark) 0xFFBBC7DB.toInt() else 0xFF535F70.toInt(),
-            tertiary = if (dark) 0xFFD6BEE4.toInt() else 0xFF6B5778.toInt(),
-            dark = dark
-        )
+        return settings.accent.palette(dark)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -115,7 +119,9 @@ class SampleActivity : AppCompatActivity() {
             "材质与面板" to ::buildMaterialPage,
             "动效" to { content, colors -> buildMotionPage(content, colors) },
             "列表" to { content, colors -> buildListPage(content, colors) },
-            "排布" to { content, colors -> buildLayoutPage(content, colors) }
+            "排布" to { content, colors -> buildLayoutPage(content, colors) },
+            "自适应" to { content, colors -> buildAdaptivePage(content, colors) },
+            "设置" to { content, colors -> buildSettingsPage(content, colors) }
         )
         pages.forEach { (title, build) ->
             val content = LinearLayout(this).apply {
@@ -153,7 +159,9 @@ class SampleActivity : AppCompatActivity() {
         // 胶囊底栏按压会放大、拖动会位移：直接宿主必须放行裁剪（§12.3）。
         root.clipChildren = false
         root.clipToPadding = false
-        root.addView(dock, FrameLayout.LayoutParams(dp(340), -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
+        // 六项底栏最宽 360dp；窄窗口（分屏、小屏）里收到窗口宽度减两侧 12dp。
+        val dockWidth = minOf(dp(360), dp(resources.configuration.screenWidthDp - 24))
+        root.addView(dock, FrameLayout.LayoutParams(dockWidth, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL)
             .apply { setMargins(0, 0, 0, dp(12)) })
         // 不贴滚动边缘的悬浮表面（§15.6）：悬浮按钮登记到悬浮栏时边传 null，照样做可读性补偿与内容节点玻璃。
         val fab = TextView(this).apply {
@@ -223,6 +231,27 @@ class SampleActivity : AppCompatActivity() {
             attach(dock, GlowScrollEdge.BOTTOM, palette.textPrimary) { boost -> dock.setLegibility(boost, palette.surface) }
             attach(fab, null, palette.textPrimary) { boost -> fab.setTextColor(GlowLegibilityPolicy.foreground(palette.textPrimary, boost)) }
         }
+
+        // 重建（改设置、切材质、旋转、分屏）后回到原来的页与滚动位置，而不是跳回第一页。
+        val restoredPage = savedInstanceState?.getInt(STATE_PAGE, 0)?.takeIf { it in scrolls.indices } ?: 0
+        if (restoredPage != 0) {
+            pager.selectPage(restoredPage, animate = false)
+            previousPage = restoredPage
+            navigation?.setSelectedPage(restoredPage)
+            navigation?.setPageProgress(restoredPage.toFloat(), notifyPositionChanged = false)
+        }
+        val restoredScroll = savedInstanceState?.getInt(STATE_SCROLL, 0) ?: 0
+        if (restoredScroll > 0) {
+            val scroll = scrolls[restoredPage]
+            scroll.doOnLayout { scroll.scrollTo(0, restoredScroll) }
+        }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if (!::pager.isInitialized) return
+        outState.putInt(STATE_PAGE, pager.selectedPage)
+        outState.putInt(STATE_SCROLL, scrolls.getOrNull(pager.selectedPage)?.scrollY ?: 0)
     }
 
     private fun edgeCoverage(edge: GlowScrollEdge): Float =
@@ -251,9 +280,9 @@ class SampleActivity : AppCompatActivity() {
 
     private fun buildNavigation(palette: LumenPalette) = LumenNavigationBar(
         context = this,
-        titles = listOf("材质", "动效", "列表", "排布"),
+        titles = listOf("材质", "动效", "列表", "排布", "自适应", "设置"),
         icons = intArrayOf(R.drawable.ic_sample_material, R.drawable.ic_sample_motion, R.drawable.ic_sample_list,
-            R.drawable.ic_sample_layout),
+            R.drawable.ic_sample_layout, R.drawable.ic_sample_adaptive, R.drawable.ic_sample_settings),
         colors = NavigationBarColors(text = palette.textSecondary, selectedText = palette.primary, highlight = palette.primary),
         backgroundFactory = { surface, radius ->
             when (surface) {
@@ -321,8 +350,7 @@ class SampleActivity : AppCompatActivity() {
     private fun buildMaterialPage(content: LinearLayout, palette: LumenPalette) {
         content.addView(caption("当前材质：" + if (lumen.isLiquidEffective) "高级材质（${lumen.backendName}）" else "柔光"))
         content.addView(caption("长按任意卡片或按钮后拖动：卡片跟手形变、触点高光流动，松手弹簧回弹（§12）。"))
-        // §2.5 边缘高光厚度/亮度与长按光晕强度/半径。
-        content.addView(tuningCard(palette), cardParams())
+        content.addView(caption("边缘高光、长按形变与光晕等参数在「设置」页调节。"))
         // §13.1 条目 → 卡片形变：弹窗标题与条目标题**同一段文字**才会做标题迁移。
         content.addView(entryRow(palette, "形变面板", "条目长成屏幕中央的卡片；面板里还能再开覆盖式子面板") { row ->
             showMorphPanel(row)
@@ -335,7 +363,7 @@ class SampleActivity : AppCompatActivity() {
         }
         fullscreenEntry = fullscreenRow
         content.addView(fullscreenRow, cardParams())
-        repeat(4) { index -> content.addView(settingCard(palette, index), cardParams()) }
+        repeat(2) { index -> content.addView(settingCard(palette, index), cardParams()) }
         content.addView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(16), dp(18), dp(16))
@@ -358,6 +386,8 @@ class SampleActivity : AppCompatActivity() {
                 setOnClickListener { Toast.makeText(context, "按钮", Toast.LENGTH_SHORT).show() }
             }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
         }, cardParams())
+        // §5 每种表面角色与控件样式各一份，可点开、可长按拖动。
+        buildSurfaceGallery(content, palette)
     }
 
     // ---------------- 生命周期（§2.1）与弹性（§12） ----------------
@@ -473,5 +503,10 @@ class SampleActivity : AppCompatActivity() {
             })
         }, LinearLayout.LayoutParams(0, -2, 1f))
         addView(SwitchCompat(context).apply { isChecked = index % 3 == 0 })
+    }
+
+    private companion object {
+        private const val STATE_PAGE = "sample.page"
+        private const val STATE_SCROLL = "sample.scroll"
     }
 }
