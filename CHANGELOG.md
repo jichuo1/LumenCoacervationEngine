@@ -14,9 +14,19 @@
   - `dragGlowIntensity`（0～4）/ `dragGlowRadius`（0.5～2）：长按拖动时触点光晕的亮度与半径，每次按下时读取，可即时生效。
   - 接入：`LumenActivityDelegate` 第三个参数 `effectTuningProvider`（`@JvmOverloads`，旧写法不变）、`LumenActivity.resolveEffectTuning()`、`LumenElasticInteraction` / `ElasticInteractionController` 的 `effectTuning` 参数（带默认值，源码兼容）。
   - `LumenEffectTuning.clamped(...)` 把滑块等连续输入收进范围。
-- **示例应用**：材质页新增「视效调参」卡片，五个滑块；边缘高光松手后重建，长按形变与光晕拖动即生效。
+- **演示包**：`sample` 扩成可下载的完整演示（README「下载 Demo」），发布在 Release 页的 `lumen-demo-<版本>.apk`。
+  - 新增「自适应」页：网格列数随窗口宽度变化、宽屏双栏列表-详情、窗口信息。
+  - 新增「设置」页：材质与实时取样、深浅色、强调色、弹窗背景模糊、自定义背景、五项视效调参（含「恢复默认」）、诊断信息。
+  - 材质页新增全部表面角色一览与控件样式（状态标签、可选中条目、悬浮栏叠层）。
+  - 改设置、切材质、旋转、分屏重建后停留在原页与原滚动位置。
+  - `.github/workflows/demo.yml`：构建 release 包，在 API 27 / 31 / 33 / 34 模拟器上跑冒烟测试（每页、面板与形变、长按拖动的各档调参、全部设置项、自定义背景、旋转），全部通过后才附到 Release。
 - **持续集成**：`.github/workflows/ci.yml` 在推送与 PR 上跑构建门禁（`ENGINEERING_RULES.md` §11）。
 - **仓库规范**：`.editorconfig`（UTF-8、LF、4 空格缩进）与 PR 模板（对照发布检查与工程规则的自查清单）。
+
+### 修复
+
+- **API 31–32 的高级材质模糊后端（BLUR）第二次绑定就被淘汰**：`LiquidBlurBackendApi31` 把 `RenderNode.setPosition()` 的返回值当成成功标志去 `check`，而它表示的是"位置是否变化"。同尺寸重绑（实时取样每次换缓冲都会发生）返回 false、抛异常，BLUR 被永久淘汰，这些设备一律退到最朴素的 TRANSLUCENT。已去掉该判断，并加契约测试禁止把 `setPosition` 当条件用（演示包冒烟测试在 API 31 模拟器上发现）。
+- **高级材质降级原因缺失**：后端绑定底图失败、内存压力降到 TRANSLUCENT 这两条路径淘汰后端时没有记录原因，诊断里只看到后端变成 TRANSLUCENT、「降级原因」却为空。现在分别记录异常类型与 `memory-pressure`（演示包在 API 31 模拟器上发现）。
 
 ## [1.0.0] - 2026-09-27
 

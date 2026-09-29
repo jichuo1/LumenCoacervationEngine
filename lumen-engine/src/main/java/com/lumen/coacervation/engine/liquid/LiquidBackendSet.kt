@@ -164,10 +164,13 @@ internal class LiquidBackendSet(
             if (driver == null) return false
             if (!driver.requiresBackdrop) return true
             if (boundSources[driver.backend] === source) return true
-            if (runCatching { driver.bindBackdrop(source) }.isSuccess) {
+            val bound = runCatching { driver.bindBackdrop(source) }
+            if (bound.isSuccess) {
                 boundSources[driver.backend] = source
                 return true
             }
+            // 绑定失败同样要留下原因：否则诊断里只看到后端变朴素、"降级原因"却是空的。
+            bound.exceptionOrNull()?.let { recordFailure(driver.backend, it) }
             boundSources.remove(driver.backend)
             preparedDrivers.remove(driver.backend)?.close()
             current = null
@@ -202,6 +205,7 @@ internal class LiquidBackendSet(
             fallbackPlan.current != LiquidRenderBackend.TRANSLUCENT
         ) {
             val failed = requireNotNull(fallbackPlan.current)
+            failures.getOrPut(failed) { "memory-pressure" }
             preparedDrivers.remove(failed)?.close()
             if (current?.backend == failed) current = null
             fallbackPlan.advanceAfterFailure(failed)

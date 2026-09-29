@@ -1,6 +1,7 @@
 package com.lumen.coacervation.sample
 
 import android.content.Context
+import android.view.Gravity
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -50,18 +51,11 @@ internal class SampleTuningStore(context: Context) {
 }
 
 /**
- * 视效调参卡片：五个滑块。边缘高光两项松手后重建 Activity；长按形变与光晕三项拖动时即时生效。
+ * 视效调参卡片：五个滑块与「恢复默认」。边缘高光两项松手后重建 Activity；长按形变与光晕三项拖动时即时生效。
  * 滑块（`AbsSeekBar`）本身不参与长按弹性（§12.1）。
  */
-internal fun SampleActivity.tuningCard(palette: LumenPalette) = LinearLayout(this).apply {
-    orientation = LinearLayout.VERTICAL
-    setPadding(dp(18), dp(16), dp(18), dp(16))
-    background = lumen.cardBackground(palette.surface)
-    addView(TextView(context).apply {
-        text = "视效调参"
-        textSize = 16f
-        setTextColor(palette.textPrimary)
-    })
+internal fun SampleActivity.tuningCard(palette: LumenPalette) = settingsCard(palette, "视效调参").apply {
+    addView(hint(palette, "边缘高光两项松手后重建；长按形变与光晕三项即时生效，拖完去别的页长按卡片试试。"))
     addView(tuningSlider(palette, "边缘高光厚度", LumenEffectTuning.MIN_EDGE_WIDTH, LumenEffectTuning.MAX_EDGE_WIDTH,
         tuning.current.edgeHighlightWidth, recreateOnRelease = true) { tuning.current.copy(edgeHighlightWidth = it) })
     addView(tuningSlider(palette, "边缘高光亮度", 0f, LumenEffectTuning.MAX_EDGE_INTENSITY,
@@ -74,6 +68,17 @@ internal fun SampleActivity.tuningCard(palette: LumenPalette) = LinearLayout(thi
         LumenEffectTuning.MAX_DRAG_GLOW_RADIUS, tuning.current.dragGlowRadius, recreateOnRelease = false) {
         tuning.current.copy(dragGlowRadius = it)
     })
+    addView(TextView(context).apply {
+        text = "恢复默认"
+        gravity = Gravity.CENTER
+        setPadding(dp(16), dp(12), dp(16), dp(12))
+        lumen.styleActionButton(this, filled = false)
+        isEnabled = tuning.current != LumenEffectTuning.DEFAULT
+        setOnClickListener {
+            tuning.update(LumenEffectTuning.DEFAULT)
+            recreate()
+        }
+    }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(14) })
 }
 
 private fun SampleActivity.tuningSlider(
