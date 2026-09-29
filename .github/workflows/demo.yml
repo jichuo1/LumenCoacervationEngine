@@ -65,18 +65,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；34 = 高级材质 REFRACTION 后端。
+        # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；33 / 34 = 高级材质 REFRACTION 后端。
+        # 33、34 用 ATD（为自动化测试精简的镜像）：google_apis 的 API 34 镜像在托管机上会随机整机退出
+        # （与测试步骤无关、主机内存充足、无 OOM，六次复现），ATD 镜像是官方给 CI 的替代。
         include:
           - api-level: 27
             target: default
           - api-level: 31
             target: google_apis
+          - api-level: 33
+            target: aosp_atd
           - api-level: 34
-            target: google_apis
-          # 同一镜像强制 HWUI 走 OpenGL：与上一行对照，区分模拟器 Vulkan（SwiftShader）问题与引擎问题。
-          - api-level: 34
-            target: google_apis
-            hwui: skiagl
+            target: aosp_atd
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -91,7 +91,7 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.hwui }})
+      - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: ${{ matrix.api-level }}
@@ -104,13 +104,13 @@ jobs:
           heap-size: 576M
           disk-size: 4096M
           emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -show-kernel
-          script: HWUI_RENDERER=${{ matrix.hwui }} bash .github/scripts/run-smoke.sh
+          script: bash .github/scripts/run-smoke.sh
 
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: smoke-reports-api${{ matrix.api-level }}${{ matrix.hwui }}
+          name: smoke-reports-api${{ matrix.api-level }}-${{ matrix.target }}
           path: sample/build/reports/androidTests/
           retention-days: 14
 
