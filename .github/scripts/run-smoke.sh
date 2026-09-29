@@ -50,6 +50,7 @@ for path in files:
             print("      " + (problem.text or problem.get("message") or "").strip().replace("\n", "\n      ")[:4000])
 print(f"合计 {total} 条，失败 {failed} 条")
 PY
+grep -E "DemoSmokeTest: material" logcat.txt | sed -E 's/^.*DemoSmokeTest: /实际材质：/' || true
 echo "::endgroup::"
 
 if [ "$status" -ne 0 ]; then

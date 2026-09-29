@@ -65,6 +65,11 @@ class DemoSmokeTest {
             selectMaterial(material)
             ActivityScenario.launch(SampleActivity::class.java).use { scenario ->
                 settle(800)
+                // 记录实际生效的材质与后端：模拟器上高级材质可能因能力不足回退，日志里要看得出测到了哪条路径。
+                val diagnostics = onUi(scenario) { it.lumen.diagnostics() }
+                Log.i(TAG, "material requested=$material effective=${diagnostics?.effectiveSkin} " +
+                    "backend=${diagnostics?.liquidBackendName} fallback=${diagnostics?.fallbackReason} " +
+                    "degrade=${diagnostics?.liquidBackendDegradeReason}")
                 val pages = onUi(scenario) { it.scrolls.size }
                 assertEquals(6, pages)
                 for (page in 0 until pages) {
