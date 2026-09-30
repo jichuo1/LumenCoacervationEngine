@@ -10,6 +10,7 @@ import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.appcompat.widget.SwitchCompat
+import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.LumenEngine
 import com.lumen.coacervation.engine.background.LiquidBackgroundImportResult
 import com.lumen.coacervation.engine.background.LiquidBackgroundMode
@@ -18,6 +19,7 @@ import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
+import com.lumen.coacervation.engine.widget.LumenSlidingSelection
 import java.util.concurrent.Executors
 
 /**
@@ -222,37 +224,54 @@ internal fun SampleActivity.hint(palette: LumenPalette, text: String) = TextView
 }
 
 /**
- * 一排互斥选项：选中项用 SELECTED_ITEM 表面、其余用 CHIP 表面（§5）。
- * 每个选项都是可点的小卡片，同样参与长按弹性。
+ * 一排互斥选项，做成分段控件：轨道是 CHIP 表面，选中框（SELECTED_ITEM 表面）在选项下面连贯滑动，
+ * 标题颜色按选中框的覆盖比例渐变（§13.11 `LumenSlidingSelection`）。
+ *
+ * 这几项设置都要重建页面才生效：等选中框滑到位再应用，连点只保留最后一次。
  */
 internal fun <T> SampleActivity.choiceRow(
     palette: LumenPalette,
     options: List<Pair<String, T>>,
     selected: T,
     onChoose: (T) -> Unit
-) = LinearLayout(this).apply {
-    orientation = LinearLayout.HORIZONTAL
-    setPadding(0, dp(8), 0, 0)
-    clipChildren = false
-    clipToPadding = false
-    options.forEachIndexed { index, (text, value) ->
-        val active = value == selected
-        addView(TextView(context).apply {
+): LumenSlidingSelection {
+    val choice = LumenSlidingSelection(
+        context = this,
+        indicatorBackground = lumen.surface(palette.surface, 12f, SurfaceRole.SELECTED_ITEM),
+        orientation = LinearLayout.HORIZONTAL,
+        notifyPositionChanged = { lumen.notifyPositionChanged() }
+    )
+    choice.background = lumen.surface(palette.surface, 16f, SurfaceRole.CHIP)
+    choice.setPadding(dp(4), dp(4), dp(4), dp(4))
+    val titles = options.map { (text, _) ->
+        TextView(this).apply {
             this.text = text
             gravity = Gravity.CENTER
             textSize = 13f
             maxLines = 1
-            setTextColor(if (active) palette.primary else palette.textPrimary)
+            setTextColor(palette.textPrimary)
             setPadding(dp(4), dp(10), dp(4), dp(10))
-            background = lumen.surface(palette.surface, 14f, if (active) SurfaceRole.SELECTED_ITEM else SurfaceRole.CHIP)
-            foreground = CoverableRippleDrawable.rounded(palette, dp(14).toFloat())
-            isClickable = true
-            isSelected = active
-            contentDescription = if (active) "$text，已选中" else text
-            setOnClickListener { onChoose(value) }
-        }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (index < options.lastIndex) marginEnd = dp(8) })
+            foreground = CoverableRippleDrawable.rounded(palette, dp(12).toFloat())
+        }
     }
+    titles.forEach { choice.addOption(it) }
+    choice.setOnHighlightListener { index, weight ->
+        titles[index].setTextColor(ColorUtils.blendARGB(palette.textPrimary, palette.primary, weight))
+    }
+    choice.select(options.indexOfFirst { it.second == selected }.coerceAtLeast(0), animate = false)
+    var pending: Runnable? = null
+    choice.onSelect = { index ->
+        pending?.let(choice::removeCallbacks)
+        val apply = Runnable { onChoose(options[index].second) }
+        pending = apply
+        choice.postDelayed(apply, CHOICE_APPLY_DELAY_MS)
+    }
+    choice.layoutParams = LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) }
+    return choice
 }
+
+/** 选中框滑动 260ms，再留一帧余量后应用会重建页面的设置。 */
+private const val CHOICE_APPLY_DELAY_MS = 280L
 
 private fun SampleActivity.switchRow(
     palette: LumenPalette,

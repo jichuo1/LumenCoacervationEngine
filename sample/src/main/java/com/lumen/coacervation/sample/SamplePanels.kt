@@ -22,6 +22,7 @@ import com.lumen.coacervation.engine.motion.modal.ModalAnchorStyle
 import com.lumen.coacervation.engine.motion.modal.ModalSubPanelOrigin
 import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
 import com.lumen.coacervation.engine.widget.LumenSegmentScrubBar
+import com.lumen.coacervation.engine.widget.LumenSlidingSelection
 import com.lumen.coacervation.engine.widget.NavigationBarColors
 
 // ---------------- §13 弹窗的打开与关闭 ----------------
@@ -228,6 +229,10 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
     }, actionParams())
     content.addView(micro, cardParams())
 
+    // §13.11 选中框连贯滑动（来源工程 JEV 灵敏度面板）：点新选项时选中框从旧行滑到新行，位置与高度一起插值；
+    // 滑动途中再点别的行，从当前位置与速度续接。行高不一：长说明会折行，选中框按行的实际高度伸缩。
+    content.addView(buildSlidingChoiceCard(palette), cardParams())
+
     // §13.8 定位并高亮：滚到本页最后一张卡片，到位后闪一次高亮。
     val farTarget = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -331,4 +336,64 @@ internal fun SampleActivity.buildListPage(content: LinearLayout, palette: LumenP
         setTextColor(ColorUtils.setAlphaComponent(palette.textSecondary, 0xB0))
         setPadding(dp(6), 0, dp(6), dp(12))
     })
+}
+
+// ---------------- §13.11 选中框连贯滑动 ----------------
+
+private fun SampleActivity.buildSlidingChoiceCard(palette: LumenPalette) = LinearLayout(this).apply {
+    orientation = LinearLayout.VERTICAL
+    setPadding(dp(12), dp(14), dp(12), dp(12))
+    background = lumen.cardBackground(palette.surface)
+    clipChildren = false
+    clipToPadding = false
+    addView(TextView(context).apply {
+        text = "选中框连贯滑动"
+        textSize = 16f
+        setTypeface(typeface, Typeface.BOLD)
+        setTextColor(palette.textPrimary)
+        setPadding(dp(6), 0, dp(6), dp(10))
+    })
+    val levels = listOf(
+        "宽松" to "只拦截明确命中的内容。",
+        "标准" to "推荐。明确命中与高度疑似都拦截。",
+        "严格" to "疑似内容也拦截；可能误伤少量正常内容，说明文字更长，这一行会折成两行，选中框按实际高度伸缩。",
+        "仅标记" to "不拦截，只在内容旁标注判定结果。"
+    )
+    val status = panelText("当前：标准")
+    val titles = ArrayList<TextView>(levels.size)
+    val choice = LumenSlidingSelection(
+        context = context,
+        indicatorBackground = lumen.selectionBackground(palette.surface, 14f),
+        notifyPositionChanged = { lumen.notifyPositionChanged() }
+    )
+    levels.forEach { (title, summary) ->
+        val titleView = TextView(context).apply {
+            text = title
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(palette.textSecondary)
+        }
+        titles += titleView
+        choice.addOption(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(16), dp(13), dp(16), dp(13))
+            // 行只有涟漪：选中框在行下面滑动；长按拖动选中行时选中框跟着行形变。
+            background = CoverableRippleDrawable.rounded(palette, dp(14).toFloat())
+            addView(titleView)
+            addView(TextView(context).apply {
+                text = summary
+                textSize = 12f
+                setTextColor(palette.textSecondary)
+                alpha = 0.72f
+                setPadding(0, dp(4), 0, 0)
+            })
+        })
+    }
+    choice.setOnHighlightListener { index, weight ->
+        titles[index].setTextColor(ColorUtils.blendARGB(palette.textSecondary, palette.primary, weight))
+    }
+    choice.select(1, animate = false)
+    choice.onSelect = { index -> MicroMotion.swapText(status, "当前：${levels[index].first}") }
+    addView(choice, LinearLayout.LayoutParams(-1, -2))
+    addView(status)
 }

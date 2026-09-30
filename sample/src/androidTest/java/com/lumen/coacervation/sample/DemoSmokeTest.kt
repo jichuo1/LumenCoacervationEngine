@@ -149,6 +149,17 @@ class DemoSmokeTest {
             settle(400)
             clickOnUi(scenario) { findByText(it.scrolls[1], "切换文字") }
             settle(400)
+            // 选中框连贯滑动：连点三次，第二、三次都打断上一段滑动。
+            for (label in listOf("严格", "宽松", "仅标记")) {
+                clickOnUi(scenario) { clickableAncestor(findByText(it.scrolls[1], label)) }
+                settle(90)
+            }
+            settle(600)
+            val selected = onUi(scenario) { activity ->
+                val row = clickableAncestor(findByText(activity.scrolls[1], "仅标记"))
+                row.isSelected
+            }
+            assertTrue("sliding selection should land on the last tapped option", selected)
             clickOnUi(scenario) { findByText(it.scrolls[1], "定位到页底的目标") }
             settle(1500)
             onUi(scenario) { it.pager.selectPage(3, animate = false) }
@@ -209,6 +220,11 @@ class DemoSmokeTest {
             settle(800)
             onUi(scenario) { it.pager.selectPage(5, animate = false) }
             settle(400)
+            // 真实点击分段控件：选中框滑到位后才应用并重建，重建后仍在设置页、强调色已保存。
+            clickOnUi(scenario) { clickableAncestor(findByText(it.scrolls[5], SampleAccent.GREEN.label)) }
+            settle(1500)
+            assertEquals(SampleAccent.GREEN, SampleSettingsStore(context).accent)
+            assertEquals(5, onUi(scenario) { it.pager.selectedPage })
             // 强调色逐个切换（每次重建，重建后仍在设置页）。
             for (accent in SampleAccent.entries) {
                 SampleSettingsStore(context).accent = accent
