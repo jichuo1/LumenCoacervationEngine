@@ -213,6 +213,7 @@
 |---|---|---|
 | `LumenNavigationBar(context, titles, icons, colors, backgroundFactory, onSelect, onUserInteraction, onVisualMovement)` | 胶囊底栏（1～6 项，超出报错）：`setPageProgress(v, notifyPositionChanged = true)`、`setSelectedPage(i)`、`setLegibility(boost, haloColor)`、`dispose()` | §12.4 |
 | `NavigationBarColors(text, selectedText, highlight)`、`NavigationBarSurface { BAR, SELECTION }` | 底栏/档位条配色与表面 | §12.4 |
+| `LumenSlidingSelection(context, indicatorBackground, orientation = VERTICAL, notifyPositionChanged = {})` | 选中框连贯滑动的单选组（自 1.1.0）：`addOption(view, params)`、`select(index, animate = true)`、`selectedIndex`、`onSelect`、`setOnHighlightListener { index, weight -> }`（`fun interface OnHighlightListener`，原始类型参数、逐帧不装箱）、`indicator`、`options` | §13.11 |
 | `LumenSegmentScrubBar(context, attrs)` | 分段档位条（1～8 段，超出报错）：`configure(labels, colors, thumbBackground, trackBackground, selectedIndex, onSelect)` | §12.4、§15.1 |
 | `LumenSpring(start, target, velocity = 0f)` | 解析阻尼弹簧：`value(seconds)`、`velocity(seconds)`；重定向保留位置与速度 | §13.0 |
 | `CoverableRippleDrawable(baseColor, content, mask)`、`CoverableRippleDrawable.rounded(palette, cornerRadiusPx)`、`coverOpacity` | 自绘圆角涟漪；可被上层表面"盖住"而淡出 | §12.2、§13.2 |
