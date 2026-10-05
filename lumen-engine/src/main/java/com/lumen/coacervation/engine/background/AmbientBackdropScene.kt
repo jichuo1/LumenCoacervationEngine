@@ -17,9 +17,9 @@ import com.lumen.coacervation.engine.model.LumenPalette
  * ① 纵向色阶——顶部向 surface 轻抬、底部向深端渐沉，底色自带方向性明度场；
  * ② 四团环境光晕——primary 左上 / secondary 右中 / tertiary 下缘 / surface 顶部中性提升，
  *    每团用"亮核→肩部→归零"三段衰减，避免线性径向渐变的色团感；
- * ③ 四缘暗角——中心约一半透明，边缘轻压，视线收向中部；
- * 颗粒由调用方按需叠加（[addGrain]）：磨砂可见底图用它打散渐变色带，
- * Liquid 的折射采样底图保持干净不加。
+ * ③ 四缘暗角——中心约一半透明，边缘轻压，视线收向中部。
+ * 场景按窗口的 0.2～0.25 倍尺寸生成；逐像素颗粒放大后会成为斑块，因此只保留低频渐变，
+ * 色阶仍由 DITHER_FLAG 抖动处理。两条皮肤的显示与采样都使用这份干净背景。
  */
 internal object AmbientBackdropScene {
 
@@ -83,21 +83,4 @@ internal object AmbientBackdropScene {
         canvas.drawRect(0f, 0f, w, h, wash)
     }
 
-    /**
-     * 固定种子 LCG 颗粒（±2 级）：同一设备每次生成同一张纹理，打散平滑渐变的色带；
-     * 幅度小到只提供材质感，不构成图案。
-     */
-    fun addGrain(pixels: IntArray) {
-        var seed = 0x2C6FEB35
-        for (index in pixels.indices) {
-            seed = seed * 1103515245 + 12345
-            val noise = ((seed ushr 16) % 5) - 2
-            if (noise == 0) continue
-            val color = pixels[index]
-            val r = (((color ushr 16) and 0xFF) + noise).coerceIn(0, 255)
-            val g = (((color ushr 8) and 0xFF) + noise).coerceIn(0, 255)
-            val b = ((color and 0xFF) + noise).coerceIn(0, 255)
-            pixels[index] = (color and 0xFF000000.toInt()) or (r shl 16) or (g shl 8) or b
-        }
-    }
 }

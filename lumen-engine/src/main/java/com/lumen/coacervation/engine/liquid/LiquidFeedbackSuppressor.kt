@@ -14,7 +14,7 @@ import androidx.core.graphics.createBitmap
 
 /**
  * 实时截图的**反馈抑制**：模块自己画出的玻璃（及其周围 effect padding）在截图里一律换成干净的
- * 稳定底图，下一帧的光学输入永远不含上一帧的光学输出——否则文字与玻璃会被递归折射成残影。
+ * 显示底图，下一帧的光学输入永远不含上一帧的光学输出——否则文字与玻璃会被递归折射成残影。
  *
  * 遮罩在**发起截图那一刻**按当帧已绘制的足迹构建（[buildSuppressionMask]），回调里只负责应用
  * （[sanitizeRealtimeCapture]）：PixelCopy 读的是最近一次已合成的帧，回调时再取位置会与截图内容
@@ -77,7 +77,7 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
             val scaleCanvas = Canvas(bitmap)
             scaleBounds.set(0, 0, width, height)
             // 这一次放大与原逐帧填充使用同一滤波与同一源，输出内容一致。
-            stableBackdrop.drawOpticalBackdrop(scaleCanvas, scaleBounds, 255)
+            stableBackdrop.drawSuppressionBackdrop(scaleCanvas, scaleBounds, 255)
             bitmap.prepareToDraw()
             val shader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
             suppressionUnderlay = bitmap
@@ -183,7 +183,7 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
                 canvas.drawPath(requestMask, suppressionPaint)
             } else {
                 // 预缩放位图分配失败时回退到原路径，抑制强度与几何完全一致。
-                stableBackdrop.drawRootMasked(
+                stableBackdrop.drawSuppressionBackdropMasked(
                     canvas,
                     requestMask,
                     captureBounds,

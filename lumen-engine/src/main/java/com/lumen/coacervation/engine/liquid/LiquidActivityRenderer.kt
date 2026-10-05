@@ -1077,7 +1077,10 @@ internal class LiquidActivityRenderer(
             }
             if (Thread.currentThread().isInterrupted) { bitmap.recycle(); return@submit }
             val source = runCatching {
-                LiquidBackdropSource.fromCustomBitmap(bitmap, assetId, width, height, density)
+                LiquidBackdropSource.fromCustomBitmap(
+                    bitmap, assetId, width, height, density,
+                    crispRefraction = effectProfile == LiquidEffectProfile.REALTIME_CAPTURE
+                )
             }.getOrElse {
                 bitmap.recycle()
                 if (!Thread.currentThread().isInterrupted) mainHandler.post {

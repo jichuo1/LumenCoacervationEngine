@@ -468,10 +468,7 @@ private object ModernBackdropFactory {
         val blurredPixels = ModernBackdropBlur.blur(pixels, w, h, ModernMaterialPolicy.blurRadius(w, width, density))
         val blurred = createBitmap(w, h, Bitmap.Config.ARGB_8888)
         blurred.setPixels(blurredPixels, 0, w, 0, 0, w, h)
-        // 颗粒只进可见底图，不进模糊副本：打散渐变色带、给出细材质纹理，
-        // 磨砂表面的采样底保持干净。
-        AmbientBackdropScene.addGrain(pixels)
-        original.setPixels(pixels, 0, w, 0, 0, w, h)
+        // 低分辨率背景放大后不再带颗粒斑块；磨砂采样仍使用独立的模糊副本。
         original.prepareToDraw(); blurred.prepareToDraw()
         return ModernBackdropFrame(original, blurred)
     }

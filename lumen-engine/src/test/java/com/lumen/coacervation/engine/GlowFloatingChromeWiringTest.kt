@@ -31,11 +31,13 @@ class GlowFloatingChromeWiringTest {
     @Test fun dissolveDrawsTheVisibleRootBitmapNotTheOpticalCopy() {
         val source = source("liquid/LiquidBackdropSource.kt")
         val presentation = source.after("fun drawPresentationRegion(").before("\n    }\n")
-        // 溶解区必须与根背景逐像素一致：根背景画的是 bitmap（含颗粒），不是光学副本。
-        assertTrue(source.contains("BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)"))
+        // 溶解区必须与根背景逐像素一致，独立的呈现 Shader 只采显示底图。
+        val shader = source.after("private val presentationShader by lazy").before("private val presentationMatrix")
+        assertTrue(shader.contains("BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)"))
         assertFalse(presentation.contains("opticalBitmap"))
         assertFalse(presentation.contains("bitmapShader.setLocalMatrix"))
-        assertFalse(presentation.contains("maskShader"))
+        assertFalse(presentation.contains("opticalRegionShader"))
+        assertFalse(presentation.contains("suppressionShader"))
         assertTrue(presentation.contains("PorterDuff.Mode.DST_IN"))
     }
 

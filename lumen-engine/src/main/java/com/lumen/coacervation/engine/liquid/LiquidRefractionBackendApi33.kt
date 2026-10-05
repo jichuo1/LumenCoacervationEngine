@@ -68,10 +68,11 @@ internal class LiquidRefractionBackendApi33(
         // RuntimeShader 子输入不会继承外层 Paint.FILTER_BITMAP_FLAG；DEFAULT 在此会退化为最近邻。
         source.bitmapShader.setFilterMode(BitmapShader.FILTER_MODE_LINEAR)
         shader.setInputShader("content", source.bitmapShader)
+        // content.eval 使用位图像素坐标；映射跟随已绑定的折射位图，而非显示底图尺寸。
         shader.setFloatUniform(
             "backdropScale",
-            source.bitmap.width.toFloat() / source.fullWidth.toFloat(),
-            source.bitmap.height.toFloat() / source.fullHeight.toFloat()
+            source.refractionWidth.toFloat() / source.fullWidth.toFloat(),
+            source.refractionHeight.toFloat() / source.fullHeight.toFloat()
         )
         // 根空间下 backdrop 的有效范围；shader 用它把折射位移收在页面之内。
         shader.setFloatUniform(

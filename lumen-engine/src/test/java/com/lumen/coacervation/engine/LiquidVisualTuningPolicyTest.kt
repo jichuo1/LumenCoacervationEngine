@@ -1,28 +1,66 @@
 package com.lumen.coacervation.engine
 
 import com.lumen.coacervation.engine.liquid.LiquidVisualTuningPolicy
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.File
 import com.lumen.coacervation.engine.contract.SourceContract
+import com.lumen.coacervation.engine.contract.after
+import com.lumen.coacervation.engine.contract.before
 
 class LiquidVisualTuningPolicyTest {
 
     /**
      * 未设自定义图时 Liquid 的自动 underlay 必须与标准磨砂皮肤共用 [AmbientBackdropScene]：
-     * 两种材质下用户看到的是同一个 Monet 氛围背景。折射采样副本保持无颗粒。
+     * 两种材质下用户看到的是同一个 Monet 氛围背景；去颗粒不改变原配色和暗角。
      */
     @Test
-    fun `auto backdrop shares the ambient scene with the frosted skin`() {
+    fun `auto backdrop shares the clean ambient scene with the frosted skin`() {
         val liquid = source("liquid/LiquidBackdropSource")
         val frosted = source("material/FrostedMaterialRenderer")
+        val scene = source("background/AmbientBackdropScene")
 
         assertTrue(liquid.contains("AmbientBackdropScene.paint(canvas, palette"))
-        assertTrue(liquid.contains("AmbientBackdropScene.addGrain(pixels)"))
-        // 颗粒只写进可见根位图；折射采样副本用加噪前的像素构建。
-        assertTrue(liquid.contains("opticalBitmap = optical"))
         assertTrue(frosted.contains("AmbientBackdropScene.paint(canvas, palette"))
-        assertTrue(frosted.contains("AmbientBackdropScene.addGrain(pixels)"))
+        assertFalse(scene.contains("addGrain"))
+        assertFalse(liquid.contains("addGrain"))
+        assertFalse(frosted.contains("addGrain"))
+        assertTrue(scene.contains("Paint.ANTI_ALIAS_FLAG or Paint.DITHER_FLAG"))
+        assertTrue(scene.contains("color = palette.primary, alpha = if (dark) 0x2E else 0x3A"))
+        assertTrue(scene.contains("ColorUtils.setAlphaComponent(Color.BLACK, if (dark) 0x38 else 0x14)"))
+    }
+
+    @Test
+    fun `automatic liquid source shares one bitmap without changing custom image optics`() {
+        val liquid = source("liquid/LiquidBackdropSource")
+        val automatic = liquid.after("fun create(").before("fun fromCustomBitmap(")
+        assertEquals(1, Regex("createBitmap\\(").findAll(automatic).count())
+        assertFalse(automatic.contains("IntArray("))
+        assertFalse(automatic.contains("getPixels("))
+        assertFalse(automatic.contains("setPixels("))
+        assertFalse(automatic.contains("opticalBitmap ="))
+        assertTrue(liquid.contains("private val opticalBitmap: Bitmap = bitmap"))
+        val custom = liquid.after("fun fromCustomBitmap(").before("fun fromRealtimeBitmap(")
+        assertTrue(custom.contains("LiquidOpticalSamplingPolicy.soften("))
+        assertTrue(custom.contains("opticalBitmap = optical"))
+        val frosted = source("material/FrostedMaterialRenderer")
+            .after("private object ModernBackdropFactory").before("private class ModernSurfaceDrawable")
+        assertTrue(frosted.contains("ModernBackdropBlur.blur("))
+    }
+
+    @Test
+    fun `shared bitmap publication and disposal preserve ownership guards`() {
+        val liquid = source("liquid/LiquidBackdropSource")
+        val publish = liquid.after("fun markPublished()").before("fun discardUnpublished()")
+        assertTrue(publish.contains("if (opticalBitmap !== bitmap) opticalBitmap.prepareToDraw()"))
+        val discard = liquid.after("fun discardUnpublished()").before("fun drawSuppressionBackdropMasked(")
+        assertTrue(discard.contains("check(!published && !isRealtime)"))
+        assertTrue(discard.contains("if (opticalBitmap !== bitmap && !opticalBitmap.isRecycled) opticalBitmap.recycle()"))
+        assertTrue(discard.contains("if (!bitmap.isRecycled) bitmap.recycle()"))
+        val close = liquid.after("override fun close()").before("companion object")
+        assertFalse(close.contains(".recycle()"))
     }
 
     @Test
