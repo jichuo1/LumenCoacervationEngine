@@ -27,5 +27,8 @@ class LiquidMotionMappingContractTest {
         val settle = renderer.after("private fun onScrollSettleCheck(").before("private fun clearScrollSuppression(")
         assertTrue(settle.contains("stretchOpticalIntensity > 1f"))
         assertTrue(settle.contains("LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES"))
+        val viewport = SourceContract.read("liquid/LiquidStretchViewport.kt")
+        assertTrue(viewport.contains("if (nativeStretch) super.draw(canvas)"))
+        assertTrue(stretch.contains("boundRoot?.rootView?.let(::flushSurfaceRefresh)"))
     }
 }

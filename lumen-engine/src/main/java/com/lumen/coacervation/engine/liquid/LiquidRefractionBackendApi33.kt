@@ -94,7 +94,8 @@ internal class LiquidRefractionBackendApi33(
         stretchDirY: Float,
         contentAlpha: Float,
         motionLite: Boolean,
-        localToBackdrop: Matrix?
+        localToBackdrop: Matrix?,
+        stretchSampling: FloatArray?
     ) {
         checkNotNull(source) { "Liquid refraction backdrop is not bound" }
         shader.setFloatUniform("size", bounds.width().toFloat(), bounds.height().toFloat())
@@ -108,6 +109,8 @@ internal class LiquidRefractionBackendApi33(
             shader.setFloatUniform("backdropMapY", samplingValues[3], samplingValues[4], samplingValues[5])
             shader.setFloatUniform("backdropMapW", samplingValues[6], samplingValues[7], samplingValues[8])
         }
+        shader.setFloatUniform("stretchSampling", stretchSampling?.get(0) ?: 0f,
+            stretchSampling?.get(1) ?: 0f, stretchSampling?.get(2) ?: 0f)
         shader.setFloatUniform("cornerRadii", radiusPx, radiusPx, radiusPx, radiusPx)
         shader.setFloatUniform("opticalIntensity", opticalIntensity.coerceIn(1f, 1.85f))
         shader.setFloatUniform("stretchDirY", stretchDirY.coerceIn(-1f, 1f))
@@ -173,6 +176,7 @@ internal fun RuntimeShader.applyLiquidOpticalUniforms(parameters: LiquidParamete
     setFloatUniform("dither", parameters.ditherAmplitude)
     setFloatUniform("nodeInput", 0f)
     setFloatUniform("backdropMapped", 0f)
+    setFloatUniform("stretchSampling", 0f, 0f, 0f)
 }
 
 internal const val ROUNDED_RECT_REFRACTION_SHADER = """
@@ -189,6 +193,8 @@ uniform float backdropMapped;
 uniform float3 backdropMapX;
 uniform float3 backdropMapY;
 uniform float3 backdropMapW;
+// Viewport root-space top, height, signed HWUI stretch intensity.
+uniform float3 stretchSampling;
 uniform float4 cornerRadii;
 uniform float refractionHeight;
 uniform float refractionAmount;
@@ -270,10 +276,25 @@ half4 saturateColor(half4 color, float amount) {
 }
 
 float2 backdropPoint(float2 canvasCoord) {
-    if (backdropMapped < 0.5) return canvasCoord + offset + backdropOrigin;
-    float3 p = float3(canvasCoord, 1.0);
-    float w = dot(backdropMapW, p);
-    return float2(dot(backdropMapX, p), dot(backdropMapY, p)) / w;
+    float2 root = canvasCoord + offset + backdropOrigin;
+    if (backdropMapped > 0.5) {
+        float3 p = float3(canvasCoord, 1.0);
+        float w = dot(backdropMapW, p);
+        root = float2(dot(backdropMapX, p), dot(backdropMapY, p)) / w;
+    }
+    // HWUI warps the foreground after this shader. Look up the eventual output position
+    // so that the picture in the moving glass still matches the stationary background.
+    if (stretchSampling.y > 0.0 && abs(stretchSampling.z) > 0.0) {
+        float q = (root.y - stretchSampling.x) / stretchSampling.y;
+        bool bottom = stretchSampling.z < 0.0;
+        if (bottom) q = 1.0 - q;
+        float s = abs(stretchSampling.z);
+        float k = 1.0 + s;
+        q = k * k * q / (1.0 + 0.3 * s + 0.7 * s * k * q);
+        if (bottom) q = 1.0 - q;
+        root.y = stretchSampling.x + q * stretchSampling.y;
+    }
+    return root;
 }
 
 half4 sampleContent(float2 canvasCoord) {

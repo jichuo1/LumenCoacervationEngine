@@ -12,11 +12,14 @@ import android.graphics.RenderNode
 import android.hardware.HardwareBuffer
 import android.media.ImageReader
 import android.os.SystemClock
+import android.widget.EdgeEffect
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
+import androidx.test.platform.app.InstrumentationRegistry
 import com.lumen.coacervation.engine.liquid.LiquidBackdropSource
 import com.lumen.coacervation.engine.liquid.LiquidBlurBackendApi31
 import com.lumen.coacervation.engine.liquid.LiquidBackdropSizingPolicy
+import com.lumen.coacervation.engine.liquid.LiquidStretchSamplingPolicy
 import com.lumen.coacervation.engine.liquid.LiquidRefractionBackendApi33
 import com.lumen.coacervation.engine.liquid.LiquidTokenResolver
 import com.lumen.coacervation.engine.liquid.LiquidVisualTuningPolicy
@@ -159,5 +162,37 @@ class LiquidSurfaceMappingInstrumentedTest {
                 } finally { refracted.recycle(); fallback.recycle() }
             } finally { driver.close(); source.close() }
         }
+    }
+
+    @Test fun nativeEdgeEffectKeepsTheForegroundPictureAlignedWithTheStationaryRoot() {
+        val source = source()
+        val driver = LiquidRefractionBackendApi33(parameters, 1f)
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        try {
+            driver.bindBackdrop(source)
+            for (bottom in listOf(false, true)) {
+                val foreground = RenderNode("native-stretch-foreground").apply { setPosition(0, 0, 800, 600) }
+                val effect = EdgeEffect(context).apply { setSize(800, 600); onPull(1f, .5f) }
+                try {
+                    val recording = foreground.beginRecording(800, 600)
+                    try {
+                        if (bottom) {
+                            val saved = recording.save()
+                            recording.rotate(180f, 400f, 300f)
+                            effect.draw(recording)
+                            recording.restoreToCount(saved)
+                        } else effect.draw(recording)
+                        val intensity = LiquidStretchSamplingPolicy.intensity(effect.distance) * if (bottom) -1f else 1f
+                        driver.drawBackdrop(recording, Rect(100, 100, 700, 500), 0f, 0, 0,
+                            1.85f, if (bottom) 1f else -1f, 1f, true, null,
+                            floatArrayOf(0f, 600f, intensity))
+                    } finally { foreground.endRecording() }
+                    assertGradient(render { canvas ->
+                        source.drawRoot(canvas, Rect(0, 0, 800, 600), 255)
+                        canvas.drawRenderNode(foreground)
+                    }, listOf(200, 400, 600), listOf(170, 250, 350, 440))
+                } finally { effect.finish(); foreground.discardDisplayList() }
+            }
+        } finally { driver.close(); source.close() }
     }
 }

@@ -9,3 +9,9 @@ copyright holder, who relicenses this extracted engine under the
 Apache License, Version 2.0. The Bilibili Innocent Lab project itself,
 including its own copy of the engine, remains under its original license
 (GNU General Public License v3.0).
+
+Native overscroll sampling compensation derives from Android Open Source Project
+frameworks/base core/java/android/widget/EdgeEffect.java and
+libs/hwui/effects/StretchEffect.cpp (Copyright 2010, 2021 The Android Open Source Project),
+under the Apache License, Version 2.0.
+https://android.googlesource.com/platform/frameworks/base/

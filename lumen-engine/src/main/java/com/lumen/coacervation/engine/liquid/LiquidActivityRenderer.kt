@@ -208,6 +208,10 @@ internal class LiquidActivityRenderer(
     private val surfaceCoordinates = ViewSamplingMatrix()
     private val surfaceToBackdrop = Matrix()
     private val refreshSurfaceTransform = FloatArray(9)
+    private val stretchToBackdrop = Matrix()
+    private val stretchTransformValues = FloatArray(9)
+    private val stretchSampling = FloatArray(3)
+    private var stretchSamplingDistance = 0f
     /** 窗口底图换代计数，见 [windowBackdropGeneration]。 */
     private var backdropGeneration = 0L
 
@@ -613,7 +617,8 @@ internal class LiquidActivityRenderer(
         onStretchDistanceChanged(distance, edge)
 
     private fun onStretchDistanceChanged(distance: Float, edge: LiquidStretchEdge) {
-        if (closed || effectProfile != LiquidEffectProfile.REALTIME_CAPTURE) return
+        if (closed) return
+        val samplingChanged = abs(distance - stretchSamplingDistance) >= .0005f || distance == 0f && stretchSamplingDistance != 0f
         val next = LiquidRealtimeCapturePolicy.stretchOpticalIntensity(distance)
         val nextDir = when (edge) {
             LiquidStretchEdge.TOP -> -1f
@@ -622,7 +627,8 @@ internal class LiquidActivityRenderer(
         }
         // epsilon 挡住回弹尾段的亚感知步进（全程范围 0.85，0.004 ≈ 0.5%）；
         // 归零那帧 edge 变为 NONE、nextDir 必变，终态永远会发布，不会卡在半亮状态。
-        if (abs(next - stretchOpticalIntensity) < 0.004f && nextDir == stretchEdgeDirY) return
+        if (abs(next - stretchOpticalIntensity) < 0.004f && nextDir == stretchEdgeDirY && !samplingChanged) return
+        stretchSamplingDistance = distance
         stretchOpticalIntensity = next
         stretchEdgeDirY = nextDir
         // EdgeEffect 在 RenderThread 改变整棵前景节点，View 的屏幕原点不会跟着变。
@@ -634,6 +640,9 @@ internal class LiquidActivityRenderer(
         // 位移时间戳照常更新：若页面滑动已使抑制生效，回弹位移会顺延静默窗口。
         lastContentShiftNanos = System.nanoTime()
         invalidateRegisteredSurfaces()
+        // EdgeEffect has already advanced, while children have not been drawn yet.
+        // Flush this content batch now so every glass records the same native stretch frame.
+        boundRoot?.rootView?.let(::flushSurfaceRefresh)
     }
 
     @MainThread
@@ -737,6 +746,22 @@ internal class LiquidActivityRenderer(
         val screenTransform = host?.let { surfaceViews[it]?.takeIf { footprint -> footprint.hasTransform }?.screenTransform }
         val samplingMatrix = if (screenTransform != null && root != null &&
             surfaceCoordinates.sourceToTarget(screenTransform, root, surfaceToBackdrop)) surfaceToBackdrop else null
+        stretchSampling.fill(0f)
+        var stretchAncestor = host?.parent as? View
+        while (stretchAncestor != null && stretchAncestor !is LiquidStretchViewport) {
+            stretchAncestor = stretchAncestor.parent as? View
+        }
+        if (root != null && stretchAncestor is LiquidStretchViewport && stretchAncestor.samplingOverscroll != 0f &&
+            surfaceCoordinates.sourceToTarget(stretchAncestor, root, stretchToBackdrop)) {
+            stretchToBackdrop.getValues(stretchTransformValues)
+            // The vertical viewport must stay axis-aligned; unusual host transforms fail open.
+            if (stretchTransformValues[1] == 0f && stretchTransformValues[3] == 0f &&
+                stretchTransformValues[6] == 0f && stretchTransformValues[7] == 0f && stretchTransformValues[4] > 0f) {
+                stretchSampling[0] = stretchTransformValues[5]
+                stretchSampling[1] = stretchAncestor.height * stretchTransformValues[4]
+                stretchSampling[2] = stretchAncestor.samplingOverscroll
+            }
+        }
         var foreignFellBack = false
         val chrome = if (role == SurfaceRole.FLOATING && host != null && !foreignWindow) chromeBackdrops[host] else null
         chrome?.drewByNode = false
@@ -824,7 +849,8 @@ internal class LiquidActivityRenderer(
                             // latency` 占 73% 帧，而 UI 线程只占 5.4ms，其余全在 GPU。
                             motionLite = (realtimeSamplingSuppressed && !suppressionFromMorphOnly) ||
                                 stretchOpticalIntensity > 1f,
-                            localToBackdrop = samplingMatrix
+                            localToBackdrop = samplingMatrix,
+                            stretchSampling = stretchSampling
                         )
                     }
                     chrome?.drewByNode = drewChrome

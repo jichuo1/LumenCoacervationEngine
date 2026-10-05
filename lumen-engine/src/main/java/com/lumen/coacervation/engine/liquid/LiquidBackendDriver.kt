@@ -37,7 +37,8 @@ internal interface LiquidBackendDriver : AutoCloseable {
         stretchDirY: Float,
         contentAlpha: Float,
         motionLite: Boolean,
-        localToBackdrop: Matrix? = null
+        localToBackdrop: Matrix? = null,
+        stretchSampling: FloatArray? = null
     )
 }
 
@@ -58,7 +59,8 @@ internal class LiquidTranslucentBackend : LiquidBackendDriver {
         stretchDirY: Float,
         contentAlpha: Float,
         motionLite: Boolean,
-        localToBackdrop: Matrix?
+        localToBackdrop: Matrix?,
+        stretchSampling: FloatArray?
     ) = Unit
 
     override fun close() = Unit

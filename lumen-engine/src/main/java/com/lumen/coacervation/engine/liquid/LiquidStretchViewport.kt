@@ -255,6 +255,9 @@ internal class LiquidStretchViewport private constructor(
 
     /** 上一次发布的主导边；迟滞判定要拿它当基准，否则两条回弹会反复夺权。 */
     private var publishedEdge = LiquidStretchEdge.NONE
+    var samplingOverscroll = 0f
+        private set
+    private var samplingBeforeContent = false
 
     /**
      * 每帧的强度/方向发布点。`draw()` 前后各调一次：前者反映本帧输入累积的形变，
@@ -263,6 +266,13 @@ internal class LiquidStretchViewport private constructor(
     private fun publishStretch(topDistance: Float, bottomDistance: Float) {
         val edge = LiquidStretchOverscrollPolicy.dominantEdge(topDistance, bottomDistance, publishedEdge)
         publishedEdge = edge
+        if (samplingBeforeContent) {
+            samplingOverscroll = when (edge) {
+                LiquidStretchEdge.TOP -> LiquidStretchSamplingPolicy.intensity(topDistance)
+                LiquidStretchEdge.BOTTOM -> -LiquidStretchSamplingPolicy.intensity(bottomDistance)
+                LiquidStretchEdge.NONE -> 0f
+            }
+        }
         onStretchDistance(maxOf(topDistance, bottomDistance), edge)
     }
 
@@ -275,7 +285,11 @@ internal class LiquidStretchViewport private constructor(
         var topDistance = EdgeEffectCompat.getDistance(topEffect)
         var bottomDistance = EdgeEffectCompat.getDistance(bottomEffect)
         publishStretch(topDistance, bottomDistance)
-        super.draw(canvas)
+        // Hardware stretch updates the whole RecordingCanvas node, rather than painting on top.
+        // Advance it before recording children so their inverse sampling uses this exact frame.
+        val nativeStretch = Build.VERSION.SDK_INT >= 31 && canvas.isHardwareAccelerated
+        samplingBeforeContent = nativeStretch
+        if (!nativeStretch) super.draw(canvas)
         var continueDrawing = false
         // 实时取样（LiveBackdropSampler）会把内容根重绘进软件 Canvas；Android 12+ 的
         // stretch EdgeEffect 在非 RecordingCanvas 上 draw() 会直接清零并放弃效果，
@@ -296,6 +310,8 @@ internal class LiquidStretchViewport private constructor(
         topDistance = EdgeEffectCompat.getDistance(topEffect)
         bottomDistance = EdgeEffectCompat.getDistance(bottomEffect)
         publishStretch(topDistance, bottomDistance)
+        if (nativeStretch) super.draw(canvas)
+        samplingBeforeContent = false
         if (continueDrawing) postInvalidateOnAnimation()
     }
 
@@ -514,6 +530,7 @@ internal class LiquidStretchViewport private constructor(
         nonTouchAdjusted = false
         // 迟滞基准一并复位：下一轮回弹要按"无状态"重新选边，不能沿用上一轮的主导边。
         publishedEdge = LiquidStretchEdge.NONE
+        samplingOverscroll = 0f
         onStretchDistance(0f, LiquidStretchEdge.NONE)
         if (hadEffect) invalidate()
     }
