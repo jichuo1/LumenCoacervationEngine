@@ -284,12 +284,14 @@ internal class LiquidStretchViewport private constructor(
         }
         var topDistance = EdgeEffectCompat.getDistance(topEffect)
         var bottomDistance = EdgeEffectCompat.getDistance(bottomEffect)
-        publishStretch(topDistance, bottomDistance)
         // Hardware stretch updates the whole RecordingCanvas node, rather than painting on top.
         // Advance it before recording children so their inverse sampling uses this exact frame.
         val nativeStretch = Build.VERSION.SDK_INT >= 31 && canvas.isHardwareAccelerated
         samplingBeforeContent = nativeStretch
-        if (!nativeStretch) super.draw(canvas)
+        if (!nativeStretch) {
+            publishStretch(topDistance, bottomDistance)
+            super.draw(canvas)
+        }
         var continueDrawing = false
         // 实时取样（LiveBackdropSampler）会把内容根重绘进软件 Canvas；Android 12+ 的
         // stretch EdgeEffect 在非 RecordingCanvas 上 draw() 会直接清零并放弃效果，

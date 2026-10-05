@@ -101,10 +101,14 @@ internal class LiquidRefractionBackendApi33(
         shader.setFloatUniform("size", bounds.width().toFloat(), bounds.height().toFloat())
         shader.setFloatUniform("offset", -bounds.left.toFloat(), -bounds.top.toFloat())
         // offset 只把形状归零；纹理仍按承载 View 的完整局部坐标取样。
-        shader.setFloatUniform("backdropOrigin", (viewX + bounds.left).toFloat(), (viewY + bounds.top).toFloat())
-        shader.setFloatUniform("backdropMapped", if (localToBackdrop == null) 0f else 1f)
-        if (localToBackdrop != null) {
-            localToBackdrop.getValues(samplingValues)
+        if (localToBackdrop != null) localToBackdrop.getValues(samplingValues)
+        val mapped = localToBackdrop != null && !LiquidRefreshVisibilityPolicy.isTranslationOnly(samplingValues)
+        // 常见的静止、滚动和面板平移只需相加，仍保留小数位；避免逐像素做矩阵乘法和除法。
+        val originX = if (localToBackdrop != null && !mapped) samplingValues[2] else viewX.toFloat()
+        val originY = if (localToBackdrop != null && !mapped) samplingValues[5] else viewY.toFloat()
+        shader.setFloatUniform("backdropOrigin", originX + bounds.left, originY + bounds.top)
+        shader.setFloatUniform("backdropMapped", if (mapped) 1f else 0f)
+        if (mapped) {
             shader.setFloatUniform("backdropMapX", samplingValues[0], samplingValues[1], samplingValues[2])
             shader.setFloatUniform("backdropMapY", samplingValues[3], samplingValues[4], samplingValues[5])
             shader.setFloatUniform("backdropMapW", samplingValues[6], samplingValues[7], samplingValues[8])
