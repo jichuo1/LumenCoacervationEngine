@@ -136,6 +136,7 @@
 | 声明 | 说明 |
 |---|---|
 | `object LiquidBackgroundStore` | `read(context): LiquidBackgroundReadResult`（主线程可用）、`importFromUri(context, uri): LiquidBackgroundImportResult`（后台线程）、`restoreAutomatic(context): Boolean`（应当在后台线程） |
+| `LiquidBackgroundStore.decodePreview(context, config, viewWidth, viewHeight, palette): Bitmap?`（未发布，1.1.0） | 后台线程 API：按控件像素解码自定义背景，超过 2 MiB 等比缩小；自动模式、无效尺寸或解码失败返回 null。位图所有权交给宿主，接入见 §9.1 |
 | `LiquidBackgroundReadResult(config, issue, assetPresent)` | |
 | `LiquidBackgroundConfig(mode, assetId, assetSha256, normalizedWidth, normalizedHeight, displayName)`、`LiquidBackgroundConfig.AUTOMATIC` | |
 | `enum LiquidBackgroundMode { AUTOMATIC, CUSTOM }` | |

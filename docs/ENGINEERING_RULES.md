@@ -81,7 +81,7 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
 
 ## 4. 线程
 
-- 引擎的公开 API 全部标注 `@MainThread`，只能在主线程调用。
+- 渲染与交互的公开 API 标注 `@MainThread`，只能在主线程调用。背景导入、恢复与预览解码属于明确的后台 API，按 `API.md` 的线程要求调用；`decodePreview` 标注 `@WorkerThread` 并拒绝主线程调用。
 - 后台工作使用单线程的守护 executor 或 `HandlerThread`，线程名以 `Lumen-` 开头。
   - 线程在会话 `close()` 时关闭；悬浮栏探针的线程在 `dispose()` 时关闭。
   - **不得**使用进程级共享线程池。
@@ -149,9 +149,9 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
 修改后在工程根目录运行：
 
 ```bash
-./gradlew assembleDebug testDebugUnitTest lintDebug --console=plain --no-daemon
+./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug --console=plain --no-daemon
 ```
 
-- 三个任务都必须通过，Lint 必须 0 错误。
+- 四个任务都必须通过，Lint 必须 0 错误。Demo 使用 release 测试变体，宿主接入契约通过 `:sample:testReleaseUnitTest` 验证。
 - 在 Windows 上一律加 `--no-daemon`：常驻的 daemon 可能产出陈旧的 APK，而安装命令照样返回成功。
 - 涉及平台类型的改动，再加跑 §2.4 的审计。

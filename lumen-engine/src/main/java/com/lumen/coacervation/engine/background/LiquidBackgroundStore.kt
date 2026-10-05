@@ -12,8 +12,12 @@ import android.graphics.Paint
 import android.media.ExifInterface
 import android.net.Uri
 import android.os.Build
+import android.os.Looper
 import android.provider.OpenableColumns
 import androidx.core.graphics.ColorUtils
+import androidx.annotation.WorkerThread
+import com.lumen.coacervation.engine.liquid.LiquidBackdropSizingPolicy
+import com.lumen.coacervation.engine.model.LumenPalette
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -165,6 +169,29 @@ public object LiquidBackgroundStore {
         if (!writeConfig(appContext, LiquidBackgroundConfig.AUTOMATIC)) return@synchronized false
         cleanupUnreferencedAssets(appContext, keepAssetId = null)
         true
+    }
+
+    /**
+     * 解码自定义图片的控件预览。尺寸按控件像素，单张 ARGB_8888 不超过 2 MiB，且不放大小图框。
+     * 自动模式、无效尺寸、丢失或无法读取的资产返回 null。返回位图由宿主接管：未显示的迟到结果
+     * 可以 recycle，已经显示的位图应随 ImageView/Drawable 引用释放，不能提前回收。
+     * 本方法不读取 View、主题或宿主设置；布局时机、任务取消和结果交付由宿主负责。
+     */
+    @WorkerThread
+    fun decodePreview(
+        context: Context,
+        config: LiquidBackgroundConfig,
+        viewWidth: Int,
+        viewHeight: Int,
+        palette: LumenPalette
+    ): Bitmap? {
+        check(Looper.myLooper() !== Looper.getMainLooper()) { "Background preview must be decoded off the main thread" }
+        if (config.mode != LiquidBackgroundMode.CUSTOM || viewWidth <= 0 || viewHeight <= 0) return null
+        val target = LiquidBackdropSizingPolicy.resolvePreview(viewWidth, viewHeight)
+        return runCatching {
+            decodeBackdrop(context, config, target.width, target.height, palette.background,
+                ColorUtils.calculateLuminance(palette.surface) < 0.5)
+        }.getOrNull()
     }
 
     /** 后台线程调用；返回的 Bitmap 已是最终 backdrop 尺寸并由调用方接管。 */

@@ -240,12 +240,12 @@ row.setOnClickListener {
 ```bash
 git clone https://github.com/jichuo1/LumenCoacervationEngine.git
 cd LumenCoacervationEngine
-./gradlew assembleDebug testDebugUnitTest lintDebug --console=plain --no-daemon
+./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug --console=plain --no-daemon
 ```
 
 | 产物 | 命令 / 入口 |
 |:---|:---|
-| Debug 构建 + 单测 + Lint | `./gradlew assembleDebug testDebugUnitTest lintDebug` |
+| Debug 构建 + 引擎/Demo 单测 + Lint | `./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug` |
 | 演示包 | `./gradlew :sample:assembleRelease` → `sample/build/outputs/apk/release/` |
 | 演示包冒烟测试（需连接设备或模拟器） | `./gradlew :sample:connectedReleaseAndroidTest` |
 | 本地 maven 产物 | `./gradlew publishAllPublicationsToProjectLocalRepository` → `build/repo` |

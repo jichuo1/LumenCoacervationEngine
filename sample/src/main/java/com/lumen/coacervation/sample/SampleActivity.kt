@@ -65,6 +65,7 @@ class SampleActivity : AppCompatActivity() {
     internal val tuning by lazy(LazyThreadSafetyMode.NONE) { SampleTuningStore(this) }
     // 宿主自己的外观设置：强调色、弹窗背景模糊（深浅色由 SampleApplication 在启动时应用）。
     internal val settings by lazy(LazyThreadSafetyMode.NONE) { SampleSettingsStore(this) }
+    internal var backgroundPreviewLoader: SampleBackgroundPreviewLoader? = null
     // 自定义背景的图片选择：结果交给后台线程导入（LiquidBackgroundStore）。
     internal val backgroundPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importBackgroundImage(uri)
@@ -427,6 +428,8 @@ class SampleActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        backgroundPreviewLoader?.close()
+        backgroundPreviewLoader = null
         chrome?.dispose()
         chrome = null
         textChain?.dispose()

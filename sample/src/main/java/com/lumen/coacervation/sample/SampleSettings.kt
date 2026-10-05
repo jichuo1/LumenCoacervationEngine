@@ -6,6 +6,7 @@ import android.net.Uri
 import android.os.Build
 import android.view.Gravity
 import android.widget.LinearLayout
+import android.widget.ImageView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatDelegate
@@ -128,6 +129,17 @@ private fun SampleActivity.backgroundCard(palette: LumenPalette) = settingsCard(
     val result = LiquidBackgroundStore.read(this@backgroundCard)
     val custom = result.config.mode == LiquidBackgroundMode.CUSTOM && result.assetPresent
     addView(hint(palette, if (custom) "当前：自定义图片${result.config.displayName?.let { "（$it）" } ?: ""}" else "当前：自动生成的环境底图"))
+    if (custom) {
+        val preview = ImageView(this@backgroundCard).apply {
+            contentDescription = "自定义背景预览"
+            scaleType = ImageView.ScaleType.CENTER_CROP
+        }
+        addView(preview, LinearLayout.LayoutParams(-1, dp(150)).apply { topMargin = dp(12) })
+        val loader = backgroundPreviewLoader ?: SampleBackgroundPreviewLoader(this@backgroundCard).also {
+            backgroundPreviewLoader = it
+        }
+        loader.load(preview, result.config, palette)
+    }
     addView(hint(palette, "只在高级材质下生效：玻璃背后显示这张图。图片会被缩放并复制进应用私有目录。"))
     addView(actionRow(palette, "选择图片") { pickBackgroundImage() })
     if (custom) addView(actionRow(palette, "恢复自动底图") { restoreAutomaticBackground() })

@@ -399,6 +399,19 @@ root（bindRoot）
 - 宿主如果有"清除数据"或"恢复默认"功能，**应当**用 `selectMaterial(context, SkinId.MATERIAL_YOU)` 和 `LiquidBackgroundStore.restoreAutomatic()` 复位，**不得**直接删除引擎的文件。
 - 引擎不申请任何权限。自定义背景通过宿主传入的 `content://` Uri 读取，读取权限由宿主的选择器授予。
 
+### 9.1 自定义背景预览（未发布，1.1.0）
+
+宿主可以用 `LiquidBackgroundStore.decodePreview(context, config, viewWidth, viewHeight, palette)`
+显示导入后的图片预览。配色与尺寸均显式传入；引擎不读取 View、宿主主题或设置。
+
+- 布局完成后取得预览控件的像素宽高，再在后台线程调用；主线程调用会被拒绝。
+- 控件尺寸在 2 MiB ARGB_8888 预算内时按实际像素解码，超出后等比缩小；不改变图片导入或静态背景预算。
+- 返回 null 表示自动背景、尚未测量的尺寸或资产不可解码。失败只影响预览，不触发材质失败。
+- 宿主拥有任务和位图：替换请求、关闭页面时取消任务，交付时核对代次、Activity 和 View 的有效性。
+  未显示的迟到位图可以 `recycle()`；已显示的位图随 Drawable/display list 引用释放，不提前回收。
+- 宿主可以参照 `sample/SampleBackgroundPreviewLoader.kt`：每个 Activity 一份 worker，
+  `onDestroy` 关闭，弱引用接收者，失效结果不交付。
+
 ## 10. 验收清单
 
 宿主接入完成后，逐条确认：

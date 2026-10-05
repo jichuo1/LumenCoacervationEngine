@@ -1,4 +1,4 @@
-# 构建门禁（docs/ENGINEERING_RULES.md §11）：三个任务都必须通过，Lint 0 错误。
+# 构建门禁（docs/ENGINEERING_RULES.md §11）：四个任务都必须通过，Lint 0 错误。
 # 缺少的 SDK 平台由 AGP 按 compileSdk 自动下载（GitHub 托管机已接受 SDK 许可）。
 name: CI
 
@@ -28,7 +28,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Build, unit test, lint
-        run: ./gradlew assembleDebug testDebugUnitTest lintDebug --console=plain --no-daemon
+        run: ./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug --console=plain --no-daemon
 
       - name: Upload reports
         if: failure()
