@@ -30,6 +30,7 @@ import com.lumen.coacervation.engine.interaction.ElasticInteractionController
 import com.lumen.coacervation.engine.interaction.LumenElasticInteraction
 import com.lumen.coacervation.engine.motion.LumenEasing
 import com.lumen.coacervation.engine.motion.MorphCornerPolicy
+import com.lumen.coacervation.engine.motion.MorphCornerMode
 import com.lumen.coacervation.engine.motion.declaredCornerRadius
 import com.lumen.coacervation.engine.motion.MotionRect
 import java.util.WeakHashMap
@@ -116,6 +117,9 @@ public class LumenModalPresenter @JvmOverloads constructor(
     private val styleContent: (View) -> Unit = {}
 ) {
     private val density get() = activity.resources.displayMetrics.density
+
+    /** 后续锚点面板的折叠端规则；呈现时固定，不改变已经显示的面板。 */
+    public var anchorCornerMode: MorphCornerMode = MorphCornerMode.DECLARED
 
     /** 当前最上层的弹窗。覆盖式子面板关闭后交还给被盖住的父面板。 */
     public var activeDialog: Dialog? = null
@@ -300,7 +304,8 @@ public class LumenModalPresenter @JvmOverloads constructor(
         layer: IconAnchoredMotionLayer,
         card: View,
         anchorOnScreen: MotionRect,
-        anchorDeclaredRadius: Float
+        anchorDeclaredRadius: Float,
+        cornerMode: MorphCornerMode
     ): IconAnchoredMotionGeometry? {
         if (!layer.isAttachedToWindow || layer.width <= 0 || layer.height <= 0) return null
         if (card.width <= 0 || card.height <= 0) return null
@@ -318,7 +323,7 @@ public class LumenModalPresenter @JvmOverloads constructor(
         return IconAnchoredMotionGeometry(
             collapsedBounds = collapsed,
             expandedBounds = expanded,
-            collapsedRadiusPx = MorphCornerPolicy.collapsedRadius(anchorDeclaredRadius, collapsed.width, collapsed.height),
+            collapsedRadiusPx = MorphCornerPolicy.collapsedRadius(anchorDeclaredRadius, collapsed.width, collapsed.height, cornerMode),
             expandedRadiusPx = style.cornerRadiusDp * density,
             contentTravelCapPx = style.contentTravelCapDp * density
         ).takeIf { it.isUsable }
@@ -358,6 +363,7 @@ public class LumenModalPresenter @JvmOverloads constructor(
         titleView: TextView? = null
     ) {
         elastic?.clear()
+        val cornerMode = anchorCornerMode
         container.tag = ElasticInteractionController.CONTAINER_TAG
         // 子面板要盖在父面板上，父面板就不能被硬关；关闭时再把它还回 activeDialog。
         val cover = coverBounds?.takeIf { it.isValid && anchorStyle == ModalAnchorStyle.CONTAINER }
@@ -616,7 +622,7 @@ public class LumenModalPresenter @JvmOverloads constructor(
                     resolveAnchorOnScreen()?.let { currentAnchor ->
                         val liveAnchor = anchor?.takeIf { it.isAttachedToWindow }
                         resolveIconAnchoredGeometry(morphLayer, container, currentAnchor,
-                            liveAnchor?.declaredCornerRadius() ?: anchorCornerRadiusPx)
+                            liveAnchor?.declaredCornerRadius() ?: anchorCornerRadiusPx, cornerMode)
                     }
                 },
                 titleMotion = titleMotion,

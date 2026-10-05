@@ -38,6 +38,14 @@ public class LumenElasticInteraction(
     private val dialogInteractions = linkedMapOf<Window, DialogInteraction>()
     private var disposed = false
 
+    /** Activity 和其弹窗在下次按下时使用的行程规则，默认避让相邻控件。 */
+    public var travelPolicy: ElasticTravelPolicy = ElasticTravelPolicy.AVOID_NEIGHBORS
+        set(value) {
+            field = value
+            windowController?.travelPolicy = value
+            dialogInteractions.values.forEach { it.controller.travelPolicy = value }
+        }
+
     /**
      * 包住 Activity 原来的分发入口。原分发只能经 [superDispatch] 传入一次；不要再把控制器装成 OnTouchListener。
      * 普通按下/移动/抬起保持原事件流；判定为"按住后拖动"时向原分发发一次 CANCEL，再消费剩余事件。
@@ -50,7 +58,10 @@ public class LumenElasticInteraction(
             isExcluded = isExcluded,
             highlightColor = lumen.palette.primary,
             effectTuning = effectTuning
-        ).also { windowController = it }
+        ).also {
+            it.travelPolicy = travelPolicy
+            windowController = it
+        }
         return controller.dispatch(event, superDispatch)
     }
 
@@ -73,7 +84,7 @@ public class LumenElasticInteraction(
             notifyPositionChanged = { lumen.notifyPositionChanged() },
             isExcluded = isExcluded,
             highlightColor = lumen.palette.primary,
-            effectTuning = effectTuning)
+            effectTuning = effectTuning).also { it.travelPolicy = travelPolicy }
         val callback = object : Window.Callback by original {
             override fun dispatchTouchEvent(event: MotionEvent): Boolean =
                 controller.dispatch(event) { forwarded -> original.dispatchTouchEvent(forwarded) }

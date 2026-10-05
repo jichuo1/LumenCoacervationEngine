@@ -25,7 +25,8 @@ class LayoutAdaptationContractTest {
 
     @Test fun morphsStartFromTheSourcesOwnCorner() {
         val presenter = MotionSource.file("LumenModalPresenter")
-        assertTrue(presenter.contains("MorphCornerPolicy.collapsedRadius(anchorDeclaredRadius, collapsed.width, collapsed.height)"))
+        assertTrue(presenter.contains("MorphCornerPolicy.collapsedRadius(anchorDeclaredRadius, collapsed.width, collapsed.height, cornerMode)"))
+        assertTrue(presenter.contains("anchorCornerMode: MorphCornerMode = MorphCornerMode.DECLARED"))
         assertTrue(presenter.contains("liveAnchor?.declaredCornerRadius() ?: anchorCornerRadiusPx"))
         val origin = MotionSource.file("ContainerMorphOrigin")
         assertTrue(origin.contains("entryCornerRadiusPx = entry.declaredCornerRadius()"))

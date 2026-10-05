@@ -99,9 +99,11 @@ internal object ElasticMotionGroupPolicy {
      * 朝同层兄弟：不越过兄弟，并留出 [marginPx]（拉伸会让形变组再长一点）——网格、瀑布流、横向轮播里
      * 卡片之间只隔 8～12dp，按父容器算行程会让卡片钻到邻居底下，半透明玻璃叠在一起。
      */
-    fun travelBound(parentGap: Float, neighborGap: Float, minTravel: Float, marginPx: Float): Float {
+    fun travelBound(parentGap: Float, neighborGap: Float, minTravel: Float, marginPx: Float,
+                    policy: ElasticTravelPolicy = ElasticTravelPolicy.AVOID_NEIGHBORS): Float {
         val budget = if (minTravel.isFinite()) minTravel.coerceAtLeast(0f) else 0f
         val parent = maxOf(if (parentGap.isFinite()) parentGap.coerceAtLeast(0f) else 0f, budget)
+        if (policy == ElasticTravelPolicy.PARENT_BOUNDS) return parent
         if (neighborGap.isNaN() || neighborGap == Float.POSITIVE_INFINITY) return parent
         val margin = if (marginPx.isFinite()) marginPx.coerceAtLeast(0f) else 0f
         return minOf(parent, (neighborGap - margin).coerceAtLeast(0f))

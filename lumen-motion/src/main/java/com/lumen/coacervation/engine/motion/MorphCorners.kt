@@ -11,15 +11,27 @@ import android.view.View
  * 行收成胶囊）。换成网格方块、大卡片这类来源时，这条规则会让形变从一个圆开始长出来，与卡片本身的圆角对不上。
  * 现在优先用来源**自己声明的圆角**（背景或前景报告的 outline 半径），报不出来才退回短边一半。
  */
+public enum class MorphCornerMode {
+    /** 默认：优先使用来源声明的圆角。 */
+    DECLARED,
+    /** 从短边一半的胶囊/圆形起点展开。 */
+    CAPSULE
+}
+
 public object MorphCornerPolicy {
     /**
      * @param declared 来源声明的圆角（px），NaN 表示没有声明。
      * @return 折叠端圆角，不超过短边一半（再大就不是圆角矩形了）。
      */
     @JvmStatic
-    public fun collapsedRadius(declared: Float, width: Float, height: Float): Float {
+    public fun collapsedRadius(declared: Float, width: Float, height: Float): Float =
+        collapsedRadius(declared, width, height, MorphCornerMode.DECLARED)
+
+    @JvmStatic
+    public fun collapsedRadius(declared: Float, width: Float, height: Float, mode: MorphCornerMode): Float {
         if (!width.isFinite() || !height.isFinite() || width <= 0f || height <= 0f) return 0f
         val half = minOf(width, height) / 2f
+        if (mode == MorphCornerMode.CAPSULE) return half
         return if (declared.isFinite() && declared >= 0f) minOf(declared, half) else half
     }
 }

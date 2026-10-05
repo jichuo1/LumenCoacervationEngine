@@ -160,6 +160,7 @@
 | `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning })` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取 | §12、§2.5 |
 | `ElasticInteractionController.EXCLUDED_TAG` / `CONTAINER_TAG` | 不参与弹性 / 只承载、自己不形变 | §12.1 |
 | `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT })` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0 | §12 |
+| `ElasticTravelPolicy { AVOID_NEIGHBORS, PARENT_BOUNDS }`；`LumenElasticInteraction.travelPolicy` / `ElasticInteractionController.travelPolicy`（未发布，1.1.0） | 默认避让相邻控件；父容器模式保留原列表交叠行程。下次按下时生效，已开始的拖动/回弹不改变；Activity 封装同时传给其弹窗 | §14.7 |
 
 ### 11.2 可打断动画内核（`com.lumen.coacervation.engine.motion`）
 
@@ -170,6 +171,7 @@
 | `InterruptibleMotionPolicy` / `InterruptibleMotionPhase` | `canNavigate`、`preserveFrame`、`remainingDuration`；阶段枚举 | §13.0 |
 | `MotionRect(left, top, right, bottom)` | 与 Android 无关的矩形（屏幕或窗口坐标） | §13 |
 | `MorphCornerPolicy.collapsedRadius(declared, width, height)` | 形变起点圆角：来源声明的圆角（≤ 短边一半），没有声明取短边一半 | §14.2 |
+| `MorphCornerMode { DECLARED, CAPSULE }`；`MorphCornerPolicy.collapsedRadius(declared, width, height, mode)`；`LumenModalPresenter.anchorCornerMode`（未发布，1.1.0） | 默认取来源声明圆角；CAPSULE 保留短边一半的起点。呈现器每次 present 固定规则，不改变已显示面板；原三参数方法和构造签名保留 | §14.7 |
 | `LumenEasing` | `emphasizedDecelerate()`、`emphasizedAccelerate()`、`standard()`、`secondaryExpand()`、`secondaryCollapse()` | §13.9 |
 | `MicroMotion` | `swapText(view, text, restAlpha = 1f)`、`showBadge(v, growFromEnd = false)`、`hideBadge(v)`、`setVisible(parent, child, visible, animate = true)`、`revealHint(root, hint, show, announcement = null)` | §13.9 |
 

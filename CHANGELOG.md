@@ -8,6 +8,7 @@
 
 ### 新增
 
+- **来源交互效果的显式保留**：新增 `ElasticTravelPolicy.PARENT_BOUNDS` 与 `MorphCornerMode.CAPSULE`，供宿主保持原列表交叠行程和胶囊形变起点。默认仍避让兄弟/使用来源声明圆角；规则按手势或面板固定，构造签名及三参数圆角方法保留。
 - **尺寸受限的背景预览**：新增后台 API `LiquidBackgroundStore.decodePreview(...)`，接收宿主的控件像素尺寸与配色，单张位图限于 2 MiB。Demo 设置页展示布局后解码、代次校验和 Activity 所有的任务清理。
 - **视效调参 `LumenEffectTuning`**（适配标准 §2.5）：五个相对默认值的倍率，默认 1 即引擎原样。
   - `edgeHighlightWidth`（0.25～4）/ `edgeHighlightIntensity`（0～3）：表面边缘高光的厚度与亮度。柔光缩放边框描边；高级材质缩放折射 rim 带、轮廓描边与廉价路径的高光带，镜面、菲涅尔强度同比缩放；rim 加厚时采样 padding 同步撑大。

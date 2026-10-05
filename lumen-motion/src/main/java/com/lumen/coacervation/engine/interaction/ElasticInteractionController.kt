@@ -59,6 +59,9 @@ public class ElasticInteractionController(
      */
     private val effectTuning: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
 ) {
+    /** 下次按下时使用的行程规则；修改不影响已经开始的拖动和回弹。 */
+    public var travelPolicy: ElasticTravelPolicy = ElasticTravelPolicy.AVOID_NEIGHBORS
+
     private enum class Motion { NONE, PRESS, DRAG, RELEASE }
 
     private val density = root.resources.displayMetrics.density
@@ -491,6 +494,18 @@ public class ElasticInteractionController(
     private fun captureGroupGaps(group: View) {
         val parent = group.parent as? ViewGroup ?: run {
             gapLeft = limit; gapTop = limit; gapRight = limit; gapBottom = limit; return
+        }
+        val policy = travelPolicy
+        if (policy == ElasticTravelPolicy.PARENT_BOUNDS) {
+            gapLeft = ElasticMotionGroupPolicy.travelBound((group.left - parent.paddingLeft).toFloat(),
+                Float.POSITIVE_INFINITY, limit, 0f, policy)
+            gapTop = ElasticMotionGroupPolicy.travelBound((group.top - parent.paddingTop).toFloat(),
+                Float.POSITIVE_INFINITY, limit, 0f, policy)
+            gapRight = ElasticMotionGroupPolicy.travelBound((parent.width - parent.paddingRight - group.right).toFloat(),
+                Float.POSITIVE_INFINITY, limit, 0f, policy)
+            gapBottom = ElasticMotionGroupPolicy.travelBound((parent.height - parent.paddingBottom - group.bottom).toFloat(),
+                Float.POSITIVE_INFINITY, limit, 0f, policy)
+            return
         }
         val count = parent.childCount
         val siblings = FloatArray(count * 4) { Float.NaN }
