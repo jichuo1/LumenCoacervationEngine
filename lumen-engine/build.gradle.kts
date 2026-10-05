@@ -18,6 +18,7 @@ android {
         minSdk = providers.gradleProperty("lumen.minSdk").get().toInt()
         consumerProguardFiles("consumer-rules.pro")
         buildConfigField("String", "LUMEN_VERSION", "\"$lumenVersion\"")
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures {
         buildConfig = true
@@ -46,6 +47,8 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 dependencies {
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.ext.junit)
 }
 
 // 发布：`publishAllPublicationsToProjectLocalRepository` 输出到根工程 build/repo，宿主把该目录（或私有仓库）加进
