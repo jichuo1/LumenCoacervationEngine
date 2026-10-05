@@ -171,8 +171,8 @@ internal class IconAnchoredMotionController(
         content.translationY = 0f
         onContentMoved()
         content.elevation = contentElevation
-        // 描边斜坡本来就收在 1，这里只是把浮点误差钉成整数 255。
-        contentBackground?.alpha = 255
+        // 持久表面在展开端仍由 layer 持有；只有临时承载层路径才交还卡片背景。
+        contentBackground?.alpha = if (layer.usesPersistentSurface) 0 else 255
         onFrame(1f)
         layer.alpha = 1f
         layer.background = null
@@ -395,7 +395,7 @@ internal class IconAnchoredMotionController(
         content.alpha = frame.contentAlpha
         // 承载层表面在场时卡片背景保持让位（半透明表面叠两层会明显更不透）；
         // 承载层缺席的极端路径仍按 strokeAlpha 渐出，行为与旧版一致。
-        contentBackground?.alpha = if (layer.background == null) {
+        contentBackground?.alpha = if (!layer.usesPersistentSurface && layer.background == null) {
             (frame.strokeAlpha * 255f).roundToInt().coerceIn(0, 255)
         } else 0
         onFrame(clamped)
