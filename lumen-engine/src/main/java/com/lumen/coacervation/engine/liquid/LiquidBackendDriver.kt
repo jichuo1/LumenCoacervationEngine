@@ -1,6 +1,7 @@
 package com.lumen.coacervation.engine.liquid
 
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Rect
 import com.lumen.coacervation.engine.model.LiquidRenderBackend
 
@@ -23,6 +24,8 @@ internal interface LiquidBackendDriver : AutoCloseable {
      * [motionLite]：位移抑制期置 true——此时绑定的本就是平滑稳定底图，多次散射
      * 取样没有收益；后端只保留单次取样与边缘光项，外观与静止态一致但逐像素
      * 纹理成本降到约 1/5。不支持的分级后端直接忽略。
+     * [localToBackdrop]：完整的 View 局部到背景根坐标变换；它与形状 bounds 无关。
+     * 调用方复用矩阵，后端在本次 draw 内读取，不持有它。
      */
     fun drawBackdrop(
         canvas: Canvas,
@@ -33,7 +36,8 @@ internal interface LiquidBackendDriver : AutoCloseable {
         opticalIntensity: Float,
         stretchDirY: Float,
         contentAlpha: Float,
-        motionLite: Boolean
+        motionLite: Boolean,
+        localToBackdrop: Matrix? = null
     )
 }
 
@@ -53,7 +57,8 @@ internal class LiquidTranslucentBackend : LiquidBackendDriver {
         opticalIntensity: Float,
         stretchDirY: Float,
         contentAlpha: Float,
-        motionLite: Boolean
+        motionLite: Boolean,
+        localToBackdrop: Matrix?
     ) = Unit
 
     override fun close() = Unit

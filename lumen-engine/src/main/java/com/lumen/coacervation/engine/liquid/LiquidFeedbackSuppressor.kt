@@ -3,6 +3,7 @@ package com.lumen.coacervation.engine.liquid
 import android.graphics.Bitmap
 import android.graphics.BitmapShader
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -32,6 +33,8 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
     private val captureBounds = Rect()
     private val scaleBounds = Rect()
     private val geometry = LiquidSuppressionMaskGeometry()
+    private val surfacePath = Path()
+    private val surfaceToCapture = Matrix()
 
     /**
      * 发起截图时构建的遮罩。在对应请求完成前被它**独占借用**：单飞保证下一次请求不会中途
@@ -132,7 +135,7 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
             }
             if (!surface.isShown || surface.alpha <= 0f || surface.rootView !== root.rootView) continue
             if (!footprint.hasOrigin) continue
-            if (geometry.set(
+            if ((footprint.hasTransform && footprint.right > footprint.left && footprint.bottom > footprint.top) || geometry.set(
                     (footprint.originX - rootOriginX + footprint.left).toFloat(),
                     (footprint.originY - rootOriginY + footprint.top).toFloat(),
                     (footprint.originX - rootOriginX + footprint.right).toFloat(),
@@ -140,15 +143,22 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
                     footprint.radiusPx, paddingPx, root.width, root.height, scaleX, scaleY
                 )) {
                 // 保留屏幕外的外扩轮廓，让 Canvas 裁切；先夹坐标会在贴边处造出圆角缺口。
-                mask.addRoundRect(
-                    geometry.left,
-                    geometry.top,
-                    geometry.right,
-                    geometry.bottom,
-                    geometry.radiusX,
-                    geometry.radiusY,
-                    Path.Direction.CW
-                )
+                if (footprint.hasTransform) {
+                    // 与 display list 同一帧的完整变换，包括中心缩放、祖先平移和跨窗口偏移。
+                    surfacePath.rewind()
+                    val radiusPx = footprint.radiusPx + paddingPx
+                    surfacePath.addRoundRect(footprint.left - paddingPx, footprint.top - paddingPx,
+                        footprint.right + paddingPx, footprint.bottom + paddingPx,
+                        radiusPx, radiusPx, Path.Direction.CW)
+                    surfaceToCapture.setValues(footprint.screenTransform)
+                    surfaceToCapture.postTranslate(-rootOriginX.toFloat(), -rootOriginY.toFloat())
+                    surfaceToCapture.postScale(scaleX, scaleY)
+                    surfacePath.transform(surfaceToCapture)
+                    mask.addPath(surfacePath)
+                } else {
+                    mask.addRoundRect(geometry.left, geometry.top, geometry.right, geometry.bottom,
+                        geometry.radiusX, geometry.radiusY, Path.Direction.CW)
+                }
                 hasMask = true
             }
         }

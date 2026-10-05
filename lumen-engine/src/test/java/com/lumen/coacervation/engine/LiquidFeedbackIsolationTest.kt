@@ -226,7 +226,7 @@ class LiquidFeedbackIsolationTest {
      * 回弹期间不切换采样路径（2026-09-21 真机实证：按住回弹不动时静默窗口会解除
      * 抑制、表面重录回折射路径，下一次位移又切回光学直采——整圈边缘光在两条路径
      * 之间乒乓闪烁；同时静止时 stretchDirY==0 令 edgeBoost 钉死在 1，浮动条的常驻
-     * 折射下限完全不生效）。契约：回弹回调不触发抑制；静默检查在形变未归零前不解除；
+     * 折射下限完全不生效）。契约：回弹换稳定输入，保留同一折射路径；形变未归零前不解除抑制；
      * shader 按 |stretchDirY| 在全向与定向投影间连续混合。
      */
     @Test fun stretchKeepsTheRefractivePathAndTheRestingGlow() {
@@ -234,8 +234,9 @@ class LiquidFeedbackIsolationTest {
         val handler = renderer.after("private fun onStretchDistanceChanged(")
             .substringBefore("@MainThread", "MISSING")
         assertNotEquals("MISSING", handler)
-        assertFalse("stretch must not switch sampling paths",
-            handler.contains("suppressRealtimeSamplingWhileScrolling()"))
+        // 保留同一折射 shader 和边缘光；只拉边界而不滚动时也暂停滞后截图。
+        assertTrue(handler.contains("if (distance > 0f) suppressRealtimeSamplingWhileScrolling()"))
+        assertFalse(handler.contains("drawOpticalRegion("))
 
         val settle = renderer.after("private fun onScrollSettleCheck()")
             .substringBefore("private fun clearScrollSuppression()", "MISSING")

@@ -1,6 +1,7 @@
 package com.lumen.coacervation.engine.liquid
 
 import android.graphics.Canvas
+import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Rect
@@ -20,6 +21,7 @@ internal class LiquidBlurBackendApi31(
     override val requiresBackdrop = true
 
     private val bitmapPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    private val backdropToLocal = Matrix()
     private val clipBounds = RectF()
     private val clipPath = Path()
     private var renderNode: RenderNode? = null
@@ -69,7 +71,8 @@ internal class LiquidBlurBackendApi31(
         opticalIntensity: Float,
         stretchDirY: Float,
         contentAlpha: Float,
-        motionLite: Boolean
+        motionLite: Boolean,
+        localToBackdrop: Matrix?
     ) {
         val node = checkNotNull(renderNode) { "Liquid blur backdrop is not bound" }
         // 模糊后端没有边缘光学项，方向不参与；contentAlpha 直接让真实下层内容透入。
@@ -80,10 +83,11 @@ internal class LiquidBlurBackendApi31(
         val saveCount = canvas.save()
         try {
             canvas.clipPath(clipPath)
-            canvas.translate(
-                bounds.left.toFloat() - viewX.toFloat(),
-                bounds.top.toFloat() - viewY.toFloat()
-            )
+            if (localToBackdrop != null && localToBackdrop.invert(backdropToLocal)) {
+                canvas.concat(backdropToLocal)
+            } else {
+                canvas.translate(-viewX.toFloat(), -viewY.toFloat())
+            }
             canvas.scale(backdropScaleX, backdropScaleY)
             canvas.drawRenderNode(node)
         } finally {

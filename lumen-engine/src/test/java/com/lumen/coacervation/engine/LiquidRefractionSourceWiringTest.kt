@@ -57,14 +57,14 @@ class LiquidRefractionSourceWiringTest {
     @Test fun dialogOpticalFallbackAndCaptureSuppressionCannotRewriteEachOthersMatrices() {
         val backdrop = source("LiquidBackdropSource")
         val optical = backdrop.after("fun drawOpticalRegion(").before("fun drawPresentationRegion(")
-        assertTrue(optical.contains("opticalBitmap.width.toFloat()"))
+        assertTrue(optical.contains("refractionWidth.toFloat()"))
         assertTrue(optical.contains("opticalRegionShader.setLocalMatrix(opticalRegionMatrix)"))
         assertFalse(optical.contains("suppressionShader"))
         assertFalse(optical.contains("bitmapShader.setLocalMatrix"))
         val suppression = backdrop.after("fun drawSuppressionBackdropMasked(").before("override fun close()")
         assertFalse(suppression.contains("opticalRegionShader"))
         assertFalse(suppression.contains("bitmapShader.setLocalMatrix"))
-        assertTrue(backdrop.contains("BitmapShader(opticalBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply"))
+        assertTrue(backdrop.contains("BitmapShader(refractionBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply"))
     }
 
     @Test fun geometryTimingAndCaptureThreadOwnershipRemainWithExistingCoordinator() {

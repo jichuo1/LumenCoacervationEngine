@@ -57,7 +57,7 @@ internal class LiquidBackdropSource private constructor(
      * 逐帧改写它的 local matrix 会污染折射采样。
      */
     private val opticalRegionShader by lazy(LazyThreadSafetyMode.NONE) {
-        BitmapShader(opticalBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply {
+        BitmapShader(refractionBitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply {
             // 与旧路径的 FILTER_BITMAP_FLAG 对齐：稳定底图是 0.25 倍采样，最近邻会在
             // 抑制区域露出明显色块。setFilterMode 是 API 33 才有的显式声明，31-32 仍依赖
             // opticalRegionPaint 的 FILTER_BITMAP_FLAG。
@@ -67,6 +67,7 @@ internal class LiquidBackdropSource private constructor(
         }
     }
     private val opticalRegionMatrix = Matrix()
+    private val opticalRootToLocal = Matrix()
     private val opticalRegionPaint by lazy(LazyThreadSafetyMode.NONE) {
         Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { shader = opticalRegionShader }
     }
@@ -102,7 +103,7 @@ internal class LiquidBackdropSource private constructor(
     /**
      * 在表面本地坐标中按根坐标取一块光学采样区，供外部窗口（Dialog）里的玻璃表面使用：
      * 那些表面折射不到自己窗口的内容，实时截屏里对应位置只有未压暗的锐利底页，
-     * 改采已过滤副本才不会把底页文字透进面板。它与截图抑制、边缘溶解各持独立 Shader，
+     * 改采稳定底图，清晰度与同档位的折射输入一致，不读取底页文字。它与截图抑制、边缘溶解各持独立 Shader，
      * 不触碰折射后端持有的 [bitmapShader]。
      *
      * @param rootOffsetX/rootOffsetY 表面在 backdrop 全幅坐标中的位置（根视图像素）。
@@ -113,16 +114,21 @@ internal class LiquidBackdropSource private constructor(
         radiusPx: Float,
         rootOffsetX: Float,
         rootOffsetY: Float,
-        alpha: Int
+        alpha: Int,
+        localToBackdrop: Matrix? = null
     ) {
         check(!closed) { "Liquid backdrop source is closed" }
-        if (localBounds.isEmpty || opticalBitmap.width <= 0 || opticalBitmap.height <= 0 ||
+        if (localBounds.isEmpty || refractionWidth <= 0 || refractionHeight <= 0 ||
             fullWidth <= 0 || fullHeight <= 0
         ) return
-        val scaleX = fullWidth.toFloat() / opticalBitmap.width.toFloat()
-        val scaleY = fullHeight.toFloat() / opticalBitmap.height.toFloat()
+        val scaleX = fullWidth.toFloat() / refractionWidth.toFloat()
+        val scaleY = fullHeight.toFloat() / refractionHeight.toFloat()
         opticalRegionMatrix.setScale(scaleX, scaleY)
-        opticalRegionMatrix.postTranslate(-rootOffsetX, -rootOffsetY)
+        if (localToBackdrop != null && localToBackdrop.invert(opticalRootToLocal)) {
+            opticalRegionMatrix.postConcat(opticalRootToLocal)
+        } else {
+            opticalRegionMatrix.postTranslate(-rootOffsetX, -rootOffsetY)
+        }
         opticalRegionShader.setLocalMatrix(opticalRegionMatrix)
         opticalRegionPaint.alpha = alpha.coerceIn(0, 255)
         canvas.drawRoundRect(

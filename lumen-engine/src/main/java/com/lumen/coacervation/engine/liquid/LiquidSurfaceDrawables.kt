@@ -28,6 +28,8 @@ public interface LiquidMotionSurfaceFrameProvider {
 /** Surface 的真实 Drawable 几何；只在已有对象上更新，实时反馈遮罩逐帧零分配。 */
 internal class LiquidSurfaceFootprint {
     val refreshState = LiquidSurfaceRefreshState()
+    val screenTransform = FloatArray(9)
+    var hasTransform = false
     var left = 0
     var top = 0
     var right = 0
