@@ -1,4 +1,4 @@
-# 演示包：构建 sample 的 release 包 → 在三个系统版本的模拟器上跑冒烟测试 → 全部通过才上传到 Release。
+# 演示包：构建 sample 的 release 包 → 在四个系统版本的模拟器上跑冒烟测试 → 全部通过才上传到 Release。
 #
 # - PR 与 push main：只构建并测试，不发布。
 # - 发布新 Release：自动把演示包附到该 Release。
@@ -15,6 +15,8 @@ on:
       - 'gradle.properties'
       - '.github/workflows/demo.yml'
       - '.github/scripts/run-smoke.sh'
+      - '.github/scripts/prepare-emulator.sh'
+      - 'tools/test_prepare_emulator.py'
   push:
     branches: [main]
     paths:
@@ -22,6 +24,8 @@ on:
       - 'lumen-*/src/main/**'
       - '.github/workflows/demo.yml'
       - '.github/scripts/run-smoke.sh'
+      - '.github/scripts/prepare-emulator.sh'
+      - 'tools/test_prepare_emulator.py'
   release:
     types: [published]
   workflow_dispatch:
@@ -46,6 +50,9 @@ jobs:
           distribution: temurin
           java-version: '17'
       - uses: gradle/actions/setup-gradle@v4
+
+      - name: Test emulator installation retry
+        run: python3 -m unittest discover -s tools -p test_prepare_emulator.py -v
 
       - name: Build release APK and test APK
         run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest --console=plain --no-daemon
@@ -90,6 +97,11 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
+
+      # Action 会无条件安装最新 emulator；预先安装成功后该步骤只检查已安装包。
+      # SDK 下载/解压最多重试三次，应用测试的失败仍直接阻止发布。
+      - name: Prepare Android Emulator with bounded retry
+        run: bash .github/scripts/prepare-emulator.sh
 
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2
