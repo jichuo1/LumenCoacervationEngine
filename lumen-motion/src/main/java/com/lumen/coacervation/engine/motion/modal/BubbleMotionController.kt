@@ -27,6 +27,8 @@ internal class BubbleMotionController(
     /** 每帧的展开进度；供背景毛玻璃这类"跟着同一个时钟"的附属效果使用，不另开动画。 */
     private val onFrame: (Float) -> Unit = {},
     private val onExpanded: () -> Unit = {},
+    /** 内容行的平移已写入；与容器形变使用同一条材质位置刷新通知。 */
+    private val onContentMoved: () -> Unit = {},
     private val onClosed: () -> Unit
 ) {
     // Spec 已包含单调的宽高曲线，公共时钟保持线性，避免二次 easing 让入场过早冲到终点。
@@ -89,6 +91,7 @@ internal class BubbleMotionController(
         expansion = 1f
         entryShape = false
         layer.settleExpanded()
+        onContentMoved()
         onFrame(1f)
         if (!entryNotified) {
             entryNotified = true
@@ -236,6 +239,7 @@ internal class BubbleMotionController(
         expansion = clamped
         session.sample(clamped, SystemClock.uptimeMillis())
         layer.applyFrame(clamped, entryShape)
+        onContentMoved()
         onFrame(clamped)
     }
 

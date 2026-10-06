@@ -589,6 +589,7 @@ public class LumenModalPresenter @JvmOverloads constructor(
                     coveredContent?.alpha = IconAnchoredMotionSpec.coveredParentAlpha(progress)
                 },
                 onExpanded = ::notifyExpanded,
+                onContentMoved = { lumen.notifyPositionChanged() },
                 onClosed = {
                     dismissAfterFinalFrame(dialog) {
                         (pendingAnchoredAfterClose.getAndSet(null) ?: onBackDismiss).invoke()

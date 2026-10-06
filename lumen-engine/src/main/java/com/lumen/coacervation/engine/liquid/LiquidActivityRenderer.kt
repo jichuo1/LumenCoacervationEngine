@@ -56,7 +56,9 @@ private class LiquidWindowRefresh(
     val preDraw: ViewTreeObserver.OnPreDrawListener,
     val scroll: ViewTreeObserver.OnScrollChangedListener,
     val batch: LiquidRefreshBatch = LiquidRefreshBatch()
-)
+) {
+    val position = LiquidWindowPositionState()
+}
 
 private class LiquidCaptureRequest(
     val ticket: LiquidCaptureRequestState.Ticket,
@@ -208,6 +210,7 @@ internal class LiquidActivityRenderer(
     private val surfaceCoordinates = ViewSamplingMatrix()
     private val surfaceToBackdrop = Matrix()
     private val refreshSurfaceTransform = FloatArray(9)
+    private val refreshRootTransform = FloatArray(9)
     private val stretchToBackdrop = Matrix()
     private val stretchTransformValues = FloatArray(9)
     private val stretchSampling = FloatArray(3)
@@ -1350,13 +1353,22 @@ internal class LiquidActivityRenderer(
         existing?.let(::removeRefreshWindow)
         val rootRef = WeakReference(windowRoot)
         val preDraw = ViewTreeObserver.OnPreDrawListener {
-            rootRef.get()?.let(::flushSurfaceRefresh)
+            rootRef.get()?.let { root ->
+                // 输入法 adjustPan / 整窗移动不经过 View 动画与滚动通知。
+                // 仅比较一份根变换；稳定窗口不遍历或失效所有表面。
+                val state = refreshWindows[root]
+                if (state != null && surfaceCoordinates.localToScreen(root, refreshRootTransform) &&
+                    state.position.update(refreshRootTransform)) state.batch.mark(contentChanged = false)
+                flushSurfaceRefresh(root)
+            }
             true
         }
         val scroll = ViewTreeObserver.OnScrollChangedListener {
             rootRef.get()?.let { refreshWindows[it]?.batch?.mark(contentChanged = false) }
         }
-        refreshWindows[windowRoot] = LiquidWindowRefresh(WeakReference(observer), preDraw, scroll)
+        val state = LiquidWindowRefresh(WeakReference(observer), preDraw, scroll)
+        if (surfaceCoordinates.localToScreen(windowRoot, refreshRootTransform)) state.position.update(refreshRootTransform)
+        refreshWindows[windowRoot] = state
         observer.addOnPreDrawListener(preDraw)
         observer.addOnScrollChangedListener(scroll)
     }
