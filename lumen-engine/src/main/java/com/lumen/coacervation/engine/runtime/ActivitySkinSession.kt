@@ -297,7 +297,7 @@ internal class ActivitySkinSession private constructor(
                 liquidOwner = owner.takeIf { renderer != null },
                 liquidRenderer = renderer,
                 materialRenderer = FrostedMaterialRenderer(materialPalette, activity.resources.displayMetrics.density,
-                    effectTuning),
+                    effectTuning, backgroundContext = activity.applicationContext),
                 initialLiquidFailure = initializationFailed
             ).also(LumenMemoryPressureHub::addListener)
         }

@@ -114,7 +114,7 @@ class LumenEffectTuningTest {
         fun source(path: String) = SourceContract.read(path).replace(Regex("\\s+"), " ")
         val session = source("runtime/ActivitySkinSession.kt")
         assertTrue(session.contains("LiquidActivityRenderer(activity, materialPalette, effectTuning)"))
-        assertTrue(session.contains("FrostedMaterialRenderer(materialPalette, activity.resources.displayMetrics.density, effectTuning)"))
+        assertTrue(session.contains("FrostedMaterialRenderer(materialPalette, activity.resources.displayMetrics.density, effectTuning, backgroundContext = activity.applicationContext)"))
         val liquid = source("liquid/LiquidActivityRenderer.kt")
         assertTrue(liquid.contains("LumenEffectTuningPolicy.applyTo("))
         assertTrue(liquid.contains("LumenEffectTuningPolicy.bandWidth(OPTICAL_EDGE_BAND_DP * density, effectTuning,"))
