@@ -100,6 +100,11 @@ jobs:
 
       # Action 会无条件安装最新 emulator；预先安装成功后该步骤只检查已安装包。
       # SDK 下载/解压最多重试三次，应用测试的失败仍直接阻止发布。
+      - name: Install emulator runtime library
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y libpulse0
+
       - name: Prepare Android Emulator with bounded retry
         run: bash .github/scripts/prepare-emulator.sh
 
