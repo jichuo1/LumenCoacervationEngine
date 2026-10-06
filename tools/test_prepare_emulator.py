@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -18,7 +19,7 @@ if BASH is None and os.name == "nt":
 
 
 class PrepareEmulatorTest(unittest.TestCase):
-    def run_scenario(self, scenario: str) -> subprocess.CompletedProcess[str]:
+    def run_scenario(self, scenario: str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
         self.assertIsNotNone(BASH, "Bash is required for the CI script regression")
         command = f'''source "{SCRIPT.as_posix()}"
 attempts=0
@@ -29,7 +30,7 @@ status=$?
 echo "ATTEMPTS $attempts"
 exit "$status"
 '''
-        return subprocess.run([BASH, "-c", command], capture_output=True, text=True, timeout=10)
+        return subprocess.run([BASH, "-c", command], capture_output=True, text=True, timeout=10, env=env)
 
     def test_success_stops_after_one_attempt(self) -> None:
         result = self.run_scenario('''
@@ -71,6 +72,45 @@ verify_emulator() { return 9; }
 ''')
         self.assertEqual(9, result.returncode)
         self.assertIn("ATTEMPTS 3", result.stdout)
+
+    def test_sdk_path_is_used_when_cli_is_missing_from_path(self) -> None:
+        build_dir = ROOT / "build"
+        build_dir.mkdir(exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=build_dir, prefix="emulator-cli-test-") as temporary:
+            sdk = Path(temporary) / "fake SDK"
+            self.assertTrue(sdk.resolve().is_relative_to(build_dir.resolve()))
+            manager = sdk / "cmdline-tools/latest/bin/sdkmanager"
+            emulator = sdk / "emulator/emulator"
+            for path, marker in ((manager, "SDK_PATH_USED"), (emulator, "EMULATOR_VERIFIED")):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(f'#!/usr/bin/env bash\necho "{marker} $*"\n', encoding="utf-8")
+                path.chmod(0o755)
+            env = os.environ.copy()
+            env["ANDROID_HOME"] = sdk.as_posix()
+            result = self.run_scenario('''
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "sdkmanager" ]; then return 1; fi
+  builtin command "$@"
+}
+''', env=env)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertIn("SDK_PATH_USED --install emulator --channel=0", result.stdout)
+            self.assertIn("EMULATOR_VERIFIED -version", result.stdout)
+            self.assertNotIn("BACKOFF", result.stdout)
+
+    def test_missing_sdk_tools_fails_without_download_retries(self) -> None:
+        env = os.environ.copy()
+        env.pop("ANDROID_HOME", None)
+        env.pop("ANDROID_SDK_ROOT", None)
+        result = self.run_scenario('''
+command() {
+  if [ "$1" = "-v" ] && [ "$2" = "sdkmanager" ]; then return 1; fi
+  builtin command "$@"
+}
+''', env=env)
+        self.assertEqual(127, result.returncode)
+        self.assertIn("Cannot locate sdkmanager", result.stdout)
+        self.assertNotIn("BACKOFF", result.stdout)
 
 
 if __name__ == "__main__":
