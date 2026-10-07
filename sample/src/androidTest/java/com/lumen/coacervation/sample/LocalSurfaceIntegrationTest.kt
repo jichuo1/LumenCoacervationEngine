@@ -1,0 +1,125 @@
+package com.lumen.coacervation.sample
+
+import android.app.Dialog
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.SystemClock
+import android.view.View
+import android.widget.FrameLayout
+import androidx.test.core.app.ActivityScenario
+import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
+import com.lumen.coacervation.engine.host.*
+import com.lumen.coacervation.engine.model.LumenPalette
+import org.junit.Assert.*
+import org.junit.Test
+import org.junit.runner.RunWith
+
+@RunWith(AndroidJUnit4::class)
+class LocalSurfaceIntegrationTest {
+    private fun waitForLayout(scenario: ActivityScenario<SurfaceSandboxActivity>) {
+        val deadline=SystemClock.uptimeMillis()+5000
+        var ready=false
+        while (!ready && SystemClock.uptimeMillis()<deadline) {
+            scenario.onActivity { ready=it.glass.width>0 && it.glass.isAttachedToWindow && it.glass.hasWindowFocus() }
+            if (!ready) SystemClock.sleep(30)
+        }
+        assertTrue("Surface window did not become visible",ready)
+    }
+
+    @Test fun bindingPreservesTheWindowHierarchyPaddingAndUnrelatedBackgrounds() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            scenario.onActivity { activity ->
+                val parent=activity.glass.parent
+                val count=activity.preview.childCount
+                val root=activity.preview.rootView
+                val originalRoot=root.background
+                activity.binding.close()
+                val original=ColorDrawable(Color.RED)
+                activity.glass.background=original
+                activity.glass.setPadding(11,12,13,14)
+                val binding=activity.session.bind(activity.glass,LumenSurfaceOptions(),activity.content)
+                assertSame(parent,activity.glass.parent);assertEquals(count,activity.preview.childCount)
+                assertSame(originalRoot,root.background)
+                assertEquals(11,activity.glass.paddingLeft)
+                binding.close();assertSame(original,activity.glass.background)
+                assertEquals(14,activity.glass.paddingBottom)
+                val second=activity.session.bind(activity.glass,LumenSurfaceOptions(),activity.content)
+                val replacement=ColorDrawable(Color.BLUE);activity.glass.background=replacement
+                second.close();assertSame(replacement,activity.glass.background)
+            }
+        }
+    }
+
+    @Test fun sourceCannotCaptureItsOwnInjectedSurface() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            scenario.onActivity { activity ->
+                activity.binding.close()
+                activity.binding=activity.session.bind(activity.glass,LumenSurfaceOptions(),activity.preview)
+                val bitmap=Bitmap.createBitmap(activity.glass.width,activity.glass.height,Bitmap.Config.ARGB_8888)
+                activity.glass.background.draw(Canvas(bitmap))
+                assertEquals(LumenSurfaceFailure.SELF_FEEDBACK,activity.binding.diagnostics()?.failure)
+                assertEquals(LumenSurfaceBackend.STATIC,activity.binding.diagnostics()?.backend)
+            }
+        }
+    }
+
+    @Test fun softwareCaptureProducesAFrameAndPaletteChangesDoNotRecreateTheActivity() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            var owner:SurfaceSandboxActivity?=null
+            scenario.onActivity {
+                owner=it
+                it.binding.update(LumenSurfaceOptions(sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.SOFTWARE,minIntervalMs=0)))
+                it.session.notifyContentChanged()
+            }
+            val deadline=SystemClock.uptimeMillis()+5000
+            var captured=false
+            while (!captured && SystemClock.uptimeMillis()<deadline) {
+                scenario.onActivity { captured=it.binding.diagnostics()?.backend==LumenSurfaceBackend.SOFTWARE }
+                if(!captured)SystemClock.sleep(30)
+            }
+            assertTrue("Software capture never became drawable",captured)
+            scenario.onActivity {
+                val root=it.preview.rootView;val background=root.background
+                it.session.updatePalette(LumenPalette.neutral(true))
+                assertSame(owner,it);assertSame(background,root.background)
+                assertEquals(1L,it.session.diagnostics().paletteGeneration)
+                it.session.releaseGraphics();it.session.resume()
+            }
+        }
+    }
+
+    @Test fun foreignWindowSourceIsRejectedAndLateCallsAfterCloseAreHarmless() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            var dialog:Dialog?=null
+            var source:View?=null
+            scenario.onActivity { activity ->
+                dialog=Dialog(activity)
+                source=View(activity)
+                dialog!!.setContentView(source!!,FrameLayout.LayoutParams(200,200));dialog!!.show()
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity { activity ->
+                assertTrue(source!!.isAttachedToWindow)
+                activity.binding.close()
+                activity.binding=activity.session.bind(activity.glass,LumenSurfaceOptions(),source)
+                val bitmap=Bitmap.createBitmap(activity.glass.width,activity.glass.height,Bitmap.Config.ARGB_8888)
+                activity.glass.background.draw(Canvas(bitmap))
+                assertEquals(LumenSurfaceFailure.DIFFERENT_WINDOW,activity.binding.diagnostics()?.failure)
+                dialog!!.dismiss();activity.session.close()
+                activity.binding.update(LumenSurfaceOptions(opacity=.1f));activity.binding.close()
+                activity.session.pause();activity.session.resume();activity.session.notifyContentChanged()
+                activity.session.updatePalette(LumenPalette.neutral(true))
+                assertTrue(activity.session.diagnostics().closed)
+                assertEquals(-1L,activity.session.bind(activity.glass).id)
+            }
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        }
+    }
+}

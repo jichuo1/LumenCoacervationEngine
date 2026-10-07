@@ -54,6 +54,10 @@ internal object LiquidChromeLensApi33 {
             applyLiquidOpticalUniforms(parameters, density)
         }
 
+    fun configure(lens: Any, parameters: LiquidParameters, density: Float) {
+        (lens as RuntimeShader).applyLiquidOpticalUniforms(parameters, density)
+    }
+
     /**
      * 节点坐标下的 uniform：表面在节点里偏移 [padding]，`offset = -padding` 让形状坐标回到
      * 表面局部；`backdropOrigin = +padding` 抵消它，`content` 按节点坐标原样取样；

@@ -17,6 +17,9 @@ import androidx.annotation.WorkerThread
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withMatrix
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
+import com.lumen.coacervation.engine.host.LumenSurfaceSampling
+import com.lumen.coacervation.engine.host.LumenSurfacePolicy
+import com.lumen.coacervation.engine.host.LumenSurfaceFadeDirection
 import java.util.WeakHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
@@ -48,9 +51,14 @@ import kotlin.math.floor
 internal class LiveBackdropSampler(
     private val density: Float,
     /** 与渲染器共用：采集期间开启祖先备忘，录制里的静态磨砂映射与本类的表面矩阵共享祖先链。 */
-    private val samplingMatrices: ViewSamplingMatrix
+    private val samplingMatrices: ViewSamplingMatrix,
+    private val byteBudget: Int = Int.MAX_VALUE,
+    private val recordContent: ((Canvas) -> Unit)? = null,
+    private val sharedBudget: LumenSampleBudget? = null
 ) {
-    private class Entry {
+    private class Entry(val budget: LumenSampleBudget?) {
+        var profile: LumenSurfaceSampling? = null
+        var allocatedBytes = 0L
         var scale = 0
         var margin = 0
         var sampleWidth = 0
@@ -83,7 +91,7 @@ internal class LiveBackdropSampler(
             generation++
             valid = false
             shader = null
-            texture?.recycle(); texture = null
+            texture = null // A previous hardware display list may still hold this bitmap.
             // 内存压力下的 releaseAll 可能正赶上后台在往 sample 里回放：recycle 会立刻释放
             // 原生像素，正在写的那一趟就是释放后使用。只断引用，在飞作业自己持有它直到结束。
             sample = null
@@ -92,6 +100,8 @@ internal class LiveBackdropSampler(
             scratch = null
             out = null
             sampleWidth = 0; sampleHeight = 0; outWidth = 0; outHeight = 0
+            budget?.release(allocatedBytes)
+            allocatedBytes = 0L
         }
     }
 
@@ -116,7 +126,8 @@ internal class LiveBackdropSampler(
         val margin: Int,
         val outWidth: Int,
         val outHeight: Int,
-        val blurRadius: Int
+        val blurRadius: Int,
+        val profile: LumenSurfaceSampling?
     )
 
     private var source: View? = null
@@ -166,6 +177,19 @@ internal class LiveBackdropSampler(
     }
     private val mainHandler = Handler(Looper.getMainLooper())
 
+    val hasFailed: Boolean get() = failed
+    var budgetRejected: Boolean = false
+        private set
+    var recordings: Long = 0
+        private set
+    val allocatedBytes: Long get() = entries.values.sumOf { it.allocatedBytes }
+
+    private fun intervalMs(): Long {
+        var value = Long.MAX_VALUE
+        entries.values.forEach { value = minOf(value, it.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) }
+        return if (value == Long.MAX_VALUE) ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS else value
+    }
+
     val isActive: Boolean get() = !closed && !failed && !suspended && source != null
 
     fun bindSource(view: View) {
@@ -175,10 +199,16 @@ internal class LiveBackdropSampler(
     }
 
     /** 表面 draw 时登记；同窗口首个表面顺带装上 pre-draw 采样钩子。 */
-    fun register(view: View) {
+    fun register(view: View, profile: LumenSurfaceSampling? = null) {
         if (!isActive) return
         if (!entries.containsKey(view)) {
-            entries[view] = Entry()
+            entries[view] = Entry(sharedBudget).apply { this.profile = profile }
+            dirty = true
+        }
+        val entry = entries[view]
+        if (entry != null && entry.profile != profile) {
+            entry.release()
+            entry.profile = profile
             dirty = true
         }
         val root = view.rootView ?: return
@@ -197,8 +227,7 @@ internal class LiveBackdropSampler(
      */
     fun unregister(view: View) {
         val entry = entries.remove(view) ?: return
-        entry.generation++
-        entry.valid = false
+        entry.release()
     }
 
     /**
@@ -226,8 +255,8 @@ internal class LiveBackdropSampler(
         // 滞后的映射上。
         val now = System.nanoTime()
         val elapsedMs = (now - lastSampleNanos) / NANOS_PER_MILLISECOND
-        if (lastSampleNanos != 0L && elapsedMs < ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) {
-            scheduleTrailingSample(ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS - elapsedMs)
+        if (lastSampleNanos != 0L && elapsedMs < intervalMs()) {
+            scheduleTrailingSample(intervalMs() - elapsedMs)
             return
         }
         lastSampleNanos = now
@@ -291,8 +320,11 @@ internal class LiveBackdropSampler(
             entry.valid = false
             return false
         }
-        val marginPx = LensRefractionPolicy.marginPx(density)
-        val scale = LensRefractionPolicy.sampleScale(width + 2 * marginPx, height + 2 * marginPx)
+        val profile = entry.profile
+        val marginPx = if (profile == null) LensRefractionPolicy.marginPx(density) else
+            kotlin.math.ceil(maxOf(if (profile.refractionEnabled) LensRefractionPolicy.MARGIN_DP * profile.refractionStrength else 0f, if (profile.blurEnabled) profile.blurRadiusDp * 1.8f else 0f) * density).toInt().coerceAtLeast(1)
+        val scale = if (profile == null) LensRefractionPolicy.sampleScale(width + 2 * marginPx, height + 2 * marginPx) else
+            LumenSurfacePolicy.softwareDivisor(width + 2 * marginPx, height + 2 * marginPx, profile.softwareScale, profile.maxSoftwarePixels)
         val margin = ((marginPx + scale - 1) / scale).coerceAtLeast(1)
         val outWidth = ((width + scale - 1) / scale).coerceAtLeast(1)
         val outHeight = ((height + scale - 1) / scale).coerceAtLeast(1)
@@ -300,7 +332,16 @@ internal class LiveBackdropSampler(
         val sampleHeight = outHeight + 2 * margin
         if (entry.sampleWidth != sampleWidth || entry.sampleHeight != sampleHeight ||
             entry.outWidth != outWidth || entry.outHeight != outHeight) {
+            val bytes = (sampleWidth.toLong() * sampleHeight * 12L + outWidth.toLong() * outHeight * 8L)
+            if (allocatedBytes - entry.allocatedBytes + bytes > byteBudget) {
+                budgetRejected = true
+                entry.release()
+                return false
+            }
+            budgetRejected = false
             entry.release()
+            if (sharedBudget?.reserve(bytes) == false) { budgetRejected = true; return false }
+            entry.allocatedBytes = bytes
             entry.sample = createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888)
             entry.sampleCanvas = Canvas(entry.sample!!)
             entry.pixels = IntArray(sampleWidth * sampleHeight)
@@ -355,7 +396,8 @@ internal class LiveBackdropSampler(
                     recording.scale(1f / scale, 1f / scale)
                     recording.translate((margin * scale).toFloat(), (margin * scale).toFloat())
                     recording.concat(entry.sourceToTarget)
-                    content.draw(recording)
+                    if (recordContent == null) content.draw(recording) else recordContent.invoke(recording)
+                    recordings++
                 } finally {
                     picture.endRecording()
                 }
@@ -378,7 +420,8 @@ internal class LiveBackdropSampler(
             val recording = picture.beginRecording(recordWidth, recordHeight)
             try {
                 recording.translate(-originX.toFloat(), -originY.toFloat())
-                content.draw(recording)
+                if (recordContent == null) content.draw(recording) else recordContent.invoke(recording)
+                recordings++
             } finally {
                 picture.endRecording()
             }
@@ -412,7 +455,9 @@ internal class LiveBackdropSampler(
         margin = entry.margin,
         outWidth = entry.outWidth,
         outHeight = entry.outHeight,
-        blurRadius = LensRefractionPolicy.blurRadius(entry.scale, density)
+        blurRadius = entry.profile?.let { (if (it.blurEnabled) it.blurRadiusDp * density / entry.scale else 0f).toInt().coerceIn(0, 32) }
+            ?: LensRefractionPolicy.blurRadius(entry.scale, density),
+        profile = entry.profile
     )
 
     /** 批次回到主线程：把后台结果写进纹理。过期的批次/缓冲一律丢弃。 */
@@ -437,7 +482,7 @@ internal class LiveBackdropSampler(
         // 保证即使本批结果全被丢弃，停下来的那一帧也一定会被补采。
         if (dirty) {
             val elapsedMs = (System.nanoTime() - lastSampleNanos) / NANOS_PER_MILLISECOND
-            scheduleTrailingSample(ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS - elapsedMs)
+            scheduleTrailingSample(intervalMs() - elapsedMs)
         }
     }
 
@@ -518,15 +563,28 @@ internal class LiveBackdropSampler(
             }
             job.sample.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)
             LensRefractionPolicy.premultiply(job.pixels)
-            val blurred = ModernBackdropBlur.blurInto(
+            val blurred = if (job.blurRadius == 0) job.pixels else ModernBackdropBlur.blurInto(
                 job.pixels, job.scratch, job.sampleWidth, job.sampleHeight, job.blurRadius
             )
             LensRefractionPolicy.remap(
                 blurred, job.sampleWidth, job.sampleHeight, job.margin,
-                job.out, job.outWidth, job.outHeight
+                job.out, job.outWidth, job.outHeight,
+                if (job.profile?.refractionEnabled == false) 0f else job.profile?.refractionStrength ?: 1f
             )
             LensRefractionPolicy.illuminate(job.out)
             LensRefractionPolicy.unpremultiply(job.out)
+            val profile = job.profile
+            if (profile?.fadeEnabled == true) {
+                val reverse = profile.fadeDirection == LumenSurfaceFadeDirection.BOTTOM_TO_TOP
+                for (y in 0 until job.outHeight) {
+                    val weight = LumenSurfacePolicy.fade((y + 0.5f) / job.outHeight, profile.fadeHold, profile.fadeEnd, reverse)
+                    for (x in 0 until job.outWidth) {
+                        val i = y * job.outWidth + x
+                        val c = job.out[i]
+                        job.out[i] = (c and 0x00ffffff) or (((c ushr 24) * weight).toInt() shl 24)
+                    }
+                }
+            }
         }
     }
 

@@ -74,7 +74,7 @@ internal object LensRefractionPolicy {
      * 把含外沿的模糊采样 [source]（sw × sh，外沿 [margin] 像素）按透镜重采样到 [out]（dw × dh）。
      * dest 满幅对应 source 的内区 [margin, sw − margin] × [margin, sh − margin]。双线性、CLAMP。
      */
-    fun remap(source: IntArray, sw: Int, sh: Int, margin: Int, out: IntArray, dw: Int, dh: Int) {
+    fun remap(source: IntArray, sw: Int, sh: Int, margin: Int, out: IntArray, dw: Int, dh: Int, strength: Float = 1f) {
         require(sw > 0 && sh > 0 && source.size >= sw * sh)
         require(dw > 0 && dh > 0 && out.size >= dw * dh)
         val innerW = (sw - 2 * margin).coerceAtLeast(1).toFloat()
@@ -88,7 +88,7 @@ internal object LensRefractionPolicy {
         val columnFrac = FloatArray(dw)
         for (x in 0 until dw) {
             val u = (x + 0.5f) / dw * 2f - 1f
-            val sx = ((lens(u, CENTER_GAIN_X, RIM_PUSH_X) + 1f) * 0.5f * innerW + margin - 0.5f).coerceIn(0f, maxX)
+            val sx = ((lens(u, CENTER_GAIN_X * strength, RIM_PUSH_X * strength) + 1f) * 0.5f * innerW + margin - 0.5f).coerceIn(0f, maxX)
             val x0 = sx.toInt().coerceIn(0, sw - 1)
             columnLeft[x] = x0
             columnRight[x] = (x0 + 1).coerceAtMost(sw - 1)
@@ -96,7 +96,7 @@ internal object LensRefractionPolicy {
         }
         for (y in 0 until dh) {
             val v = (y + 0.5f) / dh * 2f - 1f
-            val sy = ((lens(v, CENTER_GAIN_Y, RIM_PUSH_Y) + 1f) * 0.5f * innerH + margin - 0.5f).coerceIn(0f, maxY)
+            val sy = ((lens(v, CENTER_GAIN_Y * strength, RIM_PUSH_Y * strength) + 1f) * 0.5f * innerH + margin - 0.5f).coerceIn(0f, maxY)
             val y0 = sy.toInt().coerceIn(0, sh - 1)
             val y1 = (y0 + 1).coerceAtMost(sh - 1)
             val fy = sy - y0

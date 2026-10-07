@@ -811,3 +811,10 @@ root（bindRoot）
 `installStretch(scrollTarget)` 会把滚动容器换到回弹视口下面。视口接过原来的 `LayoutParams`，但**不接管** ID：接管的话，宿主的 `findViewById` 会拿到视口而不是滚动容器，按 ID 保存的滚动位置也会丢。
 
 所以，如果滚动容器在 `ConstraintLayout` / `RelativeLayout` 里、并被兄弟**按 ID 引用**（例如"某个 View 位于滚动容器下方"），宿主**必须**先把滚动容器包进一个 `FrameLayout`，把约束和被引用的 ID 放在这层包装上，再对里面的滚动容器调用 `installStretch`。
+
+
+## 16. 局部与注入视效（1.1）
+
+不控制整个Activity时使用LumenSurfaceSession，接线与约束见[SURFACE_SESSIONS.md](SURFACE_SESSIONS.md)。
+不得为了使用局部材质而重建第三方Activity或重挂它的内容；来源必须匹配实际窗口并排除注入表面。
+配置、Hook、业务输入与前景文字由宿主管理，采样、材质与资源生命周期交给会话。

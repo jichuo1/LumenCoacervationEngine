@@ -1,4 +1,4 @@
-# 公开 API 清单（1.0.0）
+# 公开 API 清单（1.1.0）
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。
 >
@@ -136,7 +136,7 @@
 | 声明 | 说明 |
 |---|---|
 | `object LiquidBackgroundStore` | `read(context): LiquidBackgroundReadResult`（主线程可用）、`importFromUri(context, uri): LiquidBackgroundImportResult`（后台线程）、`restoreAutomatic(context): Boolean`（应当在后台线程） |
-| `LiquidBackgroundStore.decodePreview(context, config, viewWidth, viewHeight, palette): Bitmap?`（未发布，1.1.0） | 后台线程 API：按控件像素解码自定义背景，超过 2 MiB 等比缩小；自动模式、无效尺寸或解码失败返回 null。位图所有权交给宿主，接入见 §9.1 |
+| `LiquidBackgroundStore.decodePreview(context, config, viewWidth, viewHeight, palette): Bitmap?`（自 1.1.0） | 后台线程 API：按控件像素解码自定义背景，超过 2 MiB 等比缩小；自动模式、无效尺寸或解码失败返回 null。位图所有权交给宿主，接入见 §9.1 |
 | `LiquidBackgroundReadResult(config, issue, assetPresent)` | |
 | `LiquidBackgroundConfig(mode, assetId, assetSha256, normalizedWidth, normalizedHeight, displayName)`、`LiquidBackgroundConfig.AUTOMATIC` | |
 | `enum LiquidBackgroundMode { AUTOMATIC, CUSTOM }` | |
@@ -160,7 +160,7 @@
 | `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning })` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取 | §12、§2.5 |
 | `ElasticInteractionController.EXCLUDED_TAG` / `CONTAINER_TAG` | 不参与弹性 / 只承载、自己不形变 | §12.1 |
 | `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT })` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0 | §12 |
-| `ElasticTravelPolicy { AVOID_NEIGHBORS, PARENT_BOUNDS }`；`LumenElasticInteraction.travelPolicy` / `ElasticInteractionController.travelPolicy`（未发布，1.1.0） | 默认避让相邻控件；父容器模式保留原列表交叠行程。下次按下时生效，已开始的拖动/回弹不改变；Activity 封装同时传给其弹窗 | §14.7 |
+| `ElasticTravelPolicy { AVOID_NEIGHBORS, PARENT_BOUNDS }`；`LumenElasticInteraction.travelPolicy` / `ElasticInteractionController.travelPolicy`（自 1.1.0） | 默认避让相邻控件；父容器模式保留原列表交叠行程。下次按下时生效，已开始的拖动/回弹不改变；Activity 封装同时传给其弹窗 | §14.7 |
 
 ### 11.2 可打断动画内核（`com.lumen.coacervation.engine.motion`）
 
@@ -171,7 +171,7 @@
 | `InterruptibleMotionPolicy` / `InterruptibleMotionPhase` | `canNavigate`、`preserveFrame`、`remainingDuration`；阶段枚举 | §13.0 |
 | `MotionRect(left, top, right, bottom)` | 与 Android 无关的矩形（屏幕或窗口坐标） | §13 |
 | `MorphCornerPolicy.collapsedRadius(declared, width, height)` | 形变起点圆角：来源声明的圆角（≤ 短边一半），没有声明取短边一半 | §14.2 |
-| `MorphCornerMode { DECLARED, CAPSULE }`；`MorphCornerPolicy.collapsedRadius(declared, width, height, mode)`；`LumenModalPresenter.anchorCornerMode`（未发布，1.1.0） | 默认取来源声明圆角；CAPSULE 保留短边一半的起点。呈现器每次 present 固定规则，不改变已显示面板；原三参数方法和构造签名保留 | §14.7 |
+| `MorphCornerMode { DECLARED, CAPSULE }`；`MorphCornerPolicy.collapsedRadius(declared, width, height, mode)`；`LumenModalPresenter.anchorCornerMode`（自 1.1.0） | 默认取来源声明圆角；CAPSULE 保留短边一半的起点。呈现器每次 present 固定规则，不改变已显示面板；原三参数方法和构造签名保留 | §14.7 |
 | `LumenEasing` | `emphasizedDecelerate()`、`emphasizedAccelerate()`、`standard()`、`secondaryExpand()`、`secondaryCollapse()` | §13.9 |
 | `MicroMotion` | `swapText(view, text, restAlpha = 1f)`、`showBadge(v, growFromEnd = false)`、`hideBadge(v)`、`setVisible(parent, child, visible, animate = true)`、`revealHint(root, hint, show, announcement = null)` | §13.9 |
 
@@ -229,3 +229,20 @@
 | `LumenControls.switchParts(view): Pair<Drawable?, Drawable?>?` | `SwitchCompat` 的（轨道, 滑块），接到 `LumenPagePager.switchParts` | §13.6 |
 | `LumenReorderCallback(canDrag, onMove, onDrop, directions = null)` | 长按拖拽排序（`ItemTouchHelper.Callback`）；`isDragging`；方向默认按布局自动判断 | §12.5、§14.5 |
 | `LumenReorderCallback.directionsFor(layoutManager)`、`liftScale(longSidePx, density)`、`dropSettleDurationMs(px)` | 自动方向、按尺寸封顶的拾起放大、按距离的落位时长 | §14.5 |
+
+
+## 12. 局部视效会话（host，自1.1.0）
+
+规范与完整参数范围见 [SURFACE_SESSIONS.md](SURFACE_SESSIONS.md)。入口均为主线程。
+
+- LumenSurfaceSession(context, palette, options)：不接管根/窗口/输入、不读写偏好的AutoCloseable会话。
+- bind(view, surface, source: View?) / bindSource(view, surface, source: LumenContentSource?)：可逆背景绑定。
+- setListener / updatePalette / updateOptions / notifyContentChanged / notifyPositionChanged。
+- pause / resume / releaseGraphics / diagnostics / close；关闭后入口无副作用。
+- LumenSurfaceBinding：id / update / diagnostics / close；旧绑定不能关闭新绑定。
+- LumenContentSource：coordinateView / excludesSurfaces / drawContent(Canvas)。
+- LumenSurfaceOptions / LumenSurfaceSampling / LumenSurfaceSessionOptions：不可变配置，所有字段受范围约束。
+- LumenSurfaceMaterial / LumenSurfaceBackend / LumenSurfaceFadeDirection / LumenSurfaceFailure：公开枚举。
+- LumenSurfaceState / LumenSurfaceDiagnostics：请求/实际材质、每绑定状态及会话计数。
+- LumenSurfaceListener.onSurfaceState(id, backend, failure, firstVisibleDraw)：异步合并、异常隔离。
+- LumenSurfacePresets.floating / fadingBand / staticPanel：可继续copy调节的配置。

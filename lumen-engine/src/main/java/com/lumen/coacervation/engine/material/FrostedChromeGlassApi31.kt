@@ -57,21 +57,27 @@ internal object FrostedChromeGlassApi31 {
 @RequiresApi(33)
 internal object FrostedChromeLensApi33 {
     /** 返回不透明句柄，交回 [effect] 使用；调用方看不到 `RuntimeShader` 类型。 */
-    fun create(): Any = RuntimeShader(SOFT_LENS_SHADER).apply {
-        setFloatUniform("gain", LensRefractionPolicy.CENTER_GAIN_X, LensRefractionPolicy.CENTER_GAIN_Y)
-        setFloatUniform("push", LensRefractionPolicy.RIM_PUSH_X, LensRefractionPolicy.RIM_PUSH_Y)
+    fun create(strength: Float = 1f): Any = RuntimeShader(SOFT_LENS_SHADER).apply {
+        setFloatUniform("gain", LensRefractionPolicy.CENTER_GAIN_X * strength, LensRefractionPolicy.CENTER_GAIN_Y * strength)
+        setFloatUniform("push", LensRefractionPolicy.RIM_PUSH_X * strength, LensRefractionPolicy.RIM_PUSH_Y * strength)
         setFloatUniform("rimStart", LensRefractionPolicy.RIM_START)
         setFloatUniform("luminanceGain", LensRefractionPolicy.LUMINANCE_GAIN)
         setFloatUniform("luminanceBias", LensRefractionPolicy.LUMINANCE_BIAS / 255f)
     }
 
-    fun effect(lens: Any, input: RenderEffect, width: Int, height: Int, padding: Int): RenderEffect {
+    fun configure(lens: Any, strength: Float) {
+        val shader = lens as RuntimeShader
+        shader.setFloatUniform("gain", LensRefractionPolicy.CENTER_GAIN_X * strength, LensRefractionPolicy.CENTER_GAIN_Y * strength)
+        shader.setFloatUniform("push", LensRefractionPolicy.RIM_PUSH_X * strength, LensRefractionPolicy.RIM_PUSH_Y * strength)
+    }
+
+    fun effect(lens: Any, input: RenderEffect, width: Int, height: Int, padding: Int, strength: Float = 1f): RenderEffect {
         val shader = lens as RuntimeShader
         shader.setFloatUniform("origin", padding.toFloat(), padding.toFloat())
         shader.setFloatUniform("size", width.toFloat(), height.toFloat())
         shader.setFloatUniform("travelBudget",
-            LensRefractionPolicy.nodeTravelBudget(width.toFloat(), LensRefractionPolicy.CENTER_GAIN_X, LensRefractionPolicy.RIM_PUSH_X),
-            LensRefractionPolicy.nodeTravelBudget(height.toFloat(), LensRefractionPolicy.CENTER_GAIN_Y, LensRefractionPolicy.RIM_PUSH_Y))
+            LensRefractionPolicy.nodeTravelBudget(width.toFloat(), LensRefractionPolicy.CENTER_GAIN_X * strength, LensRefractionPolicy.RIM_PUSH_X * strength),
+            LensRefractionPolicy.nodeTravelBudget(height.toFloat(), LensRefractionPolicy.CENTER_GAIN_Y * strength, LensRefractionPolicy.RIM_PUSH_Y * strength))
         return RenderEffect.createChainEffect(RenderEffect.createRuntimeShaderEffect(shader, "content"), input)
     }
 }
