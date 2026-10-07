@@ -20,6 +20,12 @@ import android.widget.SeekBar
 import android.widget.TextView
 import com.lumen.coacervation.engine.host.*
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.interaction.LumenSurfaceInteraction
+import com.lumen.coacervation.engine.motion.LumenFixedFrameClock
+import com.lumen.coacervation.engine.motion.LumenFrameClock
+import com.lumen.coacervation.engine.widget.LumenSlidingSelection
+import com.lumen.coacervation.engine.widget.LumenFusedSelection
+import android.graphics.drawable.ColorDrawable
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -34,9 +40,15 @@ class SurfaceSandboxActivity : Activity() {
     private var surface = LumenSurfaceOptions()
     private var limits = LumenSurfaceSessionOptions()
     private var dark = false
+    private var enhancements=LumenSurfaceEnhancements.DEFAULT
+    private var interaction:LumenSurfaceInteraction?=null
+    private var fixed=false
+    private var presetSeed=1
+    private val fixedTime=LumenFixedFrameClock()
     private lateinit var status: TextView
     private var animation: ValueAnimator? = null
     private val dialogs = ArrayList<Dialog>()
+    private var fusedSelection:LumenFusedSelection?=null
     private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
 
     override fun onCreate(state: Bundle?) {
@@ -58,6 +70,39 @@ class SurfaceSandboxActivity : Activity() {
         session.setListener { _,backend,failure,_ -> status.text="$backend / $failure · 点击“诊断”查看计数" }
         binding=session.bind(glass,surface,content)
         buildControls(controls)
+        val choices=LumenSlidingSelection(this,ColorDrawable(Color.rgb(211,228,248)),LinearLayout.HORIZONTAL)
+        for(label in listOf("推荐","动态","关注"))choices.addOption(TextView(this).apply {text=label;gravity=Gravity.CENTER;setTextColor(Color.BLACK);setPadding(dp(8),dp(14),dp(8),dp(14))},LinearLayout.LayoutParams(0,dp(56),1f))
+        controls.addView(TextView(this).apply {text="真实组件：可打断的融合选择器";setTextColor(Color.BLACK)})
+        controls.addView(choices)
+        fusedSelection=LumenFusedSelection(choices,LumenPalette.neutral(false),LumenSurfaceOptions(radiusDp=16f),
+            LumenSurfaceEnhancements(geometry=LumenSurfaceGeometryOptions(fusionEnabled=true,fusionRadiusDp=24f)))
+        controls.addView(CheckBox(this).apply {text="选择器共享节点基线（A/B）";setOnCheckedChangeListener {_,enabled->fusedSelection?.setSharedNodeBaseline(enabled)}})
+        val advanced=LinearLayout(this).apply {orientation=LinearLayout.VERTICAL}
+        controls.addView(advanced)
+        EnhancementControls(this,advanced,{LumenEffectPreset(surface,enhancements,presetSeed)}, {preset->
+            presetSeed=preset.seed
+            surface=preset.surface;enhancements=preset.enhancements;binding.update(surface);binding.updateEnhancements(enhancements)
+            interaction?.update(enhancements.press,enhancements.light,enhancements.material.reduceMotion)
+            updateFusionGeometry()
+        }, {if(fixed){fixedTime.advanceMillis(16);binding.setFrameTimeNanos(fixedTime.nowNanos(),true);interaction?.advanceFrame()}else status.text="请先启用固定时钟"}, {enabled->
+            binding.clearTransientEffects();fixed=enabled;installInteraction();binding.setFrameTimeNanos(fixedTime.nowNanos(),fixed)
+        }, {fixed}).build()
+        glass.addOnLayoutChangeListener {_,_,_,_,_,_,_,_,_->updateFusionGeometry()}
+        installInteraction()
+    }
+
+    private fun updateFusionGeometry(){
+        if(glass.width<=0||glass.height<=0)return
+        val w=glass.width.toFloat();val h=glass.height.toFloat()
+        if(enhancements.geometry.fusionEnabled)binding.setShapesPixels(8f,8f,w*.36f,h-16f,w*.42f,8f,w*.36f,h-16f,true)
+        else binding.clearCustomShapes()
+    }
+    private fun installInteraction(){
+        interaction?.close()
+        val clock=if(fixed)fixedTime else LumenFrameClock {System.nanoTime()}
+        interaction=LumenSurfaceInteraction(glass,binding,enhancements.press,enhancements.light,clock)
+        interaction?.update(enhancements.press,enhancements.light,enhancements.material.reduceMotion)
+        glass.setOnTouchListener {_,event->interaction?.observeTouch(event);false}
     }
 
     private fun applySurface(value:LumenSurfaceOptions) { surface=value;binding.update(value) }
@@ -87,6 +132,7 @@ class SurfaceSandboxActivity : Activity() {
             val values=LumenSurfaceBackend.entries
             applySampling { it.copy(backend=values[(it.backend.ordinal+1)%values.size]) };status.text="请求后端：${surface.sampling.backend}"
         }
+        action("切换表面角色") {val roles=com.lumen.coacervation.engine.model.SurfaceRole.entries;applySurface(surface.copy(role=roles[(surface.role.ordinal+1)%roles.size]));status.text="角色：${surface.role}"}
         toggle("启用局部表面",surface.enabled) { applySurface(surface.copy(enabled=it)) }
         toggle("启用会话",limits.enabled) { applyLimits(limits.copy(enabled=it)) }
         toggle("采样",surface.sampling.enabled) { enabled->applySampling { it.copy(enabled=enabled) } }
@@ -98,7 +144,7 @@ class SurfaceSandboxActivity : Activity() {
         toggle("着色",surface.tintEnabled) { applySurface(surface.copy(tintEnabled=it)) }
         toggle("描边",surface.edgeEnabled) { applySurface(surface.copy(edgeEnabled=it)) }
         toggle("裁剪背景",surface.clipBackground) { applySurface(surface.copy(clipBackground=it)) }
-        toggle("深色配色（不重建 Activity）",dark) { dark=it;session.updatePalette(LumenPalette.neutral(it));glass.setTextColor(if(it)Color.WHITE else Color.BLACK) }
+        toggle("深色配色（不重建 Activity）",dark) { dark=it;session.updatePalette(LumenPalette.neutral(it));fusedSelection?.updatePalette(LumenPalette.neutral(it));glass.setTextColor(if(it)Color.WHITE else Color.BLACK) }
         toggle("隐藏时暂停",limits.autoPauseWhenHidden) { applyLimits(limits.copy(autoPauseWhenHidden=it)) }
         toggle("窗口失焦时暂停",limits.pauseWhenWindowUnfocused) { applyLimits(limits.copy(pauseWhenWindowUnfocused=it)) }
         toggle("诊断回调",limits.diagnosticsEnabled) { applyLimits(limits.copy(diagnosticsEnabled=it)) }
@@ -124,6 +170,10 @@ class SurfaceSandboxActivity : Activity() {
         slider("GPU 表面预算像素",16384f,8388608f,limits.maxGpuSurfacePixels.toFloat()) { applyLimits(limits.copy(maxGpuSurfacePixels=it.toInt())) }
         slider("最多表面数",1f,32f,limits.maxSurfaces.toFloat()) { applyLimits(limits.copy(maxSurfaces=it.toInt())) }
         slider("GPU 最大边长",128f,8192f,limits.maxGpuDimension.toFloat()) { applyLimits(limits.copy(maxGpuDimension=it.toInt())) }
+        slider("模拟细节压力",0f,1f,0f) {binding.setQualityPressure(it)}
+        slider("控件旋转角度",-180f,180f,glass.rotation) {glass.rotation=it;session.notifyPositionChanged()}
+        slider("控件横向缩放",.5f,1.5f,glass.scaleX) {glass.scaleX=it;session.notifyPositionChanged()}
+        slider("控件纵向缩放",.5f,1.5f,glass.scaleY) {glass.scaleY=it;session.notifyPositionChanged()}
         action("暂停") { session.pause() };action("恢复") {session.resume()}
         action("释放图形资源") {session.releaseGraphics()}
         action("诊断") {status.text=session.diagnostics().toString()+"\n"+binding.diagnostics()}
@@ -157,9 +207,9 @@ class SurfaceSandboxActivity : Activity() {
         dialogs.add(dialog);dialog.show();dialog.window?.setLayout(dp(320),dp(400))
     }
 
-    override fun onStart() {super.onStart();if(::session.isInitialized)session.resume()}
-    override fun onStop() {animation?.cancel();session.pause();super.onStop()}
-    override fun onDestroy() {dialogs.toList().forEach(Dialog::dismiss);session.close();super.onDestroy()}
+    override fun onStart() {super.onStart();if(::session.isInitialized)session.resume();fusedSelection?.resume();interaction?.resume()}
+    override fun onStop() {interaction?.pause();fusedSelection?.pause();animation?.cancel();session.pause();super.onStop()}
+    override fun onDestroy() {interaction?.close();fusedSelection?.close();dialogs.toList().forEach(Dialog::dismiss);session.close();super.onDestroy()}
 
     private inner class PatternView : View(this) {
         var phase=0f

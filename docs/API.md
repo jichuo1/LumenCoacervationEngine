@@ -1,4 +1,4 @@
-# 公开 API 清单（1.1.1）
+# 公开 API 清单（1.2.0 候选）
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。
 >
@@ -246,3 +246,36 @@
 - LumenSurfaceState / LumenSurfaceDiagnostics：请求/实际材质、每绑定状态及会话计数。
 - LumenSurfaceListener.onSurfaceState(id, backend, failure, firstVisibleDraw)：异步合并、异常隔离。
 - LumenSurfacePresets.floating / fadingBand / staticPanel：可继续copy调节的配置。
+
+## 13. 局部增强（自1.2候选）
+
+完整默认值、有效范围、优先级与平台回退见 [VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。以下配置为不可变data class，构造/copy均校验范围；值类型与JSON编解码不依赖渲染线程，其余渲染/交互入口为主线程。
+
+| 声明 | 公开成员 |
+|---|---|
+| `host.LumenSurfaceSession` | 新重载`bind(view,surface,source: View?,enhancements)` / `bindSource(view,surface,source: LumenContentSource?,enhancements)`；`performanceDiagnostics(): LumenSurfacePerformance` |
+| `LumenSurfaceBinding` | `isBound`、`updateEnhancements`、`samplingRegions`、`setPressPixels(x,y,pressure)`、`setShapesPixels(ax,ay,aw,ah,bx,by,bw,bh,secondShape)`、`clearCustomShapes()`、`setLightDirection(x,y,z)`、`setFrameTimeNanos(now,manual)`、`emitRipplePixels(x,y)`、`clearTransientEffects()`、`setQualityPressure(pressure)` |
+| `LumenSurfaceEnhancements` | geometry/progressiveBlur/press/light/material/quality/debug；`DEFAULT` |
+| `LumenSurfaceCorners` | topLeft/topRight/bottomRight/bottomLeft；`mirrored()` |
+| `LumenSurfaceGeometryOptions` | cornersEnabled/corners/mirrorCornersInRtl/fusionEnabled/fusionRadiusDp/antiAliasWidthDp/shadowEnabled/shadowRadiusDp/shadowOpacity |
+| `LumenProgressiveBlurOptions` | enabled/weakRadiusDp/strongRadiusDp/weakStart/weakEnd/strongStart/strongEnd/direction/strength/maxBandHeightDp |
+| `LumenLocalPressOptions` | enabled/displacementDp/radiusFraction/highlightStrength/cancelOutside/releaseDurationMs/rippleEnabled/rippleAmplitudeDp/rippleSpeedDpPerSecond/rippleWidthDp/rippleLifetimeMs/maxRipples |
+| `LumenSurfaceLightOptions` | enabled/angleDegrees/altitude/intensity/specularStrength/specularPower/edgeWidthDp/transformNormals/gestureInfluence/smoothingTimeMs |
+| `LumenMaterialRecipeOptions` | intent/normalizeBySize/maxEdgeFraction/maxRefractionFraction/contrastFloor/reduceTransparency/reduceMotion/chromaticStrength/saturation/useIntentDefaults |
+| `LumenSurfaceQualityOptions` | enabled/mode/adaptive/lowerThreshold/upperThreshold/hysteresis/minimumDwellMs/maxExecutionPixels/maxBitmapPixels/bitmapIntervalMs |
+| `LumenSurfaceDebugOptions` | countersEnabled/timingEnabled/drawSamplingBounds/boundsLineWidthDp/boundsOpacity/samplingRange |
+| `LumenMaterialIntent` | UNCHANGED / READING / CLEAR / OPAQUE_ACCESSIBLE / DECORATIVE |
+| `LumenDetailMode`、`LumenSamplingRangeMode` | LOW / BALANCED / HIGH；SAFE_INTERIOR / PADDED_EXPERIMENTAL |
+| `LumenVersionedContentSource : LumenContentSource` | sourceEpoch/contentVersion/availability/dependencies；getter为纯主线程快照，依赖默认空 |
+| `LumenSourceAvailability` | READY / TEMPORARILY_UNAVAILABLE / PROHIBITED / INDEPENDENT_SURFACE |
+| `LumenSurfacePerformance` | contentRecordings/proxyRecordings/effectChainBuilds/runtimeShaderBuilds/softwareRequests/softwareCompletions/staleCompletions/contentRecordingNanos/softwareProcessingNanos/activeSoftwareBytes/logicalGpuContentPixels/logicalGpuEffectPixels/timingEnabled |
+| `LumenSurfaceSamplingRegions` | shapeBounds/requiredSampleBounds/recordedBounds/materializedBounds/outputClip/sourceId/sourceEpoch/contentVersion/capturedVersion/estimatedSourceAgeNanos/availability |
+| `LumenSurfaceRegion`、`LumenRegionSpace` | left/top/right/bottom/space；SOURCE_LOCAL / TARGET_LOCAL / EXECUTION_PIXELS |
+| `LumenEffectPreset(surface,enhancements,seed)` | `toJson(): String`；companion `fromJson(text): LumenEffectPreset`，schema1，最大16384字符，无图片或路径 |
+| `motion.LumenFrameClock` | `fun nowNanos(): Long`，非负单调时钟；固定回放可显式seek |
+| `motion.LumenFixedFrameClock` | initialNanos；`nowNanos()` / `seekNanos(nanos)` / `advanceMillis(millis)` |
+| `interaction.LumenSurfaceInteraction(view,binding,press,light,clock)` | `update(press,light,reduceMotion)` / `observeTouch(event)` / `advanceFrame()` / `cancel()` / `pause()` / `resume()` / `close()`；不消费事件、不替换宿主监听 |
+| `widget.LumenSlidingSelection` | `setOnGeometryListener` / `getOnGeometryListener`；`OnGeometryListener.onGeometry(left,top,right,bottom,targetLeft,targetTop,targetRight,targetBottom,moving)`，原始类型参数 |
+| `widget.LumenFusedSelection(selection,palette,surface,enhancements,sharedNodeBaseline=false)` | `update(surface,enhancements)` / `setSharedNodeBaseline(enabled)` / `updatePalette` / `diagnostics` / `pause` / `resume` / `close`；可逆装饰真实选择器 |
+
+新类型的包名除明确标注motion/interaction/widget外均为`com.lumen.coacervation.engine.host`。

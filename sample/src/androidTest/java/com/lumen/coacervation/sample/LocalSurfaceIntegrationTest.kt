@@ -168,20 +168,24 @@ class LocalSurfaceIntegrationTest {
             assertTrue("Both software surfaces must produce an initial frame",ready)
             var initialFast=0;var initialSlow=0;var lastSlow=0L
             scenario.onActivity { initialFast=fastTimes.size;initialSlow=slowTimes.size;lastSlow=slowTimes.last() }
-            for(i in 0 until 15) { scenario.onActivity { it.session.notifyContentChanged() };SystemClock.sleep(20) }
+            var lastChange=0L
+            for(i in 0 until 15) { scenario.onActivity {lastChange=SystemClock.uptimeMillis();it.session.notifyContentChanged() };SystemClock.sleep(20) }
             scenario.onActivity {
                 assertTrue("Fast surface should keep sampling",fastTimes.size>initialFast+2)
-                assertEquals("Fast surface must not accelerate slow surface",initialSlow,slowTimes.size)
+                // Full-suite UI/GC load can make 15 nominal 20ms pulses exceed the slow interval.
+                // Check the actual capture gaps, and keep the no-extra-capture assertion when still inside it.
+                if(SystemClock.uptimeMillis()-lastSlow<950)assertEquals("Fast surface must not accelerate slow surface",initialSlow,slowTimes.size)
+                for(i in initialSlow until slowTimes.size)assertTrue("Slow surface interval: $slowTimes",slowTimes[i]-slowTimes[i-1]>=950)
             }
             val finalDeadline=SystemClock.uptimeMillis()+3000
             var finalSample=false
             while(!finalSample && SystemClock.uptimeMillis()<finalDeadline) {
-                scenario.onActivity { finalSample=slowTimes.size>initialSlow }
+                scenario.onActivity { finalSample=slowTimes.size>initialSlow&&slowTimes.last()>=lastChange }
                 if(!finalSample)SystemClock.sleep(20)
             }
             assertTrue("Slow surface must sample the final pending frame after motion stops",finalSample)
             var count=0
-            scenario.onActivity { assertTrue(slowTimes.last()-lastSlow>=950);count=fastTimes.size+slowTimes.size }
+            scenario.onActivity {assertTrue(slowTimes.last()-lastSlow>=950);for(i in initialSlow until slowTimes.size)assertTrue(slowTimes[i]-slowTimes[i-1]>=950);count=fastTimes.size+slowTimes.size }
             SystemClock.sleep(200)
             scenario.onActivity { assertEquals("A static page must stop sampling",count,fastTimes.size+slowTimes.size) }
         }
@@ -216,6 +220,12 @@ class LocalSurfaceIntegrationTest {
                 if(!gpu)SystemClock.sleep(30)
             }
             assertTrue("GPU local surface never became drawable",gpu)
+            // Opt into custom geometry, then clear it: strict GPU-only input must return to the legacy node plan.
+            scenario.onActivity {a->a.binding.setShapesPixels(0f,0f,a.glass.width.toFloat(),a.glass.height.toFloat(),0f,0f,0f,0f,false);a.binding.clearCustomShapes()}
+            val restoredDeadline=SystemClock.uptimeMillis()+5000
+            gpu=false
+            while(!gpu&&SystemClock.uptimeMillis()<restoredDeadline){scenario.onActivity {gpu=it.binding.diagnostics()?.backend==LumenSurfaceBackend.GPU};if(!gpu)SystemClock.sleep(25)}
+            assertTrue("Cleared custom geometry must restore the node path",gpu)
             Log.i("Lumen-SurfaceTest","GPU fade: backend ready, copy pixels")
             var image:Bitmap?=null
             var copyResult=-1

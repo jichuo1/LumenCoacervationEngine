@@ -77,3 +77,6 @@ JVM覆盖非有限值、渐隐、极端几何预算、失败路由、共享预�
 LocalSurfaceIntegrationTest随sample设备测试执行，验证背景/层级/padding、软件帧、动态主题、无来源静态后端、跨窗口拒绝和关闭。
 31+还用PixelCopy检查GPU渐隐的实际像素。ATD镜像默认不提交最终硬件图像，测试在33+临时启用输出并在finally恢复；生产引擎不控制该开关。
 示例验证不等于第三方应用的Hook、Compose或灰度路径已经覆盖。
+
+1.2候选新增独立配置与重载，四角/融合/按压/光源/渐进模糊/质量和参数回放见[VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。
+旧构造和默认外观保留；增强效果的位图输入仍受softwareFallback开关限制。

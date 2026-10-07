@@ -21,6 +21,8 @@ class SmokeResultsTest(unittest.TestCase):
             keys = {(owner, name) for owner, names in VERIFIER.REQUIRED.items() for name in names}
             if api >= 31:
                 keys.add(VERIFIER.GPU_TEST)
+            if api >= 33:
+                keys.update(VERIFIER.ENHANCED_GPU_TESTS)
             for owner, name in sorted(keys if not empty else set()):
                 if (owner, name) == omit:
                     continue
@@ -46,6 +48,10 @@ class SmokeResultsTest(unittest.TestCase):
 
     def test_missing_gpu_assertion_is_rejected(self):
         self.assertFalse(self.check(omit=VERIFIER.GPU_TEST))
+    def test_missing_new_pixel_test_is_rejected(self):
+        self.assertFalse(self.check(omit=next(iter(VERIFIER.ENHANCED_GPU_TESTS))))
+    def test_api31_does_not_require_agsl_tests(self):
+        self.assertTrue(self.check(api=31))
 
     def test_failed_or_skipped_required_test_is_rejected(self):
         for problem in ("failure", "error", "skipped"):

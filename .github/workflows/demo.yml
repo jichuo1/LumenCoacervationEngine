@@ -2,7 +2,7 @@
 #
 # - PR 与 push main：只构建并测试，不发布。
 # - 发布新 Release：自动把演示包附到该 Release。
-# - 手动运行（workflow_dispatch）：从指定 tag 构建并附到该 Release（默认 1.1.1），同名文件覆盖。
+# - 手动运行（workflow_dispatch）：从指定已发布 tag 构建并附到该 Release（默认 1.1.0），同名文件覆盖。
 name: Demo APK
 
 on:
@@ -37,7 +37,7 @@ on:
       tag:
         description: '要附加演示包的 Release tag'
         required: true
-        default: '1.1.1'
+        default: '1.1.0'
 
 concurrency:
   group: demo-${{ github.ref }}-${{ github.event_name }}
@@ -136,7 +136,7 @@ jobs:
           disk-size: 4096M
           emulator-options: -no-window -gpu ${{ matrix.api-level == 34 && 'swiftshader' || 'swiftshader_indirect' }} ${{ matrix.api-level == 34 && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -camera-back none -show-kernel
           script: |
-            bash .github/scripts/run-smoke.sh || { adb logcat -d -b crash; exit 1; }
+            bash .github/scripts/run-smoke.sh || { timeout 15s adb logcat -d -b crash || true; exit 1; }
 
       - name: Upload test reports
         if: always()
@@ -148,6 +148,7 @@ jobs:
             sample/build/outputs/androidTest-results/
             logcat.txt
             host-usage.txt
+            lumen-surface-benchmark.json
           retention-days: 14
 
   publish:

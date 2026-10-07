@@ -27,14 +27,36 @@ REQUIRED = {
         "mixedSoftwareIntervalsRemainIndependentAndTheFinalSlowFrameIsSampled",
         "foreignWindowSourceIsRejectedAndLateCallsAfterCloseAreHarmless",
     },
+    PREFIX + "EnhancedSurfaceIntegrationTest": {
+        "presetsRoundTripAllGroupsAndRejectInvalidKnownValues",
+        "opaqueAccessibleIntentNeedsNoCaptureAndKeepsTheOriginalClick",
+        "prohibitedDependencyStopsBeforeFirstCaptureAndRecoversAfterAvailabilityChanges",
+        "fusedSelectorKeepsBusinessSelectionAndRestoresOnlyOwnedResources",
+    },
+    PREFIX + "SurfaceBenchmarkTest": {"compareFixedSceneWithLegacyAndEnhancedPlansAndPreserveRawSamples"},
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
+ENHANCED_GPU_TESTS = {
+    (PREFIX + "EnhancedSurfaceIntegrationTest", "fusionPressAndLightCompileAndContinuousFramesDoNotBuildRenderEffects"),
+    (PREFIX + "EnhancedSurfaceIntegrationTest", "progressiveBlurProducesAnActualWindowImageAndStaysWithinBudget"),
+    *((PREFIX + "SurfacePixelContractTest", name) for name in (
+        "smoothFusionFillsTheBridgeButTheHardUnionDoesNot",
+        "asymmetricLargeCornerMatchesTheCanvasContourAwayFromAntialiasing",
+        "progressiveBlurReducesStripeContrastAndCanReverseDirection",
+        "localPressChangesNearbyPixelsAndLeavesDistantPixelsStable",
+        "sdrTransparentInputAndTintFollowPremultipliedComposition",
+        "paddedExperimentCanReadTheOutsideMarkerAndReportsActualFiveBounds",
+        "rotatingTheSurfaceTransformsItsLightingNormal",
+    )),
+}
 
 
 def verify(directory: Path, api: int, since: float = 0) -> bool:
     required = {(owner, name) for owner, methods in REQUIRED.items() for name in methods}
     if api >= 31:
         required.add(GPU_TEST)
+    if api >= 33:
+        required.update(ENHANCED_GPU_TESTS)
     files = sorted(path for path in directory.rglob("*.xml") if path.stat().st_mtime >= since)
     passed = set()
     total = failed = skipped = 0

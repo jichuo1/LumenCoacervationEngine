@@ -17,6 +17,7 @@ import com.lumen.coacervation.engine.liquid.LiquidChromeLensApi33
 import com.lumen.coacervation.engine.liquid.LiquidTokenResolver
 import com.lumen.coacervation.engine.liquid.LiquidVisualTuningPolicy
 import com.lumen.coacervation.engine.material.FrostedChromeLensApi33
+import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
@@ -63,20 +64,20 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
     class LensCache {
         private var frosted: Any? = null
         private var liquid: Any? = null
-        fun lens(material: LumenSurfaceMaterial, parameters: com.lumen.coacervation.engine.model.LiquidParameters, density: Float, strength: Float): Any? {
+        fun lens(material: LumenSurfaceMaterial, parameters: com.lumen.coacervation.engine.model.LiquidParameters, density: Float, strength: Float, counters: LumenGraphicsCounters? = null): Any? {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
             return if (material == LumenSurfaceMaterial.LIQUID) {
-                val current = liquid ?: LiquidChromeLensApi33.create(parameters, density).also { liquid = it }
+                val current = liquid ?: LiquidChromeLensApi33.create(parameters, density).also { liquid = it; counters?.shaderCompiled() }
                 LiquidChromeLensApi33.configure(current, parameters, density); current
             } else {
-                val current = frosted ?: FrostedChromeLensApi33.create(strength).also { frosted = it }
+                val current = frosted ?: FrostedChromeLensApi33.create(strength).also { frosted = it; counters?.shaderCompiled() }
                 FrostedChromeLensApi33.configure(current, strength); current
             }
         }
     }
 
     @RequiresApi(31)
-    class Glass(options: LumenSurfaceOptions, density: Float, dark: Boolean, cache: LensCache) : AutoCloseable {
+    class Glass(options: LumenSurfaceOptions, density: Float, dark: Boolean, cache: LensCache, counters: LumenGraphicsCounters? = null) : AutoCloseable {
         private val sampling = options.sampling
         private val pad = (maxOf(20f * sampling.refractionStrength, (if (sampling.blurEnabled) sampling.blurRadiusDp else 0f) * 2f) * density).roundToInt() + 2
         private val blur = if (!sampling.blurEnabled || sampling.blurRadiusDp == 0f) RenderEffect.createOffsetEffect(0f, 0f)
@@ -87,14 +88,14 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         }
         private val lens: Any? = if (sampling.refractionEnabled && sampling.refractionStrength > 0f &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            cache.lens(options.material, liquidParameters, density, sampling.refractionStrength)
+            cache.lens(options.material, liquidParameters, density, sampling.refractionStrength, counters)
         } else null
         val renderer = GlowChromeGlassApi31(pad) { width, height, padding, radius, intensity, direction ->
             var effect = blur
             if (lens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 effect = if (options.material == LumenSurfaceMaterial.LIQUID)
-                    LiquidChromeLensApi33.effect(lens, blur, width, height, padding, radius, intensity, direction)
-                else FrostedChromeLensApi33.effect(lens, blur, width, height, padding, sampling.refractionStrength)
+                    LiquidChromeLensApi33.effect(lens, effect, width, height, padding, radius, intensity, direction)
+                else FrostedChromeLensApi33.effect(lens, effect, width, height, padding, sampling.refractionStrength)
             }
             if (sampling.fadeEnabled) {
                 val colors = IntArray(33)
@@ -110,7 +111,7 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
                 effect = RenderEffect.createBlendModeEffect(effect, RenderEffect.createShaderEffect(mask), BlendMode.DST_IN)
             }
             effect
-        }
+        }.apply { this.counters = counters }
         override fun close() = renderer.close()
     }
 }

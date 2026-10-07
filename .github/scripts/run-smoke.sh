@@ -46,4 +46,5 @@ if [ "$status" -ne 0 ]; then
   tail -n 200 logcat.txt || true
   echo "::endgroup::"
 fi
+timeout 15s adb pull /sdcard/Android/data/com.lumen.coacervation.sample/files/lumen-surface-benchmark.json lumen-surface-benchmark.json || true
 exit "$status"

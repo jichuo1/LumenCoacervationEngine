@@ -818,3 +818,9 @@ root（bindRoot）
 不控制整个Activity时使用LumenSurfaceSession，接线与约束见[SURFACE_SESSIONS.md](SURFACE_SESSIONS.md)。
 不得为了使用局部材质而重建第三方Activity或重挂它的内容；来源必须匹配实际窗口并排除注入表面。
 配置、Hook、业务输入与前景文字由宿主管理，采样、材质与资源生命周期交给会话。
+
+### 16.1 受控增强（1.2候选）
+
+独立四角、双形状融合、局部按压、光源、渐进模糊及细节质量使用`LumenSurfaceEnhancements`，接线、全部参数和回退见[VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。
+来源授权和保护状态由宿主显式声明；禁止/独立Surface不得借助回退采样绕过。固定时钟由宿主推进，参数JSON不包含实时输入事件或像素。
+`LumenFusedSelection`只是背景装饰，保留原选项的业务和无障碍语义；有外扩的直接容器显式关闭clipChildren与clipToPadding并留出空间。

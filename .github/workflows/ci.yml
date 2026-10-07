@@ -30,6 +30,11 @@ jobs:
       - name: Build, unit test, lint
         run: ./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug --console=plain --no-daemon
 
+      - name: Verify third-party notices in distributions
+        run: |
+          ./gradlew :lumen-engine:bundleReleaseAar :lumen-engine:sourceReleaseJar --console=plain --no-daemon
+          python3 tools/check_third_party_notices.py --aar lumen-engine/build/outputs/aar/lumen-engine-release.aar --sources lumen-engine/build/intermediates/source_jar/release/release-sources.jar
+
       - name: Upload reports
         if: failure()
         uses: actions/upload-artifact@v4
