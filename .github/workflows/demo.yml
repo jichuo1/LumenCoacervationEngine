@@ -19,6 +19,8 @@ on:
       - '.github/scripts/verify-smoke-results.py'
       - 'tools/test_prepare_emulator.py'
       - 'tools/test_verify_smoke_results.py'
+      - '.github/scripts/install-emulator-libraries.sh'
+      - 'tools/test_install_emulator_libraries.py'
   push:
     branches: [main]
     paths:
@@ -30,6 +32,8 @@ on:
       - '.github/scripts/verify-smoke-results.py'
       - 'tools/test_prepare_emulator.py'
       - 'tools/test_verify_smoke_results.py'
+      - '.github/scripts/install-emulator-libraries.sh'
+      - 'tools/test_install_emulator_libraries.py'
   release:
     types: [published]
   workflow_dispatch:
@@ -58,7 +62,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Test emulator installation retry
-        run: python3 -m unittest discover -s tools -p 'test_*smoke*.py' -v && python3 -m unittest discover -s tools -p test_prepare_emulator.py -v
+        run: python3 -m unittest discover -s tools -p 'test_*smoke*.py' -v && python3 -m unittest discover -s tools -p test_prepare_emulator.py -v && python3 -m unittest discover -s tools -p test_install_emulator_libraries.py -v
 
       - name: Build release APK and test APK
         run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest --console=plain --no-daemon
@@ -109,9 +113,7 @@ jobs:
       # Action 会无条件安装最新 emulator；预先安装成功后该步骤只检查已安装包。
       # SDK 下载/解压最多重试三次，应用测试的失败仍直接阻止发布。
       - name: Install emulator runtime library
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libpulse0
+        run: bash .github/scripts/install-emulator-libraries.sh
 
       - name: Prepare Android Emulator with bounded retry
         run: bash .github/scripts/prepare-emulator.sh

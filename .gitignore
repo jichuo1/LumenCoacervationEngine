@@ -1,6 +1,7 @@
 # 本机 SDK 路径与构建产物
 local.properties
 .gradle/
+.ci-apt/
 build/
 */build/
 .idea/
