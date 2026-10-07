@@ -143,10 +143,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.1.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.1.1")
     // 可选模块，版本号保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.1.0")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.1.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.1.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.1.1")
 }
 ```
 
@@ -158,7 +158,7 @@ includeBuild("../LumenCoacervationEngine")
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.lumen.coacervation.engine:lumen-engine:1.1.0")
+    implementation("com.lumen.coacervation.engine:lumen-engine:1.1.1")
 }
 ```
 

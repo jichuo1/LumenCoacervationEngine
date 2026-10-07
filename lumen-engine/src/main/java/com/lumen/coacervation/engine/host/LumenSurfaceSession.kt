@@ -140,14 +140,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         if (closed || paused) return
         checkMain(); paused = true
         groups.forEach { it.sampler.suspend(); it.releaseGpu() }
-        entries.forEach { it.releaseGpu(); it.host.get()?.invalidate() }
+        entries.forEach { it.releaseGpu(); it.resetState(LumenSurfaceFailure.PAUSED); it.host.get()?.invalidate() }
     }
 
     public fun resume() {
         if (closed) return
         checkMain(); paused = false; memoryReleased = false
         groups.forEach { it.sampler.resume(); it.dirty = true }
-        entries.forEach { it.host.get()?.invalidate() }
+        entries.forEach { it.resetState(); it.host.get()?.invalidate() }
     }
 
     /** Drop graphics only. Explicit resume/content change may restore them; failures stay sticky. */
@@ -155,7 +155,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         if (closed) return
         checkMain(); memoryReleased = true
         groups.forEach { it.release() }
-        entries.forEach { it.releaseGpu(); it.host.get()?.invalidate() }
+        entries.forEach { it.releaseGpu(); it.resetState(LumenSurfaceFailure.MEMORY_PRESSURE); it.host.get()?.invalidate() }
     }
 
     public fun diagnostics(): LumenSurfaceDiagnostics {
@@ -400,13 +400,24 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             } else if (view.background === drawable) {
                 replaceBackground(view, original); group?.sampler?.unregister(view)
             }
+            resetState()
             view.invalidate()
         }
         fun releaseGpu() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) gpu?.close()
             gpu = null; gpuPixels = 0L
         }
-        fun rebuild() { releaseGpu(); drawable.configure(); group?.dirty = true; host.get()?.let { group?.sampler?.unregister(it); it.invalidate() } }
+        fun rebuild() { releaseGpu(); drawable.configure(); resetState(); group?.dirty = true; host.get()?.let { group?.sampler?.unregister(it); it.invalidate() } }
+        fun resetState(reason: LumenSurfaceFailure = LumenSurfaceFailure.FRAME_PENDING) {
+            val dynamic = options.enabled && config.enabled && config.opacity > 0f && config.sampling.enabled &&
+                config.material != LumenSurfaceMaterial.STATIC && config.sampling.backend != LumenSurfaceBackend.STATIC
+            val failure = if (!dynamic) LumenSurfaceFailure.NONE else when {
+                paused -> LumenSurfaceFailure.PAUSED
+                memoryReleased -> LumenSurfaceFailure.MEMORY_PRESSURE
+                else -> reason
+            }
+            report(LumenSurfaceBackend.STATIC, failure, false)
+        }
         fun report(backend: LumenSurfaceBackend, reason: LumenSurfaceFailure, visible: Boolean) {
             val initial = visible && !first && host.get()?.getGlobalVisibleRect(visibleRegion) == true
             if (initial) { first = true; firstDraws++; eventFirst = true }

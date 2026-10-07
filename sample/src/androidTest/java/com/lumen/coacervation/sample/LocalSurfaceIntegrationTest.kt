@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Rect
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.os.Handler
@@ -16,6 +17,7 @@ import androidx.test.filters.SdkSuppress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import android.view.View
+import android.view.Gravity
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -116,8 +118,72 @@ class LocalSurfaceIntegrationTest {
                 it.session.updatePalette(LumenPalette.neutral(true))
                 assertSame(owner,it);assertSame(background,root.background)
                 assertEquals(1L,it.session.diagnostics().paletteGeneration)
-                it.session.releaseGraphics();it.session.resume()
+                assertEquals(LumenSurfaceBackend.STATIC,it.binding.diagnostics()?.backend)
+                it.binding.update(LumenSurfaceOptions(enabled=false))
+                assertEquals(LumenSurfaceBackend.STATIC,it.binding.diagnostics()?.backend)
+                assertEquals(LumenSurfaceFailure.NONE,it.binding.diagnostics()?.failure)
+                it.binding.update(LumenSurfaceOptions(sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.SOFTWARE,minIntervalMs=0)))
+                assertEquals(LumenSurfaceFailure.FRAME_PENDING,it.binding.diagnostics()?.failure)
+                it.session.pause()
+                assertEquals(LumenSurfaceBackend.STATIC,it.binding.diagnostics()?.backend)
+                assertEquals(LumenSurfaceFailure.PAUSED,it.binding.diagnostics()?.failure)
+                it.session.resume();it.session.releaseGraphics()
+                assertEquals(LumenSurfaceBackend.STATIC,it.binding.diagnostics()?.backend)
+                assertEquals(LumenSurfaceFailure.MEMORY_PRESSURE,it.binding.diagnostics()?.failure)
+                it.session.resume()
             }
+        }
+    }
+
+    @Test fun mixedSoftwareIntervalsRemainIndependentAndTheFinalSlowFrameIsSampled() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            val fastTimes=ArrayList<Long>();val slowTimes=ArrayList<Long>()
+            var slowBinding:LumenSurfaceBinding?=null
+            scenario.onActivity { activity ->
+                activity.binding.close()
+                activity.glass.layoutParams=FrameLayout.LayoutParams(40,40,Gravity.TOP or Gravity.LEFT).apply {topMargin=8;leftMargin=8}
+                val slow=View(activity)
+                activity.preview.addView(slow,FrameLayout.LayoutParams(40,40,Gravity.BOTTOM or Gravity.LEFT).apply {bottomMargin=8;leftMargin=8})
+                val clip=Rect()
+                val source=object:LumenContentSource {
+                    override val coordinateView:View get()=activity.content
+                    override fun drawContent(canvas:Canvas) {
+                        canvas.getClipBounds(clip)
+                        (if(clip.centerY()<coordinateView.height/2)fastTimes else slowTimes).add(SystemClock.uptimeMillis())
+                        canvas.drawColor(Color.RED)
+                    }
+                }
+                val options=LumenSurfaceOptions(radiusDp=0f,tintEnabled=false,edgeEnabled=false,
+                    sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.SOFTWARE,blurEnabled=false,refractionEnabled=false,minIntervalMs=0))
+                activity.binding=activity.session.bindSource(activity.glass,options,source)
+                slowBinding=activity.session.bindSource(slow,options.copy(sampling=options.sampling.copy(minIntervalMs=1000)),source)
+            }
+            val firstDeadline=SystemClock.uptimeMillis()+5000
+            var ready=false
+            while(!ready && SystemClock.uptimeMillis()<firstDeadline) {
+                scenario.onActivity { ready=it.binding.diagnostics()?.backend==LumenSurfaceBackend.SOFTWARE && slowBinding?.diagnostics()?.backend==LumenSurfaceBackend.SOFTWARE }
+                if(!ready)SystemClock.sleep(20)
+            }
+            assertTrue("Both software surfaces must produce an initial frame",ready)
+            var initialFast=0;var initialSlow=0;var lastSlow=0L
+            scenario.onActivity { initialFast=fastTimes.size;initialSlow=slowTimes.size;lastSlow=slowTimes.last() }
+            for(i in 0 until 15) { scenario.onActivity { it.session.notifyContentChanged() };SystemClock.sleep(20) }
+            scenario.onActivity {
+                assertTrue("Fast surface should keep sampling",fastTimes.size>initialFast+2)
+                assertEquals("Fast surface must not accelerate slow surface",initialSlow,slowTimes.size)
+            }
+            val finalDeadline=SystemClock.uptimeMillis()+3000
+            var finalSample=false
+            while(!finalSample && SystemClock.uptimeMillis()<finalDeadline) {
+                scenario.onActivity { finalSample=slowTimes.size>initialSlow }
+                if(!finalSample)SystemClock.sleep(20)
+            }
+            assertTrue("Slow surface must sample the final pending frame after motion stops",finalSample)
+            var count=0
+            scenario.onActivity { assertTrue(slowTimes.last()-lastSlow>=950);count=fastTimes.size+slowTimes.size }
+            SystemClock.sleep(200)
+            scenario.onActivity { assertEquals("A static page must stop sampling",count,fastTimes.size+slowTimes.size) }
         }
     }
 

@@ -1,6 +1,8 @@
 package com.lumen.coacervation.engine
 
 import com.lumen.coacervation.engine.contract.SourceContract
+import com.lumen.coacervation.engine.contract.after
+import com.lumen.coacervation.engine.contract.before
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -41,5 +43,16 @@ class LumenSurfaceContractTest {
         assertTrue(s.contains("entry.generation != job.generation"))
         assertTrue(s.contains("sharedBudget?.reserve(bytes)"))
         assertFalse(s.contains("texture?.recycle()"))
+    }
+    @Test fun softwareCaptureFiltersEachSurfaceBeforePreparingOrRecordingIt() {
+        val s=SourceContract.read("material/LiveBackdropSampler.kt")
+        val collect=s.after("private fun collectJobs(").before("private fun schedulePendingSample(")
+        val throttle=collect.indexOf("entry.cadence.remainingMs(")
+        assertTrue(throttle >= 0 && collect.indexOf("prepare(view, entry,") > throttle)
+        assertTrue(collect.contains("plans.forEach { entry -> entry.cadence.sampled(now) }"))
+        val trailing=s.after("private val trailingSample = Runnable").before("private var inFlight")
+        assertFalse(trailing.contains("dirty = true"))
+        val done=s.after("private fun onBatchDone(").before("private fun isInside(")
+        assertTrue(done.contains("if (isActive) schedulePendingSample(System.nanoTime())"))
     }
 }

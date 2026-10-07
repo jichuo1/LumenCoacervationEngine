@@ -58,6 +58,7 @@ internal class LiveBackdropSampler(
 ) {
     private class Entry(val budget: LumenSampleBudget?) {
         var profile: LumenSurfaceSampling? = null
+        val cadence = LumenSampleCadence()
         var allocatedBytes = 0L
         var scale = 0
         var margin = 0
@@ -89,6 +90,7 @@ internal class LiveBackdropSampler(
 
         fun release() {
             generation++
+            cadence.reset()
             valid = false
             shader = null
             texture = null // A previous hardware display list may still hold this bitmap.
@@ -145,14 +147,13 @@ internal class LiveBackdropSampler(
     private var failed = false
     private var closed = false
 
-    /** 上一次真正采样的时刻；节流与收尾补采都按它判定。 */
-    private var lastSampleNanos = 0L
     private var trailingPosted = false
-    private var trailingHost: View? = null
+    private var trailingDeadlineNanos = 0L
     private val trailingSample = Runnable {
         trailingPosted = false
         if (!isActive) return@Runnable
-        dirty = true
+        // Wake pending surfaces without marking every surface stale again.
+        if (entries.keys.any { isInside(it, source) }) ignoreSelfInflictedDirty = true
         entries.keys.forEach(View::invalidate)
     }
 
@@ -183,12 +184,6 @@ internal class LiveBackdropSampler(
     var recordings: Long = 0
         private set
     val allocatedBytes: Long get() = entries.values.sumOf { it.allocatedBytes }
-
-    private fun intervalMs(): Long {
-        var value = Long.MAX_VALUE
-        entries.values.forEach { value = minOf(value, it.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) }
-        return if (value == Long.MAX_VALUE) ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS else value
-    }
 
     val isActive: Boolean get() = !closed && !failed && !suspended && source != null
 
@@ -243,30 +238,23 @@ internal class LiveBackdropSampler(
         if (!isActive || entries.isEmpty()) return
         val content = source ?: return
         if (!content.isAttachedToWindow || content.width <= 0 || content.height <= 0) return
-        if (!dirty && !content.isDirty) return
-        if (ignoreSelfInflictedDirty) {
-            ignoreSelfInflictedDirty = false
-            if (!dirty) return
-        }
+        val selfInflicted = ignoreSelfInflictedDirty
+        ignoreSelfInflictedDirty = false
+        val contentChanged = dirty || !selfInflicted && content.isDirty
+        if (contentChanged) entries.values.forEach { it.cadence.invalidate() }
+        dirty = false
+        if (!entries.values.any { it.cadence.pending }) return
         // 上一批还在后台：保持 dirty，批次回来时会拉起下一趟 traversal 续采。
         if (inFlight) return
-        // 节流：连续运动时不必每个 vsync 都重采样一遍内容层。落在间隔内就保持 dirty、
-        // 投递一次收尾补采——**必须**补，否则手指停下的最后一帧被跳过就会永久停在
-        // 滞后的映射上。
+        // Each surface owns its interval. A 0ms surface must not speed up a 1000ms one.
+        // Slow surfaces stay pending so the final frame is sampled after motion stops.
         val now = System.nanoTime()
-        val elapsedMs = (now - lastSampleNanos) / NANOS_PER_MILLISECOND
-        if (lastSampleNanos != 0L && elapsedMs < intervalMs()) {
-            scheduleTrailingSample(intervalMs() - elapsedMs)
-            return
-        }
-        lastSampleNanos = now
-        dirty = false
         // 采集期间视图树静止：开启祖先备忘，5 个表面与录制里的每张卡片共享同一条祖先链。
-        val jobs = samplingMatrices.withAncestorMemo { collectJobs(content) } ?: run {
+        val jobs = samplingMatrices.withAncestorMemo { collectJobs(content, now) } ?: run {
             fail()
             return
         }
-        if (jobs.isEmpty()) return
+        if (jobs.isEmpty()) { schedulePendingSample(now); return }
         inFlight = true
         val token = batchToken
         worker.execute {
@@ -276,7 +264,7 @@ internal class LiveBackdropSampler(
     }
 
     /** 一批采集的主线程部分：逐表面准备几何，再按组录制。返回 null 表示失败（调用方永久退回静态磨砂）。 */
-    private fun collectJobs(content: View): List<LensJob>? {
+    private fun collectJobs(content: View, now: Long): List<LensJob>? {
         // 5 个表面共用同一个内容层：它到屏幕的矩阵每批只算一次（每次都是十几层的 JNI 链）。
         val contentGlobalValid = samplingMatrices.localToScreen(content, contentGlobal)
         val plans = ArrayList<Entry>(entries.size)
@@ -285,16 +273,28 @@ internal class LiveBackdropSampler(
         while (iterator.hasNext()) {
             val (view, entry) = iterator.next()
             if (!view.isAttachedToWindow) { entry.release(); iterator.remove(); continue }
-            if (!view.isShown || view.rootView !== content.rootView) { entry.valid = false; continue }
+            if (!view.isShown || view.rootView !== content.rootView) { entry.valid = false; entry.cadence.discardPending(); continue }
+            if (entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) > 0L) continue
             val prepared = runCatching { prepare(view, entry, contentGlobalValid) }
             if (prepared.isFailure) return null
             if (prepared.getOrDefault(false)) {
                 plans += entry
                 planViews += view
-            }
+            } else entry.cadence.discardPending()
         }
         if (plans.isEmpty()) return emptyList()
-        return runCatching { capture(content, plans, planViews) }.getOrNull()
+        return runCatching { capture(content, plans, planViews) }.getOrNull()?.also {
+            plans.forEach { entry -> entry.cadence.sampled(now) }
+        }
+    }
+
+    private fun schedulePendingSample(now: Long) {
+        if (!isActive || inFlight) return
+        var delay = if (dirty) 0L else Long.MAX_VALUE
+        entries.values.forEach { entry ->
+            delay = minOf(delay, entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS))
+        }
+        if (delay != Long.MAX_VALUE) scheduleTrailingSample(delay)
     }
 
     /**
@@ -302,11 +302,14 @@ internal class LiveBackdropSampler(
      * 只投一次（[trailingPosted] 自守），到点把表面设脏拉起一次 traversal 即可。
      */
     private fun scheduleTrailingSample(delayMs: Long) {
-        if (trailingPosted) return
-        val host = entries.keys.firstOrNull { it.isAttachedToWindow } ?: return
+        if (entries.keys.none { it.isAttachedToWindow }) return
+        val delay = delayMs.coerceAtLeast(1L)
+        val deadline = System.nanoTime() + delay * NANOS_PER_MILLISECOND
+        if (trailingPosted && deadline - trailingDeadlineNanos >= 0L) return
+        mainHandler.removeCallbacks(trailingSample)
         trailingPosted = true
-        trailingHost = host
-        host.postOnAnimationDelayed(trailingSample, delayMs.coerceAtLeast(1L))
+        trailingDeadlineNanos = deadline
+        mainHandler.postDelayed(trailingSample, delay)
     }
 
     /** 主线程：算本表面的采样几何并备好缓冲。返回 false 表示本批跳过它。 */
@@ -463,7 +466,11 @@ internal class LiveBackdropSampler(
     /** 批次回到主线程：把后台结果写进纹理。过期的批次/缓冲一律丢弃。 */
     private fun onBatchDone(token: Int, jobs: List<LensJob>, ok: Boolean) {
         inFlight = false
-        if (token != batchToken || !isActive) return
+        if (token != batchToken || !isActive) {
+            // release/resume may have invalidated a traversal while the old batch was still running.
+            if (isActive) schedulePendingSample(System.nanoTime())
+            return
+        }
         if (!ok) {
             fail()
             return
@@ -480,10 +487,7 @@ internal class LiveBackdropSampler(
         }
         // 批次在飞期间又有位移：上面的 invalidate 通常已经拉起下一趟 pre-draw；这里兜底，
         // 保证即使本批结果全被丢弃，停下来的那一帧也一定会被补采。
-        if (dirty) {
-            val elapsedMs = (System.nanoTime() - lastSampleNanos) / NANOS_PER_MILLISECOND
-            scheduleTrailingSample(intervalMs() - elapsedMs)
-        }
+        schedulePendingSample(System.nanoTime())
     }
 
     private fun isInside(view: View, ancestor: View?): Boolean {
@@ -520,6 +524,8 @@ internal class LiveBackdropSampler(
     /** 内存压力/后台：丢掉全部位图，恢复后首帧重采样。在飞的批次回来时按令牌作废。 */
     fun releaseAll() {
         batchToken++
+        mainHandler.removeCallbacks(trailingSample)
+        trailingPosted = false
         entries.values.forEach(Entry::release)
         // 在飞作业各自持有它引用的录制，清池不影响它们。
         pictures.clear()
@@ -591,8 +597,7 @@ internal class LiveBackdropSampler(
     fun close() {
         if (closed) return
         closed = true
-        trailingHost?.removeCallbacks(trailingSample)
-        trailingHost = null
+        mainHandler.removeCallbacks(trailingSample)
         trailingPosted = false
         releaseAll()
         if (workerStarted) worker.shutdownNow()
