@@ -9,6 +9,7 @@ import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.os.Build
+import android.util.Log
 import android.view.PixelCopy
 import androidx.annotation.RequiresApi
 import androidx.test.filters.SdkSuppress
@@ -124,10 +125,13 @@ class LocalSurfaceIntegrationTest {
     @Test fun gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow() {
         // ATD images disable final hardware output while still running View draw callbacks.
         val wasDrawing=if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.isEnabled()else true
+        Log.i("Lumen-SurfaceTest","GPU fade: enable drawing")
         if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.setEnabled(true)
+        Log.i("Lumen-SurfaceTest","GPU fade: launch local surface")
         try {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             waitForLayout(scenario)
+            Log.i("Lumen-SurfaceTest","GPU fade: window ready")
             scenario.onActivity { activity ->
                 activity.binding.close()
                 val custom=object:LumenContentSource {
@@ -146,6 +150,7 @@ class LocalSurfaceIntegrationTest {
                 if(!gpu)SystemClock.sleep(30)
             }
             assertTrue("GPU local surface never became drawable",gpu)
+            Log.i("Lumen-SurfaceTest","GPU fade: backend ready, copy pixels")
             var image:Bitmap?=null
             var copyResult=-1
             var x=0;var top=0;var bottom=0;var outside=0
@@ -169,6 +174,7 @@ class LocalSurfaceIntegrationTest {
                 if(copyResult!=PixelCopy.SUCCESS)SystemClock.sleep(50)
             } while(copyResult!=PixelCopy.SUCCESS && SystemClock.uptimeMillis()<copyDeadline)
             assertEquals(PixelCopy.SUCCESS,copyResult)
+            Log.i("Lumen-SurfaceTest","GPU fade: copied pixels")
             val screenshot=image!!
             val high=screenshot.getPixel(x,top)
             assertTrue("Top did not show captured red content",Color.red(high)>220 && Color.green(high)<70)
