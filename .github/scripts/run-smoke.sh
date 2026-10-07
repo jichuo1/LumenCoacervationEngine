@@ -20,7 +20,7 @@ adb logcat -v threadtime > logcat.txt 2>&1 &
 logcat_pid=$!
 
 started=$(date +%s)
-./gradlew :sample:connectedReleaseAndroidTest --console=plain --no-daemon
+timeout 15m ./gradlew :sample:connectedReleaseAndroidTest --console=plain --no-daemon
 status=$?
 
 kill "$logcat_pid" "$sampler_pid" 2>/dev/null || true
