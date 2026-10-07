@@ -119,6 +119,8 @@ jobs:
           HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
         with:
           api-level: ${{ matrix.api-level }}
+          # 37.2.12 exited during rendering on both API34 image types; compare a pinned stable binary.
+          emulator-build: ${{ matrix.api-level == 34 && '15261927' || '' }}
           target: ${{ matrix.target }}
           arch: x86_64
           # 长按弹性在系统动画关闭时不启用（它按 ValueAnimator.areAnimatorsEnabled 门控），测试需要动画开着。
