@@ -250,3 +250,10 @@ onDestroy → session.close()：注销内存压力监听、关闭两个渲染器
 | `LumenReorderCallback.liftScale` / `directionsFor` | 排序的拾起放大与方向 |
 
 View 侧只负责在按下、形变开始、定位开始时读一次几何（兄弟矩形、来源 outline 圆角、同行格子高度），逐帧路径不遍历视图树。
+
+
+## 12. 局部视效（1.1）
+
+LumenSurfaceSession在完整Activity会话之外复用现有GPU节点与软件透镜，不进入持久化材质状态机。
+每来源单独维护窗口监听与采样；内容/输出节点与软件缓冲分别受会话级预算限制。
+所有权只覆盖安装的背景，关闭后恢复仍由自己持有的背景。失败在局部回退，详见SURFACE_SESSIONS.md。

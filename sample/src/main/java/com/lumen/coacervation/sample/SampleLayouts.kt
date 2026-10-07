@@ -24,6 +24,9 @@ import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
  * - 网格里的手风琴：同一行有更高的格子时，下面的行不动（§14.3）。
  */
 internal fun SampleActivity.buildLayoutPage(content: LinearLayout, palette: LumenPalette) {
+    content.addView(sampleAction("局部视效调节实验室") {
+        startActivity(android.content.Intent(this, SurfaceSandboxActivity::class.java))
+    })
     content.addView(caption("同一套形变、弹性与链式动画，在不同尺寸与排布下各自适配。"))
 
     // ---------------- 两列网格 ----------------

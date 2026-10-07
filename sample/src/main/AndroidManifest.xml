@@ -19,6 +19,9 @@
             </intent-filter>
         </activity>
         <activity
+            android:name=".SurfaceSandboxActivity"
+            android:exported="false" />
+        <activity
             android:name=".DetailActivity"
             android:exported="false"
             android:theme="@style/Theme.LumenSample.MorphDestination" />

@@ -71,10 +71,11 @@ class FrostedChromeGlassTest {
         assertTrue(glass.contains("content.eval(clamp(source, origin + float2(0.5), origin + size - float2(0.5)))"))
         assertTrue(glass.contains("return f * f * (3.0 - 2.0 * f);"))
         assertTrue(glass.contains(
-            "setFloatUniform(\"gain\", LensRefractionPolicy.CENTER_GAIN_X, LensRefractionPolicy.CENTER_GAIN_Y)"))
+            "setFloatUniform(\"gain\", LensRefractionPolicy.CENTER_GAIN_X * strength, LensRefractionPolicy.CENTER_GAIN_Y * strength)"))
         assertTrue(glass.contains(
-            "setFloatUniform(\"push\", LensRefractionPolicy.RIM_PUSH_X, LensRefractionPolicy.RIM_PUSH_Y)"))
+            "setFloatUniform(\"push\", LensRefractionPolicy.RIM_PUSH_X * strength, LensRefractionPolicy.RIM_PUSH_Y * strength)"))
         assertTrue(glass.contains("setFloatUniform(\"rimStart\", LensRefractionPolicy.RIM_START)"))
+        assertTrue(glass.contains("fun create(strength: Float = 1f)"))
         // 外沿与软件管线的外沿采样区一致；节点里不垫底图（静态磨砂由表面自己画在下面）。
         assertTrue(glass.contains("LensRefractionPolicy.marginPx(density)"))
         val software = source("$base/material/LensRefractionPolicy.kt")
@@ -96,7 +97,9 @@ class FrostedChromeGlassTest {
         val sampler = source("$base/material/LiveBackdropSampler.kt")
         val unregister = sampler.after("fun unregister(view: View) {").before("\n    }\n")
         // 不 recycle：宿主上一份 display list 可能还引用着纹理。
-        assertTrue(unregister.contains("entry.generation++"))
+        assertTrue(unregister.contains("entry.release()"))
+        assertTrue(sampler.contains("generation++"))
+        assertTrue(sampler.contains("budget?.release(allocatedBytes)"))
         assertTrue(!unregister.contains("recycle"))
     }
 }

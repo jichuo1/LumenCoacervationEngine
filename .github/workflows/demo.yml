@@ -110,6 +110,10 @@ jobs:
 
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          # API 34 ATD terminated during the first rendered pixel test with the default driver.
+          # Keep that test and explicitly select Skia OpenGL for this emulator configuration.
+          HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
         with:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
@@ -120,7 +124,7 @@ jobs:
           ram-size: 4096M
           heap-size: 576M
           disk-size: 4096M
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -show-kernel
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -show-kernel ${{ matrix.api-level == 34 && '-feature -Vulkan' || '' }}
           script: bash .github/scripts/run-smoke.sh
 
       - name: Upload test reports
