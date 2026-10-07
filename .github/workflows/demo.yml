@@ -80,7 +80,7 @@ jobs:
       matrix:
         # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；33 / 34 = 高级材质 REFRACTION 后端。
         # 33保留ATD。34用标准镜像做真实像素检查；ATD官方不支持硬件截图，启用输出后曾整机退出。
-        # 34固定36.5.11模拟器，使用Skia Vulkan与Mesa lavapipe执行完整渲染检查。
+        # 34固定36.5.11模拟器，使用Skia OpenGL与SwiftShader；Skia Vulkan在外部信号量扩展处原生断言。
         include:
           - api-level: 27
             target: default
@@ -119,12 +119,12 @@ jobs:
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          # API34 uses Skia Vulkan backed by Mesa lavapipe; retain the actual pixel assertions.
-          HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiavk' || '' }}
+          # Keep API34 off the failing Vulkan path without suppressing actual pixel assertions.
+          HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
           SMOKE_API_LEVEL: ${{ matrix.api-level }}
         with:
           api-level: ${{ matrix.api-level }}
-          # 37.2.12 exited during API34 rendering; use the verified 36.5.11 binary.
+          # Separate API34 driver regressions from emulator version changes with a fixed binary.
           emulator-build: ${{ matrix.api-level == 34 && '15261927' || '' }}
           target: ${{ matrix.target }}
           arch: x86_64
@@ -134,7 +134,7 @@ jobs:
           ram-size: 4096M
           heap-size: 576M
           disk-size: 4096M
-          emulator-options: -no-window -gpu ${{ matrix.api-level == 34 && 'lavapipe' || 'swiftshader_indirect' }} -noaudio -no-boot-anim -camera-back none -show-kernel
+          emulator-options: -no-window -gpu ${{ matrix.api-level == 34 && 'swiftshader' || 'swiftshader_indirect' }} ${{ matrix.api-level == 34 && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -camera-back none -show-kernel
           script: |
             bash .github/scripts/run-smoke.sh || { adb logcat -d -b crash; exit 1; }
 
