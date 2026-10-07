@@ -1,4 +1,4 @@
-# 公开 API 清单（1.2.0 候选）
+# 公开 API 清单（1.2.0）
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。
 >
@@ -247,7 +247,7 @@
 - LumenSurfaceListener.onSurfaceState(id, backend, failure, firstVisibleDraw)：异步合并、异常隔离。
 - LumenSurfacePresets.floating / fadingBand / staticPanel：可继续copy调节的配置。
 
-## 13. 局部增强（自1.2候选）
+## 13. 局部增强（自1.2.0）
 
 完整默认值、有效范围、优先级与平台回退见 [VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。以下配置为不可变data class，构造/copy均校验范围；值类型与JSON编解码不依赖渲染线程，其余渲染/交互入口为主线程。
 

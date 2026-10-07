@@ -1,4 +1,4 @@
-# 局部视效增强（1.2 候选）
+# 局部视效增强（1.2.0）
 
 新增配置使用独立的 `LumenSurfaceEnhancements`，旧 `LumenSurfaceOptions`、采样配置及会话构造保持兼容。
 增强默认关闭；旧材质ID、持久化选择、热策略和Activity接管方式不变。

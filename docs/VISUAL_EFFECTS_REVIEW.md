@@ -5,7 +5,7 @@
 
 ## 结论
 
-本轮确认的问题均已修复并回归。本地构建、730项JVM、API34完整30项设备测试、Lint及分发附件检查通过。
+本轮确认的问题均已修复并回归。本地构建、731项JVM、API34完整30项设备测试、Lint及分发附件检查通过。
 这是本地候选的证据；新的API27/31/33/34云端矩阵和真实手机验收尚未执行，未发布1.2标签。
 普通旧构造和默认外观保持；新效果按配置开启，软件输入和平台回退明确见VISUAL_EFFECTS.md。
 
@@ -16,6 +16,7 @@
 | 静止来源重配后无后续取样帧，停在FRAME_PENDING | 首次注册/输入配置变化补一次traversal；连续帧复用状态 | 融合半径0→64的窗口像素与静止页回归 |
 | 受限来源首次状态不准确，依赖换代可能绕过旧拓扑检查 | 绑定时读取可用性；来源和依赖epoch变化重检图、作废输入与旧结果 | 禁止来源零捕获、恢复、依赖换代成环被拒绝 |
 | JSON已知子对象/数组类型错误静默回落默认，异常嵌套进入平台递归解析 | 严格类型和schema；平台解析前16384字符/16层/单根对象限制 | JVM输入门禁及Android完整参数往返/错误类型/深层拒绝 |
+| 调节融合/阴影外扩后实体偏移，Gaussian阴影被留白截断 | 重放同一动效几何到新原点；按启用阶段计算k/4及3.5σ尾部留白 | 留白纯策略JVM与静态选中中心的实际窗口像素 |
 | 融合装饰关闭覆盖宿主后设的几何监听 | 转发原监听；关闭只恢复仍持有的监听/背景 | 连续改选、稳定终态、后设监听和背景保持 |
 | 关闭融合未清自定义实体，旧纯GPU示例误入位图路径 | clearCustomShapes恢复隐式View几何及旧节点计划 | strict GPU-only渐隐重新产生窗口像素 |
 | 自适应质量重新配置不从指定模式开始 | 配置变更重置模式和驻留；重放时间回退重置驻留起点 | 指定等级、阈值、滞回、驻留JVM |
@@ -28,7 +29,7 @@
 ## 最终验证
 
 - Gradle：assembleDebug、testDebugUnitTest、sample:testReleaseUnitTest、lintDebug、sample:assembleRelease、sample:assembleReleaseAndroidTest及本地Maven发布全部成功。
-- JVM：engine398、motion328、controls2、sample release2，共730；0失败/错误/跳过。
+- JVM：engine398、motion329、controls2、sample release2，共731；0失败/错误/跳过。
 - Lint：0错误；engine9、motion21、sample25条警告，controls无问题。以HTML汇总为口径。
 - 设备：Android34标准google_apis x86_64镜像；模拟器37.1.11.0；WHPX；host OpenGL后端，NVIDIA RTX4060Ti / OpenGL ES3.0。实际30项、0失败、0忽略，约243秒。
 - 设备分组：Demo7、增强6、局部7、来源效果兼容2、基准1、精确像素7。

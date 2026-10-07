@@ -79,7 +79,7 @@
 > [!TIP]
 > 任意卡片、按钮都可以**长按后拖动**：跟手形变、触点光晕流动、松手弹簧回弹。高级材质需要 Android 12+（折射需 Android 13+），不支持时自动回到柔光，「设置 → 诊断」会给出原因。
 
-- 演示包基于 `main` 分支构建，可能包含尚未发版的特性（以 [`CHANGELOG.md`](CHANGELOG.md) 的「未发布」为准）；源码即 [`sample/`](sample)。
+- 演示包按对应 Release 标签构建，构建与设备测试全部通过后上传；源码即 [`sample/`](sample)。
 - 每个演示包发布前都会在 Android 8.1、12、13、14 的模拟器上跑完整的冒烟测试（[`demo.yml`](.github/workflows/demo.yml)）：逐页滚动、面板与形变、各档调参下的长按拖动、全部设置项、自定义背景、旋转。
 - 演示包用构建机的调试签名，不同版本签名可能不同：覆盖安装失败时先卸载旧版。
 
@@ -102,7 +102,7 @@
 | 项 | 说明 |
 |:---|:---|
 | **系统** | Android 8.1 及以上（`minSdk 27`） |
-| **版本** | 1.2.0 开发候选；已发布版本 1.1.0（契约版本 1，规则见 [`docs/VERSIONING.md`](docs/VERSIONING.md)） |
+| **版本** | 1.2.0（契约版本 1，规则见 [`docs/VERSIONING.md`](docs/VERSIONING.md)） |
 | **依赖** | 引擎本体只依赖 AndroidX core |
 | **可选** | `lumen-motion` 不依赖 AppCompat；`lumen-controls` 依赖 AppCompat + RecyclerView |
 
@@ -143,10 +143,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.1.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.2.0")
     // 可选模块，版本号保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.1.0")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.1.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.2.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.2.0")
 }
 ```
 
@@ -164,7 +164,7 @@ dependencies {
 
 方式 C —— 本地 maven 仓：`./gradlew publishAllPublicationsToProjectLocalRepository`，产物在 `build/repo`，加进 `repositories` 后按 `com.lumen.coacervation.engine` 坐标引用。
 
-1.2候选增加四角、融合选择器、按压、光源、渐进模糊和独立细节预算，全部开关/调节和平台回退见[`docs/VISUAL_EFFECTS.md`](docs/VISUAL_EFFECTS.md)。使用本地候选需方式B/C；候选没有对应已发布JitPack标签。
+1.2增加四角、融合选择器、按压、光源、渐进模糊和独立细节预算，全部开关/调节和平台回退见[`docs/VISUAL_EFFECTS.md`](docs/VISUAL_EFFECTS.md)。三模块使用同一版本1.2.0，Release附件和JitPack坐标均对应该版本标签。
 
 **2. Activity**：组合式委托，任何 Activity 基类都能用。
 

@@ -35,7 +35,7 @@ public class LumenFusedSelection(
     private var baseline=sharedNodeBaseline
     private var binding: LumenSurfaceBinding
     private var closed=false
-    private var halo=(enhancements.geometry.fusionRadiusDp/4f+enhancements.geometry.shadowRadiusDp+4f)*selection.resources.displayMetrics.density
+    private var halo=FusionDecorationBounds.haloDp(enhancements.geometry)*selection.resources.displayMetrics.density
     init {
         selection.addView(overlay,0,FrameLayout.LayoutParams(0,0))
         selection.indicator.background=transparent
@@ -46,8 +46,10 @@ public class LumenFusedSelection(
         if(closed)return
         this.surface=surface;this.enhancements=enhancements
         binding.update(surface);if(!baseline)binding.updateEnhancements(enhancements)
-        halo=(enhancements.geometry.fusionRadiusDp/4f+enhancements.geometry.shadowRadiusDp+4f)*selection.resources.displayMetrics.density
+        halo=FusionDecorationBounds.haloDp(enhancements.geometry)*selection.resources.displayMetrics.density
         layoutOverlay()
+        // Rebase the original geometry into the new overlay origin without taking back a host-owned listener.
+        if(selection.getOnGeometryListener()===this)selection.setOnGeometryListener(this)
     }
     /** Explicit A/B: the original moving indicator uses the existing shared content-node/software path. */
     public fun setSharedNodeBaseline(enabled:Boolean){

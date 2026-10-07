@@ -177,6 +177,23 @@ class EnhancedSurfaceIntegrationTest {
             SystemClock.sleep(50);scenario.onActivity {choice!!.options.getChildAt(1).performClick()}
             SystemClock.sleep(500)
             scenario.onActivity {
+                decorator!!.update(LumenSurfaceOptions(radiusDp=0f,color=Color.WHITE,tintOpacity=1f,edgeEnabled=false,
+                    sampling=LumenSurfaceSampling(blurEnabled=false,refractionEnabled=false)),
+                    LumenSurfaceEnhancements(geometry=LumenSurfaceGeometryOptions(fusionEnabled=true,shadowEnabled=true,shadowRadiusDp=24f)))
+            }
+            SystemClock.sleep(250)
+            val imageLatch=CountDownLatch(1);var frame:Bitmap?=null;var copy=-1;var selectedX=0;var selectedY=0
+            scenario.onActivity {a->
+                val row=choice!!.options.getChildAt(1);val location=IntArray(2);row.getLocationInWindow(location)
+                selectedX=location[0]+row.width/2;selectedY=location[1]+row.height/2
+                frame=Bitmap.createBitmap(a.window.decorView.width,a.window.decorView.height,Bitmap.Config.ARGB_8888)
+                PixelCopy.request(a.window,frame!!,{copy=it;imageLatch.countDown()},Handler(Looper.getMainLooper()))
+            }
+            assertTrue(imageLatch.await(5,TimeUnit.SECONDS));assertEquals(PixelCopy.SUCCESS,copy)
+            val selectedPixel=frame!!.getPixel(selectedX,selectedY)
+            assertTrue("Changing halo moved the selected entity",Color.red(selectedPixel)>245&&Color.green(selectedPixel)>245&&Color.blue(selectedPixel)>245)
+            frame!!.recycle()
+            scenario.onActivity {
                 assertEquals(1,selected);assertEquals(1,choice!!.selectedIndex);assertTrue(choice!!.options.getChildAt(1).isSelected)
                 assertTrue(notifications>1);assertFalse(moving)
                 decorator!!.update(LumenSurfaceOptions(sampling=LumenSurfaceSampling(blurEnabled=false,refractionEnabled=false)),LumenSurfaceEnhancements(geometry=LumenSurfaceGeometryOptions(fusionEnabled=true)))
