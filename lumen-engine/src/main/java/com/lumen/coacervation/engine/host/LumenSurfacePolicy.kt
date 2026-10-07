@@ -18,12 +18,24 @@ internal object LumenSurfacePolicy {
         return minOf(desired, sqrt(pixelBudget.toDouble() / (width.toDouble() * height)).toFloat(), pixelBudget.toFloat() / maxOf(width, height))
     }
 
-    fun softwareDivisor(width: Int, height: Int, scale: Float, pixelBudget: Int): Int {
+    fun softwareDivisor(width: Int, height: Int, scale: Float, pixelBudget: Int, marginPx: Int = 0): Int {
         if (width <= 0 || height <= 0) return 1
-        var divisor = maxOf(ceil(1f / scale).toInt(), ceil(sqrt(width.toDouble() * height / pixelBudget)).toInt(), 1)
-        // Integer rounding must obey the budget even for a very thin surface.
-        while (((width.toLong() + divisor - 1) / divisor) * ((height.toLong() + divisor - 1) / divisor) > pixelBudget) divisor++
-        return divisor
+        var low = ceil(1f / scale).toInt().coerceAtLeast(1)
+        if (softwareFits(width, height, marginPx, low, pixelBudget)) return low
+        var high = Int.MAX_VALUE
+        // At most 31 steps, including huge thin geometry. Account for each rounded padding axis.
+        while (low < high) {
+            val mid = low + (high - low) / 2
+            if (softwareFits(width, height, marginPx, mid, pixelBudget)) high = mid else low = mid + 1
+        }
+        return low
+    }
+
+    private fun softwareFits(width: Int, height: Int, marginPx: Int, divisor: Int, budget: Int): Boolean {
+        val margin = if (marginPx <= 0) 0L else ((marginPx.toLong() + divisor - 1) / divisor).coerceAtLeast(1L)
+        val w = (width.toLong() + divisor - 1) / divisor + 2 * margin
+        val h = (height.toLong() + divisor - 1) / divisor + 2 * margin
+        return w <= budget.toLong() / h
     }
 
     fun gpuAllowed(api: Int, backend: LumenSurfaceBackend, enabled: Boolean, failed: Boolean): Boolean =

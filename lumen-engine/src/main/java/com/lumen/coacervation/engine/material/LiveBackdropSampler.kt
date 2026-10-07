@@ -324,10 +324,10 @@ internal class LiveBackdropSampler(
         val marginPx = if (profile == null) LensRefractionPolicy.marginPx(density) else
             kotlin.math.ceil(maxOf(if (profile.refractionEnabled) LensRefractionPolicy.MARGIN_DP * profile.refractionStrength else 0f, if (profile.blurEnabled) profile.blurRadiusDp * 1.8f else 0f) * density).toInt().coerceAtLeast(1)
         val scale = if (profile == null) LensRefractionPolicy.sampleScale(width + 2 * marginPx, height + 2 * marginPx) else
-            LumenSurfacePolicy.softwareDivisor(width + 2 * marginPx, height + 2 * marginPx, profile.softwareScale, profile.maxSoftwarePixels)
-        val margin = ((marginPx + scale - 1) / scale).coerceAtLeast(1)
-        val outWidth = ((width + scale - 1) / scale).coerceAtLeast(1)
-        val outHeight = ((height + scale - 1) / scale).coerceAtLeast(1)
+            LumenSurfacePolicy.softwareDivisor(width, height, profile.softwareScale, profile.maxSoftwarePixels, marginPx)
+        val margin = ((marginPx.toLong() + scale - 1) / scale).toInt().coerceAtLeast(1)
+        val outWidth = ((width.toLong() + scale - 1) / scale).toInt().coerceAtLeast(1)
+        val outHeight = ((height.toLong() + scale - 1) / scale).toInt().coerceAtLeast(1)
         val sampleWidth = outWidth + 2 * margin
         val sampleHeight = outHeight + 2 * margin
         if (entry.sampleWidth != sampleWidth || entry.sampleHeight != sampleHeight ||

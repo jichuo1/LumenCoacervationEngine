@@ -44,6 +44,18 @@ class LumenSurfacePolicyTest {
         }
     }
 
+    @Test fun softwareBudgetIncludesSeparatelyRoundedPadding() {
+        for ((w,h) in listOf(1 to Int.MAX_VALUE,Int.MAX_VALUE to 1,1440 to 3168,13 to 17)) {
+            for (budget in listOf(1024,24000,96000)) for (padding in listOf(1,32,160)) {
+                val divisor=LumenSurfacePolicy.softwareDivisor(w,h,1f,budget,padding)
+                val margin=((padding.toLong()+divisor-1)/divisor).coerceAtLeast(1)
+                val width=(w.toLong()+divisor-1)/divisor+2*margin
+                val height=(h.toLong()+divisor-1)/divisor+2*margin
+                assertTrue("Padded $w x $h exceeds $budget",width*height<=budget)
+            }
+        }
+    }
+
     @Test fun forcedBackendsAndFailureAreExplicit() {
         assertFalse(LumenSurfacePolicy.gpuAllowed(27,LumenSurfaceBackend.GPU,true,false))
         assertFalse(LumenSurfacePolicy.gpuAllowed(34,LumenSurfaceBackend.AUTO,true,true))

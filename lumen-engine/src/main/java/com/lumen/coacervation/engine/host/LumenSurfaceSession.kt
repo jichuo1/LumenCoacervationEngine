@@ -257,6 +257,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         var capture: SurfaceCaptureApi31? = null
         var dirty = true
         var failed = false
+        var budgetRejected = false
         var recordings = 0L
         var retiredSoftware = 0L
         private var observer: ViewTreeObserver? = null
@@ -320,8 +321,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                     val current = capture ?: SurfaceCaptureApi31().also { capture = it }
                     val total = contentPixels()
                     val available = (options.maxGpuContentPixels - total + current.pixels).coerceAtLeast(0L).toInt()
-                    if (current.record(recorder, options, available)) { dirty = false; lastRecording = now; recordings++ }
-                    else lastFailure = LumenSurfaceFailure.BUDGET_EXCEEDED
+                    if (current.record(recorder, options, available)) { budgetRejected = false; dirty = false; lastRecording = now; recordings++ }
+                    else { budgetRejected = true; lastFailure = LumenSurfaceFailure.BUDGET_EXCEEDED }
                 } catch (_: Throwable) { failed = true; releaseGpu(); lastFailure = LumenSurfaceFailure.GPU_FAILED }
             }
             return true
@@ -336,7 +337,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         }
         fun releaseGpu() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) capture?.close()
-            capture = null; dirty = true
+            capture = null; dirty = true; budgetRejected = false
         }
         fun release() { releaseGpu(); sampler.suspend(); autoSuspended = true }
         fun close() {
@@ -482,6 +483,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                     c.sampling.backend != LumenSurfaceBackend.STATIC) {
                     val group = entry.group!!
                     if (group.failed) reason = LumenSurfaceFailure.GPU_FAILED
+                    else if (group.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
                     val content = group.source.coordinateView
                     if (options.pauseWhenWindowUnfocused && !content.hasWindowFocus()) reason = LumenSurfaceFailure.PAUSED
                     else {
