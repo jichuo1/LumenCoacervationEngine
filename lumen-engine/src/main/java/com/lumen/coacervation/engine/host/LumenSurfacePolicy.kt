@@ -41,7 +41,7 @@ internal object LumenSurfacePolicy {
     fun gpuAllowed(api: Int, backend: LumenSurfaceBackend, enabled: Boolean, failed: Boolean): Boolean =
         api >= 31 && enabled && !failed && backend != LumenSurfaceBackend.SOFTWARE && backend != LumenSurfaceBackend.STATIC
 
-    fun softwareAllowed(sampling: LumenSurfaceSampling, gpuFailed: Boolean): Boolean =
+    fun softwareAllowed(sampling: LumenSurfaceSampling): Boolean =
         sampling.enabled && sampling.backend != LumenSurfaceBackend.STATIC &&
-            (sampling.backend == LumenSurfaceBackend.SOFTWARE || sampling.softwareFallback || !gpuFailed && sampling.backend == LumenSurfaceBackend.AUTO)
+            (sampling.backend == LumenSurfaceBackend.SOFTWARE || sampling.softwareFallback)
 }

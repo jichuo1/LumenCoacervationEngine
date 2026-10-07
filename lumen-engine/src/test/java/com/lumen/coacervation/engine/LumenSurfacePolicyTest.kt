@@ -61,9 +61,10 @@ class LumenSurfacePolicyTest {
         assertFalse(LumenSurfacePolicy.gpuAllowed(34,LumenSurfaceBackend.AUTO,true,true))
         assertFalse(LumenSurfacePolicy.gpuAllowed(34,LumenSurfaceBackend.SOFTWARE,true,false))
         assertTrue(LumenSurfacePolicy.gpuAllowed(31,LumenSurfaceBackend.AUTO,true,false))
-        assertFalse(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(softwareFallback=false),true))
-        assertTrue(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(backend=LumenSurfaceBackend.SOFTWARE),true))
-        assertFalse(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(enabled=false),false))
+        assertFalse(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(softwareFallback=false)))
+        assertFalse(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(backend=LumenSurfaceBackend.GPU,softwareFallback=false)))
+        assertTrue(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(backend=LumenSurfaceBackend.SOFTWARE,softwareFallback=false)))
+        assertFalse(LumenSurfacePolicy.softwareAllowed(LumenSurfaceSampling(enabled=false)))
     }
 
     @Test fun sharedBuffersCannotExceedTheSessionLimit() {

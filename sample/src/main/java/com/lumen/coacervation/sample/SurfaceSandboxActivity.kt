@@ -92,7 +92,7 @@ class SurfaceSandboxActivity : Activity() {
         toggle("采样",surface.sampling.enabled) { enabled->applySampling { it.copy(enabled=enabled) } }
         toggle("模糊",surface.sampling.blurEnabled) { enabled->applySampling { it.copy(blurEnabled=enabled) } }
         toggle("折射",surface.sampling.refractionEnabled) { enabled->applySampling { it.copy(refractionEnabled=enabled) } }
-        toggle("GPU 失败后软件回退",surface.sampling.softwareFallback) { enabled->applySampling { it.copy(softwareFallback=enabled) } }
+        toggle("GPU 不可用/失败后软件回退",surface.sampling.softwareFallback) { enabled->applySampling { it.copy(softwareFallback=enabled) } }
         toggle("渐隐",surface.sampling.fadeEnabled) { enabled->applySampling { it.copy(fadeEnabled=enabled) } }
         toggle("反向渐隐",surface.sampling.fadeDirection==LumenSurfaceFadeDirection.BOTTOM_TO_TOP) { reverse->applySampling { it.copy(fadeDirection=if(reverse)LumenSurfaceFadeDirection.BOTTOM_TO_TOP else LumenSurfaceFadeDirection.TOP_TO_BOTTOM) } }
         toggle("着色",surface.tintEnabled) { applySurface(surface.copy(tintEnabled=it)) }

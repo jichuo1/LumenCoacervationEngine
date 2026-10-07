@@ -507,7 +507,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                 } else reason = LumenSurfaceFailure.INVALID_GEOMETRY
                             } catch (_: Throwable) { entry.gpuFailed = true; entry.releaseGpu(); reason = LumenSurfaceFailure.GPU_FAILED }
                         }
-                        if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling, entry.gpuFailed || group.failed)) {
+                        if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling)) {
                             group.sampler.register(host, c.sampling)
                             if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, host, (255 * alpha).roundToInt())) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
