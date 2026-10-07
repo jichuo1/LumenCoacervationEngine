@@ -8,7 +8,9 @@ import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
 import android.view.PixelCopy
+import androidx.annotation.RequiresApi
 import androidx.test.filters.SdkSuppress
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -55,6 +57,7 @@ class LocalSurfaceIntegrationTest {
                 assertEquals(14,activity.glass.paddingBottom)
                 val second=activity.session.bind(activity.glass,LumenSurfaceOptions(),activity.content)
                 val replacement=ColorDrawable(Color.BLUE);activity.glass.background=replacement
+                second.update(LumenSurfaceOptions(opacity=.7f))
                 second.close();assertSame(replacement,activity.glass.background)
             }
         }
@@ -67,9 +70,26 @@ class LocalSurfaceIntegrationTest {
                 activity.binding.close()
                 activity.binding=activity.session.bind(activity.glass,LumenSurfaceOptions(),activity.preview)
                 val bitmap=Bitmap.createBitmap(activity.glass.width,activity.glass.height,Bitmap.Config.ARGB_8888)
+                activity.glass.background.setBounds(0,0,bitmap.width,bitmap.height)
                 activity.glass.background.draw(Canvas(bitmap))
                 assertEquals(LumenSurfaceFailure.SELF_FEEDBACK,activity.binding.diagnostics()?.failure)
                 assertEquals(LumenSurfaceBackend.STATIC,activity.binding.diagnostics()?.backend)
+            }
+        }
+    }
+
+    @Test fun forcedStaticBackendDoesNotRequireAContentSource() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            scenario.onActivity { activity ->
+                activity.binding.close()
+                activity.binding=activity.session.bind(activity.glass,
+                    LumenSurfaceOptions(sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.STATIC)))
+                val bitmap=Bitmap.createBitmap(activity.glass.width,activity.glass.height,Bitmap.Config.ARGB_8888)
+                activity.glass.background.setBounds(0,0,bitmap.width,bitmap.height)
+                activity.glass.background.draw(Canvas(bitmap))
+                assertEquals(LumenSurfaceBackend.STATIC,activity.binding.diagnostics()?.backend)
+                assertEquals(LumenSurfaceFailure.NONE,activity.binding.diagnostics()?.failure)
             }
         }
     }
@@ -102,6 +122,10 @@ class LocalSurfaceIntegrationTest {
 
     @SdkSuppress(minSdkVersion = 31)
     @Test fun gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow() {
+        // ATD images disable final hardware output while still running View draw callbacks.
+        val wasDrawing=if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.isEnabled()else true
+        if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.setEnabled(true)
+        try {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             waitForLayout(scenario)
             scenario.onActivity { activity ->
@@ -122,7 +146,6 @@ class LocalSurfaceIntegrationTest {
                 if(!gpu)SystemClock.sleep(30)
             }
             assertTrue("GPU local surface never became drawable",gpu)
-            val latch=CountDownLatch(1)
             var image:Bitmap?=null
             var copyResult=-1
             var x=0;var top=0;var bottom=0;var outside=0
@@ -133,9 +156,19 @@ class LocalSurfaceIntegrationTest {
                 bottom=location[1]+(activity.glass.height*.95f).toInt()
                 val decor=activity.window.decorView
                 image=Bitmap.createBitmap(decor.width,decor.height,Bitmap.Config.ARGB_8888)
-                PixelCopy.request(activity.window,image!!,{code->copyResult=code;latch.countDown()},Handler(Looper.getMainLooper()))
             }
-            assertTrue(latch.await(5,TimeUnit.SECONDS));assertEquals(PixelCopy.SUCCESS,copyResult)
+            // A RenderNode draw can precede the first buffer reaching the Window surface.
+            val copyDeadline=SystemClock.uptimeMillis()+5000
+            do {
+                val latch=CountDownLatch(1)
+                scenario.onActivity { activity ->
+                    activity.glass.invalidate()
+                    PixelCopy.request(activity.window,image!!,{code->copyResult=code;latch.countDown()},Handler(Looper.getMainLooper()))
+                }
+                assertTrue("PixelCopy callback did not arrive",latch.await(5,TimeUnit.SECONDS))
+                if(copyResult!=PixelCopy.SUCCESS)SystemClock.sleep(50)
+            } while(copyResult!=PixelCopy.SUCCESS && SystemClock.uptimeMillis()<copyDeadline)
+            assertEquals(PixelCopy.SUCCESS,copyResult)
             val screenshot=image!!
             val high=screenshot.getPixel(x,top)
             assertTrue("Top did not show captured red content",Color.red(high)>220 && Color.green(high)<70)
@@ -144,6 +177,9 @@ class LocalSurfaceIntegrationTest {
             assertTrue(kotlin.math.abs(Color.green(low)-Color.green(behind))<35)
             assertTrue(kotlin.math.abs(Color.blue(low)-Color.blue(behind))<35)
             screenshot.recycle()
+        }
+        } finally {
+            if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.setEnabled(wasDrawing)
         }
     }
 
@@ -163,6 +199,7 @@ class LocalSurfaceIntegrationTest {
                 activity.binding.close()
                 activity.binding=activity.session.bind(activity.glass,LumenSurfaceOptions(),source)
                 val bitmap=Bitmap.createBitmap(activity.glass.width,activity.glass.height,Bitmap.Config.ARGB_8888)
+                activity.glass.background.setBounds(0,0,bitmap.width,bitmap.height)
                 activity.glass.background.draw(Canvas(bitmap))
                 assertEquals(LumenSurfaceFailure.DIFFERENT_WINDOW,activity.binding.diagnostics()?.failure)
                 dialog!!.dismiss();activity.session.close()
@@ -175,4 +212,10 @@ class LocalSurfaceIntegrationTest {
             InstrumentationRegistry.getInstrumentation().waitForIdleSync()
         }
     }
+}
+
+@RequiresApi(33)
+private object TestDrawingApi33 {
+    fun isEnabled()=android.graphics.HardwareRenderer.isDrawingEnabled()
+    fun setEnabled(value:Boolean)=android.graphics.HardwareRenderer.setDrawingEnabled(value)
 }

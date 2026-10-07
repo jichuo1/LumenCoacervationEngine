@@ -369,7 +369,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
 
     private inner class Entry(val id: Long, view: View, var config: LumenSurfaceOptions, val group: Group?) : View.OnAttachStateChangeListener {
         val host = WeakReference(view)
-        val original = view.background
+        var original = view.background
         val drawable = SurfaceDrawable(this)
         var gpu: SurfaceCaptureApi31.Glass? = null
         var lenses: SurfaceCaptureApi31.LensCache? = null
@@ -393,6 +393,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         fun install() {
             val view = host.get() ?: return
             if (config.enabled && options.enabled) {
+                if (view.background !== drawable) original = view.background
                 val left = view.paddingLeft; val top = view.paddingTop; val right = view.paddingRight; val bottom = view.paddingBottom
                 view.background = drawable; view.setPadding(left, top, right, bottom)
             } else if (view.background === drawable) {
@@ -477,12 +478,15 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val save = canvas.save()
             if (c.clipBackground) canvas.clipPath(clip)
             try {
-                if (reason == LumenSurfaceFailure.NONE && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC) {
+                if (reason == LumenSurfaceFailure.NONE && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC &&
+                    c.sampling.backend != LumenSurfaceBackend.STATIC) {
                     val group = entry.group!!
                     if (group.failed) reason = LumenSurfaceFailure.GPU_FAILED
                     val content = group.source.coordinateView
                     if (options.pauseWhenWindowUnfocused && !content.hasWindowFocus()) reason = LumenSurfaceFailure.PAUSED
                     else {
+                        if (c.sampling.backend != LumenSurfaceBackend.SOFTWARE &&
+                            (!canvas.isHardwareAccelerated || Build.VERSION.SDK_INT < 31)) reason = LumenSurfaceFailure.GPU_UNAVAILABLE
                         if (canvas.isHardwareAccelerated && LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, c.sampling.backend, true, entry.gpuFailed || group.failed) &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && group.capture?.recorded == true) {
                             try {
@@ -511,7 +515,11 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         }
                     }
                 }
-                if (backend == LumenSurfaceBackend.STATIC) staticDraws++
+                if (backend == LumenSurfaceBackend.STATIC) {
+                    staticDraws++
+                    if (reason == LumenSurfaceFailure.NONE && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC &&
+                        c.sampling.backend != LumenSurfaceBackend.STATIC) reason = LumenSurfaceFailure.FRAME_PENDING
+                }
                 val tint = if (!c.tintEnabled) 0f else if (backend == LumenSurfaceBackend.STATIC) c.fallbackTintOpacity else c.tintOpacity
                 visibleEffect = backend != LumenSurfaceBackend.STATIC || c.tintEnabled && tint > 0f && colorAlpha > 0 ||
                     c.edgeEnabled && c.edgeWidthDp > 0f && edgeAlpha > 0

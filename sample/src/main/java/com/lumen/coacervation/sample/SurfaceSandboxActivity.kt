@@ -94,7 +94,7 @@ class SurfaceSandboxActivity : Activity() {
         toggle("折射",surface.sampling.refractionEnabled) { enabled->applySampling { it.copy(refractionEnabled=enabled) } }
         toggle("GPU 失败后软件回退",surface.sampling.softwareFallback) { enabled->applySampling { it.copy(softwareFallback=enabled) } }
         toggle("渐隐",surface.sampling.fadeEnabled) { enabled->applySampling { it.copy(fadeEnabled=enabled) } }
-        toggle("反向渐隐",false) { reverse->applySampling { it.copy(fadeDirection=if(reverse)LumenSurfaceFadeDirection.BOTTOM_TO_TOP else LumenSurfaceFadeDirection.TOP_TO_BOTTOM) } }
+        toggle("反向渐隐",surface.sampling.fadeDirection==LumenSurfaceFadeDirection.BOTTOM_TO_TOP) { reverse->applySampling { it.copy(fadeDirection=if(reverse)LumenSurfaceFadeDirection.BOTTOM_TO_TOP else LumenSurfaceFadeDirection.TOP_TO_BOTTOM) } }
         toggle("着色",surface.tintEnabled) { applySurface(surface.copy(tintEnabled=it)) }
         toggle("描边",surface.edgeEnabled) { applySurface(surface.copy(edgeEnabled=it)) }
         toggle("裁剪背景",surface.clipBackground) { applySurface(surface.copy(clipBackground=it)) }
@@ -104,7 +104,7 @@ class SurfaceSandboxActivity : Activity() {
         toggle("诊断回调",limits.diagnosticsEnabled) { applyLimits(limits.copy(diagnosticsEnabled=it)) }
         toggle("监听内存压力",limits.registerMemoryCallbacks) { applyLimits(limits.copy(registerMemoryCallbacks=it)) }
         toggle("解绑恢复原背景",limits.restoreBackgroundOnDetach) { applyLimits(limits.copy(restoreBackgroundOnDetach=it)) }
-        toggle("内容动画（测试静止门控）",false) { if(it) startAnimation() else {animation?.cancel();animation=null} }
+        toggle("内容动画（测试静止门控）",animation?.isRunning==true) { if(it) startAnimation() else {animation?.cancel();animation=null} }
         slider("圆角 dp",0f,128f,surface.radiusDp) { applySurface(surface.copy(radiusDp=it)) }
         slider("背景透明度",0f,1f,surface.opacity) { applySurface(surface.copy(opacity=it)) }
         slider("实时着色",0f,1f,surface.tintOpacity) { applySurface(surface.copy(tintOpacity=it)) }
@@ -127,7 +127,10 @@ class SurfaceSandboxActivity : Activity() {
         action("暂停") { session.pause() };action("恢复") {session.resume()}
         action("释放图形资源") {session.releaseGraphics()}
         action("诊断") {status.text=session.diagnostics().toString()+"\n"+binding.diagnostics()}
-        action("状态栏渐隐预设") {applySurface(LumenSurfacePresets.fadingBand())}
+        action("状态栏渐隐预设") {
+            applySurface(LumenSurfacePresets.fadingBand())
+            parent.removeAllViews();buildControls(parent)
+        }
         action("跨窗口示例") {showWindowExample()}
     }
 

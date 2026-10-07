@@ -72,5 +72,6 @@ firstVisibleDraw 表示绑定首次实际可见绘制，也可能是静态回退
 “排布”页进入“局部视效调节实验室”，包含开关、数值调节、暂停/恢复、资源释放、诊断和独立Dialog演示。
 示例不保存参数，不修改完整Activity的材质选择。
 JVM覆盖非有限值、渐隐、极端几何预算、失败路由、共享预算和无折射像素；源码契约守住非侵入、所有权、反馈与注销。
-LocalSurfaceIntegrationTest随sample设备测试执行，验证背景/层级/padding、软件帧、动态主题、跨窗口拒绝和关闭。
+LocalSurfaceIntegrationTest随sample设备测试执行，验证背景/层级/padding、软件帧、动态主题、无来源静态后端、跨窗口拒绝和关闭。
+31+还用PixelCopy检查GPU渐隐的实际像素。ATD镜像默认不提交最终硬件图像，测试在33+临时启用输出并在finally恢复；生产引擎不控制该开关。
 示例验证不等于第三方应用的Hook、Compose或灰度路径已经覆盖。
