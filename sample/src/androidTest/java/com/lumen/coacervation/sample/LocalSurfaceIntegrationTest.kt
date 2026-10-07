@@ -6,6 +6,12 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
+import android.view.PixelCopy
+import androidx.test.filters.SdkSuppress
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 import android.view.View
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
@@ -91,6 +97,53 @@ class LocalSurfaceIntegrationTest {
                 assertEquals(1L,it.session.diagnostics().paletteGeneration)
                 it.session.releaseGraphics();it.session.resume()
             }
+        }
+    }
+
+    @SdkSuppress(minSdkVersion = 31)
+    @Test fun gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            waitForLayout(scenario)
+            scenario.onActivity { activity ->
+                activity.binding.close()
+                val custom=object:LumenContentSource {
+                    override val coordinateView:View get()=activity.content
+                    override fun drawContent(canvas:Canvas) { canvas.drawColor(Color.RED) }
+                }
+                activity.binding=activity.session.bindSource(activity.glass,
+                    LumenSurfaceOptions(radiusDp=0f,tintEnabled=false,edgeEnabled=false,
+                        sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.GPU,softwareFallback=false,
+                            blurEnabled=false,refractionEnabled=false,minIntervalMs=0,fadeEnabled=true)),custom)
+            }
+            val deadline=SystemClock.uptimeMillis()+5000
+            var gpu=false
+            while(!gpu && SystemClock.uptimeMillis()<deadline) {
+                scenario.onActivity { gpu=it.binding.diagnostics()?.backend==LumenSurfaceBackend.GPU }
+                if(!gpu)SystemClock.sleep(30)
+            }
+            assertTrue("GPU local surface never became drawable",gpu)
+            val latch=CountDownLatch(1)
+            var image:Bitmap?=null
+            var copyResult=-1
+            var x=0;var top=0;var bottom=0;var outside=0
+            scenario.onActivity { activity ->
+                val location=IntArray(2);activity.glass.getLocationInWindow(location)
+                x=location[0]+8;outside=location[0]-8
+                top=location[1]+(activity.glass.height*.05f).toInt()
+                bottom=location[1]+(activity.glass.height*.95f).toInt()
+                val decor=activity.window.decorView
+                image=Bitmap.createBitmap(decor.width,decor.height,Bitmap.Config.ARGB_8888)
+                PixelCopy.request(activity.window,image!!,{code->copyResult=code;latch.countDown()},Handler(Looper.getMainLooper()))
+            }
+            assertTrue(latch.await(5,TimeUnit.SECONDS));assertEquals(PixelCopy.SUCCESS,copyResult)
+            val screenshot=image!!
+            val high=screenshot.getPixel(x,top)
+            assertTrue("Top did not show captured red content",Color.red(high)>220 && Color.green(high)<70)
+            val low=screenshot.getPixel(x,bottom);val behind=screenshot.getPixel(outside,bottom)
+            assertTrue(kotlin.math.abs(Color.red(low)-Color.red(behind))<35)
+            assertTrue(kotlin.math.abs(Color.green(low)-Color.green(behind))<35)
+            assertTrue(kotlin.math.abs(Color.blue(low)-Color.blue(behind))<35)
+            screenshot.recycle()
         }
     }
 
