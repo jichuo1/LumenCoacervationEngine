@@ -2,7 +2,7 @@
 #
 # - PR 与 push main：只构建并测试，不发布。
 # - 发布新 Release：自动把演示包附到该 Release。
-# - 手动运行（workflow_dispatch）：把演示包附到指定 tag 的 Release（默认 1.0.0），同名文件覆盖。
+# - 手动运行（workflow_dispatch）：从指定 tag 构建并附到该 Release（默认 1.1.0），同名文件覆盖。
 name: Demo APK
 
 on:
@@ -33,7 +33,7 @@ on:
       tag:
         description: '要附加演示包的 Release tag'
         required: true
-        default: '1.0.0'
+        default: '1.1.0'
 
 concurrency:
   group: demo-${{ github.ref }}-${{ github.event_name }}
@@ -45,6 +45,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -73,8 +75,8 @@ jobs:
       fail-fast: false
       matrix:
         # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；33 / 34 = 高级材质 REFRACTION 后端。
-        # 33、34 用 ATD（为自动化测试精简的镜像）：google_apis 的 API 34 镜像在托管机上会随机整机退出
-        # （与测试步骤无关、主机内存充足、无 OOM，六次复现），ATD 镜像是官方给 CI 的替代。
+        # 33保留ATD。34用标准镜像做真实像素检查；ATD官方不支持硬件截图，启用输出后曾整机退出。
+        # 标准34镜像在托管机上也有过默认图形配置退出，下面显式选择Skia OpenGL并关闭模拟器Vulkan。
         include:
           - api-level: 27
             target: default
@@ -83,9 +85,11 @@ jobs:
           - api-level: 33
             target: aosp_atd
           - api-level: 34
-            target: aosp_atd
+            target: google_apis
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -111,8 +115,7 @@ jobs:
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          # API 34 ATD terminated during the first rendered pixel test with the default driver.
-          # Keep that test and explicitly select Skia OpenGL for this emulator configuration.
+          # Keep the full rendered pixel test on a standard API34 image using Skia OpenGL.
           HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
         with:
           api-level: ${{ matrix.api-level }}
@@ -143,6 +146,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           name: demo-apks
