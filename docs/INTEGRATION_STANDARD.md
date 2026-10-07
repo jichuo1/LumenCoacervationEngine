@@ -399,7 +399,7 @@ root（bindRoot）
 - 宿主如果有"清除数据"或"恢复默认"功能，**应当**用 `selectMaterial(context, SkinId.MATERIAL_YOU)` 和 `LiquidBackgroundStore.restoreAutomatic()` 复位，**不得**直接删除引擎的文件。
 - 引擎不申请任何权限。自定义背景通过宿主传入的 `content://` Uri 读取，读取权限由宿主的选择器授予。
 
-### 9.1 自定义背景预览（未发布，1.1.0）
+### 9.1 自定义背景预览（自1.1.0）
 
 宿主可以用 `LiquidBackgroundStore.decodePreview(context, config, viewWidth, viewHeight, palette)`
 显示导入后的图片预览。配色与尺寸均显式传入；引擎不读取 View、宿主主题或设置。
@@ -741,7 +741,7 @@ root（bindRoot）
 - 目标在横向轮播里时，`LumenReveal` 先把轮播横向滚到目标完整可见（两侧留 12dp），竖向和横向都到位后才闪高亮。
 - 目标**必须**已经挂在视图树上。`RecyclerView` 里还没绑定到屏幕上的条目，**应当**先 `scrollToPosition`，等布局完成后再调用 `reveal`。
 
-### 14.7 保持来源交互与形变效果（未发布，1.1.0）
+### 14.7 保持来源交互与形变效果（自1.1.0）
 
 已有界面接入时，宿主可以显式选择原效果，而不改变引擎默认的多排布适配：
 
@@ -818,3 +818,9 @@ root（bindRoot）
 不控制整个Activity时使用LumenSurfaceSession，接线与约束见[SURFACE_SESSIONS.md](SURFACE_SESSIONS.md)。
 不得为了使用局部材质而重建第三方Activity或重挂它的内容；来源必须匹配实际窗口并排除注入表面。
 配置、Hook、业务输入与前景文字由宿主管理，采样、材质与资源生命周期交给会话。
+
+### 16.1 受控增强（1.2.0）
+
+独立四角、双形状融合、局部按压、光源、渐进模糊及细节质量使用`LumenSurfaceEnhancements`，接线、全部参数和回退见[VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。
+来源授权和保护状态由宿主显式声明；禁止/独立Surface不得借助回退采样绕过。固定时钟由宿主推进，参数JSON不包含实时输入事件或像素。
+`LumenFusedSelection`只是背景装饰，保留原选项的业务和无障碍语义；有外扩的直接容器显式关闭clipChildren与clipToPadding并留出空间。

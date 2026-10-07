@@ -15,3 +15,13 @@ frameworks/base core/java/android/widget/EdgeEffect.java and
 libs/hwui/effects/StretchEffect.cpp (Copyright 2010, 2021 The Android Open Source Project),
 under the Apache License, Version 2.0.
 https://android.googlesource.com/platform/frameworks/base/
+
+The refraction shader is adapted from Kyant's AndroidLiquidGlass,
+commit 65ab177e90e5c1d8c62e70cf7755841982da65f6,
+Copyright 2025 Kyant, under the Apache License, Version 2.0.
+See third_party/Kyant-AndroidLiquidGlass-LICENSE.txt.
+
+Shader stability and linear-sRGB saturation adaptations derive from
+AndroidLiquidGlassView v1.0.5, commit 28ab7121f4f03fc78ba05a914fa3a6d59eb2c80a,
+Copyright ©️ 2025 Donny Yale, under the MIT License.
+See third_party/AndroidLiquidGlassView-LICENSE.txt and THIRD_PARTY_NOTICES.md.

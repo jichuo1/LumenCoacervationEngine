@@ -2,7 +2,7 @@
 #
 # - PR 与 push main：只构建并测试，不发布。
 # - 发布新 Release：自动把演示包附到该 Release。
-# - 手动运行（workflow_dispatch）：把演示包附到指定 tag 的 Release（默认 1.0.0），同名文件覆盖。
+# - 手动运行（workflow_dispatch）：从指定已发布 tag 构建并附到该 Release（默认 1.2.0），同名文件覆盖。
 name: Demo APK
 
 on:
@@ -16,7 +16,11 @@ on:
       - '.github/workflows/demo.yml'
       - '.github/scripts/run-smoke.sh'
       - '.github/scripts/prepare-emulator.sh'
+      - '.github/scripts/verify-smoke-results.py'
       - 'tools/test_prepare_emulator.py'
+      - 'tools/test_verify_smoke_results.py'
+      - '.github/scripts/install-emulator-libraries.sh'
+      - 'tools/test_install_emulator_libraries.py'
   push:
     branches: [main]
     paths:
@@ -25,7 +29,11 @@ on:
       - '.github/workflows/demo.yml'
       - '.github/scripts/run-smoke.sh'
       - '.github/scripts/prepare-emulator.sh'
+      - '.github/scripts/verify-smoke-results.py'
       - 'tools/test_prepare_emulator.py'
+      - 'tools/test_verify_smoke_results.py'
+      - '.github/scripts/install-emulator-libraries.sh'
+      - 'tools/test_install_emulator_libraries.py'
   release:
     types: [published]
   workflow_dispatch:
@@ -33,7 +41,7 @@ on:
       tag:
         description: '要附加演示包的 Release tag'
         required: true
-        default: '1.0.0'
+        default: '1.2.0'
 
 concurrency:
   group: demo-${{ github.ref }}-${{ github.event_name }}
@@ -45,6 +53,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -52,7 +62,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Test emulator installation retry
-        run: python3 -m unittest discover -s tools -p test_prepare_emulator.py -v
+        run: python3 -m unittest discover -s tools -p 'test_*smoke*.py' -v && python3 -m unittest discover -s tools -p test_prepare_emulator.py -v && python3 -m unittest discover -s tools -p test_install_emulator_libraries.py -v
 
       - name: Build release APK and test APK
         run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest --console=plain --no-daemon
@@ -73,8 +83,8 @@ jobs:
       fail-fast: false
       matrix:
         # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；33 / 34 = 高级材质 REFRACTION 后端。
-        # 33、34 用 ATD（为自动化测试精简的镜像）：google_apis 的 API 34 镜像在托管机上会随机整机退出
-        # （与测试步骤无关、主机内存充足、无 OOM，六次复现），ATD 镜像是官方给 CI 的替代。
+        # 33/34使用ATD；仪器测试临时开启最终硬件输出，仍要求真实窗口像素。
+        # 34标准镜像在安装Demo前已发生Google服务ANR与system_server Watchdog退出。
         include:
           - api-level: 27
             target: default
@@ -86,6 +96,8 @@ jobs:
             target: aosp_atd
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
@@ -101,9 +113,7 @@ jobs:
       # Action 会无条件安装最新 emulator；预先安装成功后该步骤只检查已安装包。
       # SDK 下载/解压最多重试三次，应用测试的失败仍直接阻止发布。
       - name: Install emulator runtime library
-        run: |
-          sudo apt-get update
-          sudo apt-get install --no-install-recommends -y libpulse0
+        run: bash .github/scripts/install-emulator-libraries.sh
 
       - name: Prepare Android Emulator with bounded retry
         run: bash .github/scripts/prepare-emulator.sh
@@ -111,9 +121,9 @@ jobs:
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2
         env:
-          # API 34 ATD terminated during the first rendered pixel test with the default driver.
-          # Keep that test and explicitly select Skia OpenGL for this emulator configuration.
+          # Keep API34 off the failing Vulkan path without suppressing actual pixel assertions.
           HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
+          SMOKE_API_LEVEL: ${{ matrix.api-level }}
         with:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
@@ -124,15 +134,21 @@ jobs:
           ram-size: 4096M
           heap-size: 576M
           disk-size: 4096M
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -show-kernel ${{ matrix.api-level == 34 && '-feature -Vulkan' || '' }}
-          script: bash .github/scripts/run-smoke.sh
+          emulator-options: -no-window -gpu swiftshader_indirect ${{ matrix.api-level == 34 && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -camera-back none -show-kernel
+          script: |
+            bash .github/scripts/run-smoke.sh || { timeout 15s adb logcat -d -b crash || true; exit 1; }
 
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-reports-api${{ matrix.api-level }}-${{ matrix.target }}
-          path: sample/build/reports/androidTests/
+          path: |
+            sample/build/reports/androidTests/
+            sample/build/outputs/androidTest-results/
+            logcat.txt
+            host-usage.txt
+            lumen-surface-benchmark.json
           retention-days: 14
 
   publish:
@@ -143,6 +159,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
       - uses: actions/download-artifact@v4
         with:
           name: demo-apks

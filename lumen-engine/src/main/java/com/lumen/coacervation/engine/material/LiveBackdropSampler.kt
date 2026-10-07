@@ -20,11 +20,20 @@ import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.host.LumenSurfaceSampling
 import com.lumen.coacervation.engine.host.LumenSurfacePolicy
 import com.lumen.coacervation.engine.host.LumenSurfaceFadeDirection
+import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import java.util.WeakHashMap
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.ceil
 import kotlin.math.floor
+
+/** Raw padded input for direct shader stages. Filtered siblings share one capture. */
+internal data class LumenRawSampleProfile(val haloDp: Float,val weakBlurDp: Float=0f,val strongBlurDp: Float=0f)
+internal interface LumenSampleEvents {
+    val sourceEpoch: Long
+    val contentVersion: Long
+    fun onCompleted(epoch: Long,version: Long,started: Long,finished: Long,published: Boolean)
+}
 
 /**
  * 悬浮表面的实时"玻璃透镜"底图：把同一窗口里位于表面**下方**的内容层（由宿主 [bindSource]
@@ -54,10 +63,14 @@ internal class LiveBackdropSampler(
     private val samplingMatrices: ViewSamplingMatrix,
     private val byteBudget: Int = Int.MAX_VALUE,
     private val recordContent: ((Canvas) -> Unit)? = null,
-    private val sharedBudget: LumenSampleBudget? = null
+    private val sharedBudget: LumenSampleBudget? = null,
+    private val counters: LumenGraphicsCounters? = null,
+    private val events: LumenSampleEvents? = null
 ) {
     private class Entry(val budget: LumenSampleBudget?) {
         var profile: LumenSurfaceSampling? = null
+        var raw: LumenRawSampleProfile? = null
+        val cadence = LumenSampleCadence()
         var allocatedBytes = 0L
         var scale = 0
         var margin = 0
@@ -74,6 +87,12 @@ internal class LiveBackdropSampler(
         var out: IntArray? = null
         var texture: Bitmap? = null
         var shader: BitmapShader? = null
+        var weakPixels: IntArray? = null
+        var strongPixels: IntArray? = null
+        var weakTexture: Bitmap? = null
+        var strongTexture: Bitmap? = null
+        var weakShader: BitmapShader? = null
+        var strongShader: BitmapShader? = null
         var valid = false
         /** 缓冲每重建/释放一次递增；后台结果按它认领，旧缓冲上算出的结果直接丢弃。 */
         var generation = 0
@@ -85,13 +104,16 @@ internal class LiveBackdropSampler(
         val replay = Matrix()
         /** 本表面采样区（含外沿）在内容坐标下的包围盒，用来把重叠的表面合并成一次录制。 */
         val contentBounds = RectF()
+        val recordedBounds = RectF()
         var contentBoundsValid = false
 
         fun release() {
             generation++
+            cadence.reset()
             valid = false
             shader = null
             texture = null // A previous hardware display list may still hold this bitmap.
+            weakPixels=null;strongPixels=null;weakTexture=null;strongTexture=null;weakShader=null;strongShader=null
             // 内存压力下的 releaseAll 可能正赶上后台在往 sample 里回放：recycle 会立刻释放
             // 原生像素，正在写的那一趟就是释放后使用。只断引用，在飞作业自己持有它直到结束。
             sample = null
@@ -127,8 +149,12 @@ internal class LiveBackdropSampler(
         val outWidth: Int,
         val outHeight: Int,
         val blurRadius: Int,
-        val profile: LumenSurfaceSampling?
-    )
+        val profile: LumenSurfaceSampling?,
+        val raw: LumenRawSampleProfile?,
+        val weakPixels: IntArray?,val strongPixels: IntArray?,
+        val weakRadius: Int,val strongRadius: Int,
+        val sourceEpoch: Long,val contentVersion: Long,val started: Long
+    ) { var processingNanos = 0L }
 
     private var source: View? = null
     private val entries = WeakHashMap<View, Entry>()
@@ -145,14 +171,13 @@ internal class LiveBackdropSampler(
     private var failed = false
     private var closed = false
 
-    /** 上一次真正采样的时刻；节流与收尾补采都按它判定。 */
-    private var lastSampleNanos = 0L
     private var trailingPosted = false
-    private var trailingHost: View? = null
+    private var trailingDeadlineNanos = 0L
     private val trailingSample = Runnable {
         trailingPosted = false
         if (!isActive) return@Runnable
-        dirty = true
+        // Wake pending surfaces without marking every surface stale again.
+        if (entries.keys.any { isInside(it, source) }) ignoreSelfInflictedDirty = true
         entries.keys.forEach(View::invalidate)
     }
 
@@ -184,12 +209,6 @@ internal class LiveBackdropSampler(
         private set
     val allocatedBytes: Long get() = entries.values.sumOf { it.allocatedBytes }
 
-    private fun intervalMs(): Long {
-        var value = Long.MAX_VALUE
-        entries.values.forEach { value = minOf(value, it.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) }
-        return if (value == Long.MAX_VALUE) ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS else value
-    }
-
     val isActive: Boolean get() = !closed && !failed && !suspended && source != null
 
     fun bindSource(view: View) {
@@ -200,16 +219,24 @@ internal class LiveBackdropSampler(
 
     /** 表面 draw 时登记；同窗口首个表面顺带装上 pre-draw 采样钩子。 */
     fun register(view: View, profile: LumenSurfaceSampling? = null) {
+        registerSample(view,profile,null)
+    }
+    fun registerRaw(view: View,profile: LumenSurfaceSampling,raw: LumenRawSampleProfile) = registerSample(view,profile,raw)
+    private fun registerSample(view: View,profile: LumenSurfaceSampling?,raw: LumenRawSampleProfile?) {
         if (!isActive) return
+        var changed=false
         if (!entries.containsKey(view)) {
-            entries[view] = Entry(sharedBudget).apply { this.profile = profile }
+            entries[view] = Entry(sharedBudget).apply { this.profile = profile;this.raw=raw }
             dirty = true
+            changed=true
         }
         val entry = entries[view]
-        if (entry != null && entry.profile != profile) {
+        if (entry != null && (entry.profile != profile || entry.raw != raw)) {
             entry.release()
             entry.profile = profile
+            entry.raw=raw
             dirty = true
+            changed=true
         }
         val root = view.rootView ?: return
         if (!roots.containsKey(root)) {
@@ -217,6 +244,8 @@ internal class LiveBackdropSampler(
             root.viewTreeObserver.addOnPreDrawListener(listener)
             roots[root] = listener
         }
+        // Registration happens in draw, after this traversal's pre-draw. A static source needs one bootstrap frame.
+        if(changed)scheduleTrailingSample(0L)
     }
 
     /**
@@ -243,40 +272,40 @@ internal class LiveBackdropSampler(
         if (!isActive || entries.isEmpty()) return
         val content = source ?: return
         if (!content.isAttachedToWindow || content.width <= 0 || content.height <= 0) return
-        if (!dirty && !content.isDirty) return
-        if (ignoreSelfInflictedDirty) {
-            ignoreSelfInflictedDirty = false
-            if (!dirty) return
-        }
+        val selfInflicted = ignoreSelfInflictedDirty
+        ignoreSelfInflictedDirty = false
+        val contentChanged = dirty || !selfInflicted && content.isDirty
+        if (contentChanged) entries.values.forEach { it.cadence.invalidate() }
+        dirty = false
+        if (!entries.values.any { it.cadence.pending }) return
         // 上一批还在后台：保持 dirty，批次回来时会拉起下一趟 traversal 续采。
         if (inFlight) return
-        // 节流：连续运动时不必每个 vsync 都重采样一遍内容层。落在间隔内就保持 dirty、
-        // 投递一次收尾补采——**必须**补，否则手指停下的最后一帧被跳过就会永久停在
-        // 滞后的映射上。
+        // Each surface owns its interval. A 0ms surface must not speed up a 1000ms one.
+        // Slow surfaces stay pending so the final frame is sampled after motion stops.
         val now = System.nanoTime()
-        val elapsedMs = (now - lastSampleNanos) / NANOS_PER_MILLISECOND
-        if (lastSampleNanos != 0L && elapsedMs < intervalMs()) {
-            scheduleTrailingSample(intervalMs() - elapsedMs)
-            return
-        }
-        lastSampleNanos = now
-        dirty = false
         // 采集期间视图树静止：开启祖先备忘，5 个表面与录制里的每张卡片共享同一条祖先链。
-        val jobs = samplingMatrices.withAncestorMemo { collectJobs(content) } ?: run {
+        val jobs = samplingMatrices.withAncestorMemo { collectJobs(content, now) } ?: run {
             fail()
             return
         }
-        if (jobs.isEmpty()) return
+        if(!isActive)return
+        if (jobs.isEmpty()) { schedulePendingSample(now); return }
         inFlight = true
         val token = batchToken
+        val measure = counters?.timingEnabled == true
         worker.execute {
-            val ok = runCatching { jobs.forEach(::process) }.isSuccess
+            val ok = runCatching { jobs.forEach { job ->
+                val start=if(measure)System.nanoTime()else 0L
+                process(job)
+                if(measure)job.processingNanos=System.nanoTime()-start
+            } }.isSuccess
             mainHandler.post { onBatchDone(token, jobs, ok) }
         }
+        repeat(jobs.size) { counters?.softwareRequested() }
     }
 
     /** 一批采集的主线程部分：逐表面准备几何，再按组录制。返回 null 表示失败（调用方永久退回静态磨砂）。 */
-    private fun collectJobs(content: View): List<LensJob>? {
+    private fun collectJobs(content: View, now: Long): List<LensJob>? {
         // 5 个表面共用同一个内容层：它到屏幕的矩阵每批只算一次（每次都是十几层的 JNI 链）。
         val contentGlobalValid = samplingMatrices.localToScreen(content, contentGlobal)
         val plans = ArrayList<Entry>(entries.size)
@@ -285,16 +314,31 @@ internal class LiveBackdropSampler(
         while (iterator.hasNext()) {
             val (view, entry) = iterator.next()
             if (!view.isAttachedToWindow) { entry.release(); iterator.remove(); continue }
-            if (!view.isShown || view.rootView !== content.rootView) { entry.valid = false; continue }
+            if (!view.isShown || view.rootView !== content.rootView) { entry.valid = false; entry.cadence.discardPending(); continue }
+            if (entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) > 0L) continue
             val prepared = runCatching { prepare(view, entry, contentGlobalValid) }
             if (prepared.isFailure) return null
             if (prepared.getOrDefault(false)) {
                 plans += entry
                 planViews += view
-            }
+            } else entry.cadence.discardPending()
         }
         if (plans.isEmpty()) return emptyList()
-        return runCatching { capture(content, plans, planViews) }.getOrNull()
+        val started=if(counters?.timingEnabled==true)System.nanoTime()else 0L
+        val result=runCatching { capture(content, plans, planViews) }.getOrNull()
+        if(started!=0L)counters?.recordingTimed(System.nanoTime()-started)
+        return result?.also {
+            plans.forEach { entry -> entry.cadence.sampled(now) }
+        }
+    }
+
+    private fun schedulePendingSample(now: Long) {
+        if (!isActive || inFlight) return
+        var delay = if (dirty) 0L else Long.MAX_VALUE
+        entries.values.forEach { entry ->
+            delay = minOf(delay, entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS))
+        }
+        if (delay != Long.MAX_VALUE) scheduleTrailingSample(delay)
     }
 
     /**
@@ -302,11 +346,14 @@ internal class LiveBackdropSampler(
      * 只投一次（[trailingPosted] 自守），到点把表面设脏拉起一次 traversal 即可。
      */
     private fun scheduleTrailingSample(delayMs: Long) {
-        if (trailingPosted) return
-        val host = entries.keys.firstOrNull { it.isAttachedToWindow } ?: return
+        if (entries.keys.none { it.isAttachedToWindow }) return
+        val delay = delayMs.coerceAtLeast(1L)
+        val deadline = System.nanoTime() + delay * NANOS_PER_MILLISECOND
+        if (trailingPosted && deadline - trailingDeadlineNanos >= 0L) return
+        mainHandler.removeCallbacks(trailingSample)
         trailingPosted = true
-        trailingHost = host
-        host.postOnAnimationDelayed(trailingSample, delayMs.coerceAtLeast(1L))
+        trailingDeadlineNanos = deadline
+        mainHandler.postDelayed(trailingSample, delay)
     }
 
     /** 主线程：算本表面的采样几何并备好缓冲。返回 false 表示本批跳过它。 */
@@ -321,7 +368,7 @@ internal class LiveBackdropSampler(
             return false
         }
         val profile = entry.profile
-        val marginPx = if (profile == null) LensRefractionPolicy.marginPx(density) else
+        val marginPx = if(entry.raw!=null)ceil(entry.raw!!.haloDp*density).toInt().coerceAtLeast(1) else if (profile == null) LensRefractionPolicy.marginPx(density) else
             kotlin.math.ceil(maxOf(if (profile.refractionEnabled) LensRefractionPolicy.MARGIN_DP * profile.refractionStrength else 0f, if (profile.blurEnabled) profile.blurRadiusDp * 1.8f else 0f) * density).toInt().coerceAtLeast(1)
         val scale = if (profile == null) LensRefractionPolicy.sampleScale(width + 2 * marginPx, height + 2 * marginPx) else
             LumenSurfacePolicy.softwareDivisor(width, height, profile.softwareScale, profile.maxSoftwarePixels, marginPx)
@@ -332,7 +379,10 @@ internal class LiveBackdropSampler(
         val sampleHeight = outHeight + 2 * margin
         if (entry.sampleWidth != sampleWidth || entry.sampleHeight != sampleHeight ||
             entry.outWidth != outWidth || entry.outHeight != outHeight) {
-            val bytes = (sampleWidth.toLong() * sampleHeight * 12L + outWidth.toLong() * outHeight * 8L)
+            val raw=entry.raw
+            val rawLayers=(if(raw?.weakBlurDp!=null&&raw.weakBlurDp>0f)1 else 0)+(if(raw?.strongBlurDp!=null&&raw.strongBlurDp>0f)1 else 0)
+            val bytes = if(raw!=null)sampleWidth.toLong()*sampleHeight*(20L+8L*rawLayers) else
+                sampleWidth.toLong() * sampleHeight * 12L + outWidth.toLong() * outHeight * 8L
             if (allocatedBytes - entry.allocatedBytes + bytes > byteBudget) {
                 budgetRejected = true
                 entry.release()
@@ -346,9 +396,18 @@ internal class LiveBackdropSampler(
             entry.sampleCanvas = Canvas(entry.sample!!)
             entry.pixels = IntArray(sampleWidth * sampleHeight)
             entry.scratch = IntArray(sampleWidth * sampleHeight)
-            entry.out = IntArray(outWidth * outHeight)
-            entry.texture = createBitmap(outWidth, outHeight, Bitmap.Config.ARGB_8888)
+            val tw=if(raw!=null)sampleWidth else outWidth;val th=if(raw!=null)sampleHeight else outHeight
+            entry.out = IntArray(tw * th)
+            entry.texture = createBitmap(tw, th, Bitmap.Config.ARGB_8888)
             entry.shader = BitmapShader(entry.texture!!, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+            if(raw!=null&&raw.weakBlurDp>0f){
+                entry.weakPixels=IntArray(tw*th);entry.weakTexture=createBitmap(tw,th,Bitmap.Config.ARGB_8888)
+                entry.weakShader=BitmapShader(entry.weakTexture!!,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP)
+            }
+            if(raw!=null&&raw.strongBlurDp>0f){
+                entry.strongPixels=IntArray(tw*th);entry.strongTexture=createBitmap(tw,th,Bitmap.Config.ARGB_8888)
+                entry.strongShader=BitmapShader(entry.strongTexture!!,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP)
+            }
             entry.sampleWidth = sampleWidth; entry.sampleHeight = sampleHeight
             entry.outWidth = outWidth; entry.outHeight = outHeight
         }
@@ -386,6 +445,7 @@ internal class LiveBackdropSampler(
         for ((index, members) in groups.withIndex()) {
             while (pictures.size <= index) pictures += Picture()
             val picture = pictures[index]
+            val requested=System.nanoTime()
             if (members.size == 1) {
                 val entry = plans[members[0]]
                 val scale = entry.scale
@@ -398,10 +458,12 @@ internal class LiveBackdropSampler(
                     recording.concat(entry.sourceToTarget)
                     if (recordContent == null) content.draw(recording) else recordContent.invoke(recording)
                     recordings++
+                    counters?.contentRecorded()
                 } finally {
                     picture.endRecording()
                 }
-                jobs += job(views[members[0]], entry, picture, replay = null)
+                entry.recordedBounds.set(entry.contentBounds)
+                jobs += job(views[members[0]], entry, picture, replay = null,started=requested)
                 continue
             }
             var left = Float.POSITIVE_INFINITY
@@ -422,6 +484,7 @@ internal class LiveBackdropSampler(
                 recording.translate(-originX.toFloat(), -originY.toFloat())
                 if (recordContent == null) content.draw(recording) else recordContent.invoke(recording)
                 recordings++
+                counters?.contentRecorded()
             } finally {
                 picture.endRecording()
             }
@@ -433,13 +496,14 @@ internal class LiveBackdropSampler(
                 entry.replay.preTranslate(reach, reach)
                 entry.replay.preConcat(entry.sourceToTarget)
                 entry.replay.preTranslate(originX.toFloat(), originY.toFloat())
-                jobs += job(views[member], entry, picture, replay = entry.replay)
+                entry.recordedBounds.set(originX.toFloat(),originY.toFloat(),(originX+recordWidth).toFloat(),(originY+recordHeight).toFloat())
+                jobs += job(views[member], entry, picture, replay = entry.replay,started=requested)
             }
         }
         return jobs
     }
 
-    private fun job(view: View, entry: Entry, picture: Picture, replay: Matrix?): LensJob = LensJob(
+    private fun job(view: View, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob = LensJob(
         view = view,
         entry = entry,
         generation = entry.generation,
@@ -457,13 +521,25 @@ internal class LiveBackdropSampler(
         outHeight = entry.outHeight,
         blurRadius = entry.profile?.let { (if (it.blurEnabled) it.blurRadiusDp * density / entry.scale else 0f).toInt().coerceIn(0, 32) }
             ?: LensRefractionPolicy.blurRadius(entry.scale, density),
-        profile = entry.profile
+        profile = entry.profile,
+        raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
+        weakRadius=((entry.raw?.weakBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32),
+        strongRadius=((entry.raw?.strongBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32),
+        sourceEpoch=events?.sourceEpoch?:0L,contentVersion=events?.contentVersion?:0L,started=started
     )
 
     /** 批次回到主线程：把后台结果写进纹理。过期的批次/缓冲一律丢弃。 */
     private fun onBatchDone(token: Int, jobs: List<LensJob>, ok: Boolean) {
         inFlight = false
-        if (token != batchToken || !isActive) return
+        jobs.forEach { counters?.softwareCompleted(it.processingNanos, token != batchToken || !isActive || it.entry.generation != it.generation) }
+        val finished=System.nanoTime()
+        jobs.forEach {events?.onCompleted(it.sourceEpoch,it.contentVersion,it.started,finished,
+            ok&&token==batchToken&&isActive&&it.entry.generation==it.generation)}
+        if (token != batchToken || !isActive) {
+            // release/resume may have invalidated a traversal while the old batch was still running.
+            if (isActive) schedulePendingSample(System.nanoTime())
+            return
+        }
         if (!ok) {
             fail()
             return
@@ -473,17 +549,18 @@ internal class LiveBackdropSampler(
             if (entry.generation != job.generation) continue
             val texture = entry.texture ?: continue
             if (texture.isRecycled) continue
-            texture.setPixels(job.out, 0, job.outWidth, 0, 0, job.outWidth, job.outHeight)
+            val tw=if(job.raw!=null)job.sampleWidth else job.outWidth;val th=if(job.raw!=null)job.sampleHeight else job.outHeight
+            texture.setPixels(job.out, 0, tw, 0, 0, tw, th)
+            job.weakPixels?.let {entry.weakTexture?.setPixels(it,0,tw,0,0,tw,th)}
+            job.strongPixels?.let {entry.strongTexture?.setPixels(it,0,tw,0,0,tw,th)}
             entry.valid = true
+            job.view.background?.invalidateSelf()
             job.view.invalidate()
             if (!dirty && isInside(job.view, source)) ignoreSelfInflictedDirty = true
         }
         // 批次在飞期间又有位移：上面的 invalidate 通常已经拉起下一趟 pre-draw；这里兜底，
         // 保证即使本批结果全被丢弃，停下来的那一帧也一定会被补采。
-        if (dirty) {
-            val elapsedMs = (System.nanoTime() - lastSampleNanos) / NANOS_PER_MILLISECOND
-            scheduleTrailingSample(intervalMs() - elapsedMs)
-        }
+        schedulePendingSample(System.nanoTime())
     }
 
     private fun isInside(view: View, ancestor: View?): Boolean {
@@ -517,9 +594,29 @@ internal class LiveBackdropSampler(
         return true
     }
 
+    fun rawShader(view: View,level: Int=0): Shader? {
+        val entry=entries[view]?:return null
+        if(!isActive||!entry.valid||entry.raw==null)return null
+        return when(level){1->entry.weakShader?:entry.shader;2->entry.strongShader?:entry.shader;else->entry.shader}?.also {it.setLocalMatrix(null)}
+    }
+    /** Last allocated/recorded bounds, written into caller-owned buffers without allocating on draw. */
+    fun samplingBounds(view: View,recorded: RectF,materialized: RectF): Boolean {
+        val entry=entries[view]?:return false
+        if(!entry.valid||entry.sampleWidth==0)return false
+        recorded.set(entry.recordedBounds)
+        materialized.set(0f,0f,if(entry.raw!=null)entry.sampleWidth.toFloat()else entry.outWidth.toFloat(),if(entry.raw!=null)entry.sampleHeight.toFloat()else entry.outHeight.toFloat())
+        return true
+    }
+    fun rawScale(view: View): Float = entries[view]?.scale?.toFloat()?:1f
+    fun rawMargin(view: View): Float = entries[view]?.let {(it.margin*it.scale).toFloat()}?:0f
+    fun rawWidth(view: View): Float = entries[view]?.sampleWidth?.toFloat()?:0f
+    fun rawHeight(view: View): Float = entries[view]?.sampleHeight?.toFloat()?:0f
+
     /** 内存压力/后台：丢掉全部位图，恢复后首帧重采样。在飞的批次回来时按令牌作废。 */
     fun releaseAll() {
         batchToken++
+        mainHandler.removeCallbacks(trailingSample)
+        trailingPosted = false
         entries.values.forEach(Entry::release)
         // 在飞作业各自持有它引用的录制，清池不影响它们。
         pictures.clear()
@@ -554,6 +651,7 @@ internal class LiveBackdropSampler(
          */
         @WorkerThread
         fun process(job: LensJob) {
+            if(Thread.currentThread().isInterrupted)throw InterruptedException("Sampler closed")
             job.sample.eraseColor(0)
             val replay = job.replay
             if (replay == null) {
@@ -562,6 +660,18 @@ internal class LiveBackdropSampler(
                 job.sampleCanvas.withMatrix(replay) { drawPicture(job.picture) }
             }
             job.sample.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)
+            if(job.raw!=null){
+                job.pixels.copyInto(job.out)
+                fun filter(radius: Int,destination: IntArray?) {
+                    if(destination==null)return
+                    if(Thread.currentThread().isInterrupted)throw InterruptedException("Sampler closed")
+                    job.out.copyInto(job.pixels);LensRefractionPolicy.premultiply(job.pixels)
+                    val result=if(radius==0)job.pixels else ModernBackdropBlur.blurInto(job.pixels,job.scratch,job.sampleWidth,job.sampleHeight,radius)
+                    result.copyInto(destination);LensRefractionPolicy.unpremultiply(destination)
+                }
+                filter(job.weakRadius,job.weakPixels);filter(job.strongRadius,job.strongPixels)
+                return
+            }
             LensRefractionPolicy.premultiply(job.pixels)
             val blurred = if (job.blurRadius == 0) job.pixels else ModernBackdropBlur.blurInto(
                 job.pixels, job.scratch, job.sampleWidth, job.sampleHeight, job.blurRadius
@@ -591,8 +701,7 @@ internal class LiveBackdropSampler(
     fun close() {
         if (closed) return
         closed = true
-        trailingHost?.removeCallbacks(trailingSample)
-        trailingHost = null
+        mainHandler.removeCallbacks(trailingSample)
         trailingPosted = false
         releaseAll()
         if (workerStarted) worker.shutdownNow()

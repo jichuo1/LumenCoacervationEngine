@@ -8,6 +8,7 @@ import android.graphics.RectF
 import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import androidx.annotation.RequiresApi
+import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -34,6 +35,7 @@ internal class GlowChromeGlassApi31(
     val paddingPx: Int,
     private val effects: Effects
 ) : AutoCloseable {
+    var counters: LumenGraphicsCounters? = null
     /** 按表面几何与光学强度生成效果；参数（量化后）没变时不会被调用。 */
     fun interface Effects {
         fun create(
@@ -112,6 +114,7 @@ internal class GlowChromeGlassApi31(
         } finally {
             node.endRecording()
         }
+        counters?.proxyRecorded()
         updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY)
         outline.setRoundRect(pad, pad, pad + width, pad + height, radiusPx)
         node.setOutline(outline)
@@ -136,6 +139,7 @@ internal class GlowChromeGlassApi31(
         effectIntensity = intensity
         effectDirection = direction
         node.setRenderEffect(effects.create(width, height, paddingPx, radiusPx, intensity, direction))
+        counters?.effectBuilt()
     }
 
     /** 内存压力：丢掉 display list（下次绘制重录），效果对象留着——它们只是参数快照。 */

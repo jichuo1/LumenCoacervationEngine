@@ -1,4 +1,4 @@
-# 局部视效会话（1.1.0）
+# 局部视效会话（1.1.1）
 
 LumenSurfaceSession 用于已有应用里的顶底栏、局部浮层和独立 Dialog 窗口。不修改根背景、Window、层级、输入或偏好。
 完整 Activity 继续使用 LumenActivityDelegate；调用方保留自己的 Activity 基类、授权门和业务回调。
@@ -18,6 +18,7 @@ session.close()
 
 source 应当是表面下面的现有内容，不能包含会话注入的任何表面。引擎检查窗口 token 与祖先关系，拒绝不同窗口和反馈回路。
 同一来源的多个表面共享 GPU 录制；软件路径沿用后台单飞、有界的区域透镜采样。
+GPU共享录制按该来源最快表面的间隔更新；软件逐表面的像素处理分别遵守各自间隔，较慢表面在运动结束后仍补采最后的变化。
 Dialog/Story 浮层要传入本窗口的来源。来源或目标 detach 后会解绑；重新附着需要重建绑定。
 可实现 LumenContentSource；coordinateView 在绑定期间必须稳定，drawContent 在其局部坐标录制。
 只有真正排除了全部注入表面时，才能声明 excludesSurfaces=true。录制不得改变 View 的可见性/层级，不得分配逐帧绘制对象。
@@ -64,6 +65,7 @@ AGSL透镜在配置变化时复用，不反复编译。动态配色不recreate A
 解绑只在背景仍由引擎持有时恢复原背景，保留当前padding，不覆盖别人的后续背景修改。
 
 firstVisibleDraw 表示绑定首次实际可见绘制，也可能是静态回退；判断APPLIED必须结合backend/failure。
+配置、暂停和资源释放会立即把当前后端更新为STATIC，并给出NONE/FRAME_PENDING/PAUSED/MEMORY_PRESSURE等原因；hasVisibleFrame保留曾经可见的历史事实。
 软件截图不冒充硬件窗口可见帧。通知合并后在draw/layout栈外投递，关闭后丢弃；客户端异常记录CALLBACK_FAILED。
 诊断仅含绑定ID、计数、后端、失败枚举和配色代次，不含用户内容、路径、Uri或View引用。
 
@@ -75,3 +77,6 @@ JVM覆盖非有限值、渐隐、极端几何预算、失败路由、共享预�
 LocalSurfaceIntegrationTest随sample设备测试执行，验证背景/层级/padding、软件帧、动态主题、无来源静态后端、跨窗口拒绝和关闭。
 31+还用PixelCopy检查GPU渐隐的实际像素。ATD镜像默认不提交最终硬件图像，测试在33+临时启用输出并在finally恢复；生产引擎不控制该开关。
 示例验证不等于第三方应用的Hook、Compose或灰度路径已经覆盖。
+
+1.2新增独立配置与重载，四角/融合/按压/光源/渐进模糊/质量和参数回放见[VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。
+旧构造和默认外观保留；增强效果的位图输入仍受softwareFallback开关限制。

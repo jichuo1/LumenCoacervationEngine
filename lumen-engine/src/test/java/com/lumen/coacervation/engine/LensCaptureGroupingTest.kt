@@ -54,7 +54,7 @@ class LensCaptureGroupingTest {
     @Test fun ancestorMemoIsScopedToOneCaptureBatchOnASharedMatrixTool() {
         val sampler = source("material/LiveBackdropSampler.kt")
         assertTrue("采集批次必须包在祖先备忘里",
-            sampler.contains("samplingMatrices.withAncestorMemo { collectJobs(content) }"))
+            sampler.contains("samplingMatrices.withAncestorMemo { collectJobs(content, now) }"))
         assertTrue("采样器必须用渲染器的矩阵工具，录制里的静态磨砂映射才吃得到备忘",
             !sampler.contains("private val samplingMatrices = ViewSamplingMatrix()"))
         val renderer = source("material/FrostedMaterialRenderer.kt")
@@ -81,9 +81,8 @@ class LensCaptureGroupingTest {
         val done = sampler.after("private fun onBatchDone(").before("private fun isInside(")
         assertTrue(done.contains("if (!dirty && isInside(job.view, source)) ignoreSelfInflictedDirty = true"))
         val preDraw = sampler.after("private fun onPreDraw()").before("private fun collectJobs(")
-        val gate = preDraw.indexOf("if (!dirty && !content.isDirty) return")
-        val skip = preDraw.indexOf("if (ignoreSelfInflictedDirty)")
-        assertTrue(gate in 0 until skip)
-        assertTrue(preDraw.contains("if (!dirty) return"))
+        assertTrue(preDraw.contains("val contentChanged = dirty || !selfInflicted && content.isDirty"))
+        assertTrue(preDraw.contains("if (contentChanged) entries.values.forEach { it.cadence.invalidate() }"))
+        assertTrue(preDraw.contains("if (!entries.values.any { it.cadence.pending }) return"))
     }
 }

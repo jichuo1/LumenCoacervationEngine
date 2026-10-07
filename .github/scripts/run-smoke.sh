@@ -19,7 +19,8 @@ adb logcat -c || true
 adb logcat -v threadtime > logcat.txt 2>&1 &
 logcat_pid=$!
 
-./gradlew :sample:connectedReleaseAndroidTest --console=plain --no-daemon
+started=$(date +%s)
+timeout 15m ./gradlew :sample:connectedReleaseAndroidTest --console=plain --no-daemon
 status=$?
 
 kill "$logcat_pid" "$sampler_pid" 2>/dev/null || true
@@ -29,27 +30,8 @@ cat host-usage.txt || true
 echo "::endgroup::"
 
 echo "::group::测试结果"
-python3 - <<'PY'
-import glob, xml.etree.ElementTree as ET
-files = glob.glob("sample/build/outputs/androidTest-results/connected/**/*.xml", recursive=True)
-if not files:
-    print("没有找到测试结果 XML（测试未能开始，或设备在运行中断开）")
-total = failed = 0
-for path in files:
-    for case in ET.parse(path).getroot().iter("testcase"):
-        total += 1
-        problem = case.find("failure")
-        if problem is None:
-            problem = case.find("error")
-        seconds = case.get("time", "?")
-        if problem is None:
-            print(f"PASS  {case.get('name')}  ({seconds}s)")
-        else:
-            failed += 1
-            print(f"FAIL  {case.get('name')}  ({seconds}s)")
-            print("      " + (problem.text or problem.get("message") or "").strip().replace("\n", "\n      ")[:4000])
-print(f"合计 {total} 条，失败 {failed} 条")
-PY
+api=${SMOKE_API_LEVEL:-$(adb shell getprop ro.build.version.sdk | tr -d '\r')}
+python3 .github/scripts/verify-smoke-results.py sample/build/outputs/androidTest-results/connected --api "$api" --since "$started" || status=1
 grep -E "DemoSmokeTest: material" logcat.txt | sed -E 's/^.*DemoSmokeTest: /实际材质：/' || true
 echo "::endgroup::"
 
@@ -64,4 +46,5 @@ if [ "$status" -ne 0 ]; then
   tail -n 200 logcat.txt || true
   echo "::endgroup::"
 fi
+timeout 15s adb pull /sdcard/Android/data/com.lumen.coacervation.sample/files/lumen-surface-benchmark.json lumen-surface-benchmark.json || true
 exit "$status"

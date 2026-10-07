@@ -74,6 +74,17 @@ public class LumenSlidingSelection @JvmOverloads constructor(
     }
 
     private var highlightListener: OnHighlightListener? = null
+    public fun interface OnGeometryListener {
+        public fun onGeometry(left: Float,top: Float,right: Float,bottom: Float,targetLeft: Float,targetTop: Float,targetRight: Float,targetBottom: Float,moving: Boolean)
+    }
+    private var geometryListener: OnGeometryListener?=null
+    public fun getOnGeometryListener(): OnGeometryListener? = geometryListener
+    public fun setOnGeometryListener(listener: OnGeometryListener?) {geometryListener=listener;reportGeometry()}
+    private fun reportGeometry(){
+        if(!hasRendered||selectedIndex<0||geometryListener==null)return
+        if(!readTarget(selectedIndex,scratch))return
+        geometryListener?.onGeometry(rendered[0],rendered[1],rendered[2],rendered[3],scratch[0],scratch[1],scratch[2],scratch[3],animator?.isRunning==true)
+    }
 
     /**
      * 设置高亮回调：只在某一项的值变化时回调，宿主用它渐变标题颜色等。设置时立即按当前状态回调一遍全部选项。
@@ -82,6 +93,7 @@ public class LumenSlidingSelection @JvmOverloads constructor(
         highlightListener = listener
         weights.fill(Float.NaN)
         updateHighlights()
+        reportGeometry()
     }
 
     /** 当前选中项；没有选项时为 -1。 */
@@ -161,6 +173,7 @@ public class LumenSlidingSelection @JvmOverloads constructor(
             addListener(object : AnimatorListenerAdapter() {
                 override fun onAnimationEnd(animation: Animator) {
                     if (animator === animation) animator = null
+                    reportGeometry()
                 }
             })
             start()
@@ -207,6 +220,7 @@ public class LumenSlidingSelection @JvmOverloads constructor(
         )
         syncWithSelectedRowTransform()
         updateHighlights()
+        reportGeometry()
     }
 
     /** 按选中框与各行沿排列方向的重叠比例回调高亮值。零分配。 */
