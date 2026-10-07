@@ -1,5 +1,7 @@
 # 1.2 视效增强执行记录
 
+本文件保留实施过程快照；最终发布前Review及四版本门禁见[RELEASE_1.2.0_REVIEW.md](RELEASE_1.2.0_REVIEW.md)。
+
 依据：用户提供的《Lumen Android Visual Effects Deep Research 2026-10-07》，研究基线e078d05。
 执行基线：64fcdd2（包含1.1局部会话与Review修正）。用户已选择完整推进P1。
 研究建议按当前源码验证后实施；数学检查、模拟器图像、性能基准和真机验收分别记录。
