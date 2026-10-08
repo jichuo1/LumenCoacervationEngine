@@ -24,3 +24,6 @@ include(":lumen-motion")
 include(":lumen-controls")
 // 接入示例：按 docs/INTEGRATION_STANDARD.md 的最小接入写法搭的演示应用。
 include(":sample")
+
+// Optional bounded procedural effects and finite particles.
+include(":lumen-effects")
