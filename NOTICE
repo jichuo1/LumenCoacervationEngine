@@ -25,3 +25,7 @@ Shader stability and linear-sRGB saturation adaptations derive from
 AndroidLiquidGlassView v1.0.5, commit 28ab7121f4f03fc78ba05a914fa3a6d59eb2c80a,
 Copyright ©️ 2025 Donny Yale, under the MIT License.
 See third_party/AndroidLiquidGlassView-LICENSE.txt and THIRD_PARTY_NOTICES.md.
+
+Optional Lottie, PAG and Rive modules use their separately distributed SDKs.
+Demo animation samples retain upstream Tencent/PAG and Rive attribution.
+See THIRD_PARTY_NOTICES.md and the versioned licenses under third_party/.

@@ -110,6 +110,7 @@ class SurfaceSandboxActivity : Activity() {
     private fun applyLimits(value:LumenSurfaceSessionOptions) { limits=value;session.updateOptions(value) }
 
     private fun buildControls(parent:LinearLayout) {
+        parent.addView(Button(this).apply{text="下一轮：传感器 / 程序化效果 / 粒子 / 动画资产";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,P2SandboxActivity::class.java))}})
         fun toggle(label:String,checked:Boolean,change:(Boolean)->Unit) { parent.addView(CheckBox(this).apply { text=label;isChecked=checked;setOnCheckedChangeListener { _,v->change(v) } }) }
         fun slider(label:String,start:Float,end:Float,current:Float,change:(Float)->Unit) {
             val caption=TextView(this).apply { text="$label：$current";setTextColor(Color.BLACK) };parent.addView(caption)

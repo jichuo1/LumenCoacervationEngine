@@ -43,6 +43,12 @@ dependencies {
     implementation(project(":lumen-engine"))
     implementation(project(":lumen-controls"))
     implementation(project(":lumen-motion"))
+    implementation(project(":lumen-effects"))
+    implementation(project(":lumen-assets"))
+    implementation(project(":lumen-assets-lottie"))
+    implementation(project(":lumen-assets-pag"))
+    implementation(project(":lumen-assets-rive"))
+
     implementation(libs.androidx.recyclerview)
     implementation(libs.androidx.appcompat)
     implementation(libs.androidx.core.ktx)
@@ -50,4 +56,5 @@ dependencies {
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation("com.tencent.tav:libpag:4.5.98-noffavc")
 }

@@ -23,6 +23,7 @@ class SmokeResultsTest(unittest.TestCase):
                 keys.add(VERIFIER.GPU_TEST)
             if api >= 33:
                 keys.update(VERIFIER.ENHANCED_GPU_TESTS)
+                keys.add(VERIFIER.P2_GPU_TEST)
             for owner, name in sorted(keys if not empty else set()):
                 if (owner, name) == omit:
                     continue
@@ -50,6 +51,9 @@ class SmokeResultsTest(unittest.TestCase):
         self.assertFalse(self.check(omit=VERIFIER.GPU_TEST))
     def test_missing_new_pixel_test_is_rejected(self):
         self.assertFalse(self.check(omit=next(iter(VERIFIER.ENHANCED_GPU_TESTS))))
+    def test_missing_p2_native_format_or_pixels_is_rejected(self):
+        self.assertFalse(self.check(omit=VERIFIER.P2_GPU_TEST))
+        self.assertFalse(self.check(omit=(VERIFIER.PREFIX+"P2IntegrationTest","riveLoadsWithoutImplicitPlaybackAndCanClose")))
     def test_api31_does_not_require_agsl_tests(self):
         self.assertTrue(self.check(api=31))
 

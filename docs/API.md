@@ -1,4 +1,4 @@
-# 公开 API 清单（1.2.0）
+# 公开 API 清单（1.2.1，含1.2.0兼容面）
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。
 >
@@ -279,3 +279,34 @@
 | `widget.LumenFusedSelection(selection,palette,surface,enhancements,sharedNodeBaseline=false)` | `update(surface,enhancements)` / `setSharedNodeBaseline(enabled)` / `updatePalette` / `diagnostics` / `pause` / `resume` / `close`；可逆装饰真实选择器 |
 
 新类型的包名除明确标注motion/interaction/widget外均为`com.lumen.coacervation.engine.host`。
+
+
+## 16. 可选传感器光源（1.2.1，lumen-motion）
+
+包`com.lumen.coacervation.engine.sensor`。参数全部字段、默认及范围见[P2配置](P2_EFFECTS_AND_ASSETS.md)。
+
+- `LumenSensorLightOptions`及全部构造字段、`LumenSensorLightState`、`LumenSensorLightDiagnostics(state,sensorType,events,updates,rejected,registrations)`。
+- `LumenLightVectorListener.onLight(x,y,z)`；`LumenGravityListener.onGravity(x,y,z,timestampNanos)`；`LumenGravityInput.sensorType/start(rateHz,allowAccelerometerFallback,listener)/stop()`。可注入输入须在主线程回调。
+- `LumenSensorLightController(view,listener,options=LumenSensorLightOptions(),input=null)`：`start/stop/update/diagnostics/close`。回调只输出向量，宿主选择接入的binding。
+
+## 17. 独立生成器及粒子（1.2.1，lumen-effects）
+
+包`com.lumen.coacervation.engine.effects`。`LumenEffectOptions`、`LumenProceduralOptions`、`LumenFilmOptions`、`LumenPaperOptions`、`LumenEnergyOptions`、`LumenParticleOptions`全部构造字段受兼容承诺；参数清单与范围见[P2配置](P2_EFFECTS_AND_ASSETS.md)。
+
+- `LumenProceduralKind { FILM,PAPER,ENERGY }`、`LumenParticleShape { ORB,STREAK }`、`LumenEffectState`和`LumenEffectDiagnostics`全部字段。
+- `LumenEffectLayer(view,options=LumenEffectOptions(),clock=system)`：`update(value)`、`emitBurst(x,y):Int`、`triggerEnergy()`、`pause/resume/clear/advanceFrame/diagnostics/close`。x/y为宿主View内像素，关闭后调用为空操作。
+- `LumenEffectPreset(options=LumenEffectOptions())`：`toJson():String`、`fromJson(text):LumenEffectPreset`，schema固定为1。导出只含参数，不含任意执行代码。
+
+## 18. 统一动画资产（1.2.1，lumen-assets）
+
+包`com.lumen.coacervation.engine.assets`。所有选项／预算见[P2配置](P2_EFFECTS_AND_ASSETS.md)。
+
+- `LumenAssetOptions`全部构造字段；`LumenAssetSelection(artboard=null,animation=null,stateMachine=null)`；`LumenAssetFormat/Fit/State/Failure`枚举；`LumenAssetInput(name,kind)`、`LumenAssetInputKind { NUMBER,BOOLEAN,TRIGGER }`。
+- `LumenAssetMetadata(format,width,height,durationMs,seekable,decodedImagePixels=0,nativeClock=false,speedControl=true,repeatControl=true,frameRateControl=true,inputs=emptyList())`；`LumenAssetDiagnostics(state,failure,generation,frames,dropped,inFlight,bytes,metadata)`。frames计量成功手动提交，无法统计供应商原生时钟帧。
+- `LumenAssetException(failure)`供工厂明确拒绝原因；`LumenAssetSource.open():InputStream`、`LumenAssetFactory.format/decode(bytes,selection,options)`在会话后台执行，`attach(context,asset,options)`在主线程执行。
+- `LumenDecodedAsset.metadata/close`：可在解析线程或主线程关闭，宿主实现须保证幂等、只释放自己的资源。`LumenAssetPlayer.view/metadata/update/render(progress):Boolean/setPlaying/close`及默认`setNumber/setBoolean/fire`在主线程执行；false表示不支持或未提交。
+- `LumenAssetListener.onState(state,failure)`异步主线程通知；`LumenAssetPlayerFailureListener.onFailure(failure)`和默认`LumenAssetPlayer.setOnFailure(listener?)`供异步Surface回调失败上报，会话再次按代次过滤。
+- `LumenAssetSession(container,options=LumenAssetOptions(),clock=system)`：`setListener`、`load(source,factory,selection=LumenAssetSelection())`、`play/pause/resume`、`seek(progress)`、`update(value)`、`setNumber(name,value):Boolean`、`setBoolean(name,value):Boolean`、`fire(name):Boolean`、`advanceFrame/diagnostics/close`。输入名称1–128字符，progress为0–1有限值。
+- 独立工厂：`assets.lottie.LumenLottieFactory()`、`assets.pag.LumenPagFactory()`、`assets.rive.LumenRiveFactory(context,renderer=LumenRiveRenderer.CANVAS)`，各实现上述统一工厂。`assets.rive.LumenRiveRenderer { CANVAS,GPU }`为引擎自有枚举，默认SDK Canvas后端，GPU需显式选择。公开签名无播放库类型。
+
+Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存及中断边界属于[P2配置](P2_EFFECTS_AND_ASSETS.md)明确约束，不能把帧率或字节门禁解释为原生运行时的硬实时／内存保证。

@@ -65,7 +65,9 @@
 
 ## 下载 Demo
 
-不接入也能先看效果：到 [Releases](https://github.com/jichuo1/LumenCoacervationEngine/releases) 下载演示包 **`lumen-demo-<版本>.apk`** 直接安装（1.0.0 版：[`lumen-demo-1.0.0.apk`](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.0.0/lumen-demo-1.0.0.apk)）。
+1.2.1增加可选传感器光源、薄膜／纸张／有限能量、有限池粒子，以及分别接入Lottie、PAG、Rive的独立模块。全部参数和能力边界见[下一轮功能与接入](docs/P2_EFFECTS_AND_ASSETS.md)；所有所选模块使用同一版本。
+
+不接入也能先看效果：到 [Releases](https://github.com/jichuo1/LumenCoacervationEngine/releases) 下载演示包 **`lumen-demo-<版本>.apk`** 直接安装（1.2.1 版：[`lumen-demo-1.2.1.apk`](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/lumen-demo-1.2.1.apk)）。
 
 | 页 | 可以看到 |
 |:---|:---|
@@ -102,7 +104,7 @@
 | 项 | 说明 |
 |:---|:---|
 | **系统** | Android 8.1 及以上（`minSdk 27`） |
-| **版本** | 1.2.0（契约版本 1，规则见 [`docs/VERSIONING.md`](docs/VERSIONING.md)） |
+| **版本** | 1.2.1（契约版本 1，规则见 [`docs/VERSIONING.md`](docs/VERSIONING.md)） |
 | **依赖** | 引擎本体只依赖 AndroidX core |
 | **可选** | `lumen-motion` 不依赖 AppCompat；`lumen-controls` 依赖 AppCompat + RecyclerView |
 
@@ -143,10 +145,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.2.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.2.1")
     // 可选模块，版本号保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.2.0")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.2.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.2.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.2.1")
 }
 ```
 
@@ -158,13 +160,13 @@ includeBuild("../LumenCoacervationEngine")
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.lumen.coacervation.engine:lumen-engine:1.2.0")
+    implementation("com.lumen.coacervation.engine:lumen-engine:1.2.1")
 }
 ```
 
 方式 C —— 本地 maven 仓：`./gradlew publishAllPublicationsToProjectLocalRepository`，产物在 `build/repo`，加进 `repositories` 后按 `com.lumen.coacervation.engine` 坐标引用。
 
-1.2增加四角、融合选择器、按压、光源、渐进模糊和独立细节预算，全部开关/调节和平台回退见[`docs/VISUAL_EFFECTS.md`](docs/VISUAL_EFFECTS.md)。三模块使用同一版本1.2.0，Release附件和JitPack坐标均对应该版本标签。
+1.2增加四角、融合选择器、按压、光源、渐进模糊和独立细节预算，全部开关/调节和平台回退见[`docs/VISUAL_EFFECTS.md`](docs/VISUAL_EFFECTS.md)。所有所选模块使用同一版本1.2.1，Release附件和JitPack坐标均对应该版本标签。
 
 **2. Activity**：组合式委托，任何 Activity 基类都能用。
 
