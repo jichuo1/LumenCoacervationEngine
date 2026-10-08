@@ -21,6 +21,15 @@
 
 前三批远端节点：传感器`1842ddc`、效果/粒子`ac68316`、独立资产`647880a`。最后一批整合Demo/完整门禁/版本文档；运行源码、测试及示例文件与前轮Review候选一致。
 
-远端API27/31/33/34矩阵、精确发布提交与产物哈希将在验证完成后补齐。发布前不得把远端验证视为已完成证据。
+远端复验通过：代码节点`daae5e2751457a9a861823d24765034b3eef9e80`，CI [37736400334](https://github.com/jichuo1/LumenCoacervationEngine/actions/runs/37736400334)，Demo矩阵 [37736400160](https://github.com/jichuo1/LumenCoacervationEngine/actions/runs/37736400160)。下载XML后再次独立执行必测清单核对：
+
+| 系统 | 目标镜像 | 实际通过 | 失败/错误/跳过/必测缺失 |
+|---|---|---:|---|
+| API27 | default x86_64 | 32 | 全部0 |
+| API31 | google_apis x86_64 | 33 | 全部0 |
+| API33 | aosp_atd x86_64 | 43 | 全部0 |
+| API34 | aosp_atd x86_64 | 43 | 全部0 |
+
+合计151条通过，三个格式的实际窗口绘制、暂停和隐藏，以及状态机输入和截止任务均在对应系统的必测清单中。精确最终标签提交与分发哈希记录在Release的`VERIFICATION_1.2.1.json`、`SHA256SUMS.txt`；前轮本地候选哈希不作为正式产物哈希。
 
 首轮PR CI通过，四版本Demo在Rive真实像素用例一致失败，日志记录GPU后端缺少interlock而退到depth/stencil。失败清单未跳过或弱化；工厂默认改用SDK Canvas兼容后端，增加引擎自有CANVAS/GPU选择及Demo开关，File与View后端一致，继续完整重跑四版本。GPU仍为显式硬件实验项。
