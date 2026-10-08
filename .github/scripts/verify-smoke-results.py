@@ -6,6 +6,20 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "P2IntegrationTest": {
+        "sensorIsOptInAndStopsHiddenPausedOrClosed",
+        "fixedParticlesExpireAndDecorationPreservesBusinessView",
+        "parameterEnvelopeRoundTripsAndRejectsWrongKnownTypes",
+        "preservedParticlesFreezeDuringPauseAndResumeWithTheirRemainingLifetime",
+        "staleDecodeClosesItsHandleAndRendererFailurePreservesForeignChildren",
+        "oversizedStreamNeverInvokesTheParser",
+        "shrinkingTheByteBudgetDuringLoadRejectsTheCompletedOldPolicy",
+        "displayPlayerDoesNotReceiveBusinessTouchesOrWakeFromPause",
+        "lottieLoadsWithoutImplicitPlaybackAndCanClose",
+        "pagLoadsWithoutImplicitPlaybackAndCanClose",
+        "riveLoadsWithoutImplicitPlaybackAndCanClose",
+        "riveStateInputsValidateNamesAndTypesAndUnknownDurationHasATimeLimit",
+    },
     PREFIX + "DemoSmokeTest": {
         "everyPageRendersAndScrollsInBothMaterials",
         "panelsBubblesAndFullscreenMorphOpenAndClose",
@@ -36,6 +50,7 @@ REQUIRED = {
     PREFIX + "SurfaceBenchmarkTest": {"compareFixedSceneWithLegacyAndEnhancedPlansAndPreserveRawSamples"},
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
+P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")
 ENHANCED_GPU_TESTS = {
     (PREFIX + "EnhancedSurfaceIntegrationTest", "fusionPressAndLightCompileAndContinuousFramesDoNotBuildRenderEffects"),
     (PREFIX + "EnhancedSurfaceIntegrationTest", "progressiveBlurProducesAnActualWindowImageAndStaysWithinBudget"),
@@ -57,6 +72,7 @@ def verify(directory: Path, api: int, since: float = 0) -> bool:
         required.add(GPU_TEST)
     if api >= 33:
         required.update(ENHANCED_GPU_TESTS)
+        required.add(P2_GPU_TEST)
     files = sorted(path for path in directory.rglob("*.xml") if path.stat().st_mtime >= since)
     passed = set()
     total = failed = skipped = 0

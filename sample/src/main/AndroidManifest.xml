@@ -21,6 +21,7 @@
         <activity
             android:name=".SurfaceSandboxActivity"
             android:exported="false" />
+        <activity android:name=".P2SandboxActivity" android:exported="false" />
         <activity
             android:name=".DetailActivity"
             android:exported="false"

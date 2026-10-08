@@ -32,8 +32,10 @@ jobs:
 
       - name: Verify third-party notices in distributions
         run: |
-          ./gradlew :lumen-engine:bundleReleaseAar :lumen-engine:sourceReleaseJar --console=plain --no-daemon
-          python3 tools/check_third_party_notices.py --aar lumen-engine/build/outputs/aar/lumen-engine-release.aar --sources lumen-engine/build/intermediates/source_jar/release/release-sources.jar
+          ./gradlew bundleReleaseAar sourceReleaseJar --console=plain --no-daemon
+          for module in lumen-engine lumen-effects lumen-assets lumen-assets-lottie lumen-assets-pag lumen-assets-rive; do
+            python3 tools/check_third_party_notices.py --aar "$module/build/outputs/aar/$module-release.aar" --sources "$module/build/intermediates/source_jar/release/release-sources.jar" || exit 1
+          done
 
       - name: Upload reports
         if: failure()

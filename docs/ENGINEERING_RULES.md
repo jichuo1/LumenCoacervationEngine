@@ -16,6 +16,8 @@
   需要 AppCompat 的功能，放进可选模块（例如 `lumen-controls`）。原因见 `BETTERANDROID_INITIATIVE.md` §2。
 - 引擎**不得**读取宿主的资源、主题属性、`BuildConfig` 或 Application 子类。宿主需要提供的东西，一律通过公开 API 显式传入，例如 `LumenPalette`、`LumenStorageNames`。
 
+1.2.1的`lumen-effects`和`lumen-assets`只在motion/core之上提供无供应商的契约；播放运行时只存在于三个独立可选`lumen-assets-lottie/pag/rive`模块。核心和motion继续遵守上面的依赖限制，公开签名不泄漏供应商类型；Rive传递Compose依赖不构成核心Compose接入层。
+
 ## 2. 高于 minSdk 的平台类型必须隔离
 
 ### 2.1 为什么
