@@ -19,6 +19,8 @@
 [![JitPack](https://jitpack.io/v/jichuo1/LumenCoacervationEngine.svg)](https://jitpack.io/#jichuo1/LumenCoacervationEngine)
 [![Issues](https://img.shields.io/github/issues/jichuo1/LumenCoacervationEngine?style=flat-square)](https://github.com/jichuo1/LumenCoacervationEngine/issues)
 
+**[直接下载 Demo 1.2.1 APK](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/lumen-demo-1.2.1.apk)** · [查看最新版发布页](https://github.com/jichuo1/LumenCoacervationEngine/releases/latest)
+
 [功能](#功能) · [下载 Demo](#下载-demo) · [材质](#两套材质) · [要求](#要求) · [接入](#接入) · [构建](#构建) · [文档](#文档) · [出处与许可](#出处与许可)
 
 </div>
@@ -65,9 +67,15 @@
 
 ## 下载 Demo
 
-1.2.1增加可选传感器光源、薄膜／纸张／有限能量、有限池粒子，以及分别接入Lottie、PAG、Rive的独立模块。全部参数和能力边界见[下一轮功能与接入](docs/P2_EFFECTS_AND_ASSETS.md)；所有所选模块使用同一版本。
+**当前正式 Demo：1.2.1。点击下面的 APK 链接即可下载，安装后直接体验。**
 
-不接入也能先看效果：到 [Releases](https://github.com/jichuo1/LumenCoacervationEngine/releases) 下载演示包 **`lumen-demo-<版本>.apk`** 直接安装（1.2.1 版：[`lumen-demo-1.2.1.apk`](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/lumen-demo-1.2.1.apk)）。
+| 入口 | 用途 |
+|---|---|
+| **[下载 Demo 1.2.1 APK](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/lumen-demo-1.2.1.apk)** | 当前正式演示安装包 |
+| [查看最新版发布页](https://github.com/jichuo1/LumenCoacervationEngine/releases/latest) | 始终前往最新正式版本；后续更新从这里查看 |
+| [下载 SHA-256 校验清单](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/SHA256SUMS.txt) | 核对安装包与库产物的完整性 |
+
+1.2.1增加可选传感器光源、薄膜／纸张／有限能量、有限池粒子，以及分别接入Lottie、PAG、Rive的独立模块。全部参数和能力边界见[下一轮功能与接入](docs/P2_EFFECTS_AND_ASSETS.md)；所有所选模块使用同一版本。
 
 | 页 | 可以看到 |
 |:---|:---|
