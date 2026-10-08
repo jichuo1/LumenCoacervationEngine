@@ -25,5 +25,9 @@ include(":lumen-controls")
 // 接入示例：按 docs/INTEGRATION_STANDARD.md 的最小接入写法搭的演示应用。
 include(":sample")
 
-// Optional bounded procedural effects and finite particles.
+// Optional effects and isolated asset runtimes.
 include(":lumen-effects")
+include(":lumen-assets")
+include(":lumen-assets-lottie")
+include(":lumen-assets-pag")
+include(":lumen-assets-rive")
