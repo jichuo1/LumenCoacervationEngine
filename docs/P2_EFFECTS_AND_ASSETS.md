@@ -77,6 +77,8 @@ Rive11.14.0的类型化View兼容层负责画板、命名时间线、状态机�
 
 ## Demo与验收
 
+Rive工厂默认`LumenRiveRenderer.CANVAS`，使用SDK仍提供的Canvas兼容后端；`GPU`显式选择Rive渲染器，Demo有下次加载生效的开关。解析File与View使用同一后端。首轮四版本SwiftShader环境均出现GPU depth/stencil回退后无可见像素，因此默认选择Canvas，不以成功解析冒充可见绘制。SDK的Canvas与View兼容API均已deprecated，GPU模式仍需在目标硬件验证，不自动把其能力等同Canvas。
+
 入口：表面沙盒→P2效果／资产。中文控件覆盖上述参数、固定步进、诊断、效果JSON导入导出、本地文件导入和Rive输入。减少动画与播放预算必须由业务接入方保留。
 
 验证细节见`P2_REVIEW.md`。模拟器覆盖解析、所有权、生命周期与实际窗口图像；重力事件模拟不能替代真实传感器轴向、多显示器、手机功耗和长时间原生内存测试。Compose接入层、NativeBackdrop和Mesh仍不在本轮范围。

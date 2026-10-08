@@ -16,12 +16,15 @@ import app.rive.runtime.kotlin.core.Rive
 import com.lumen.coacervation.engine.assets.*
 
 /** Typed View compatibility adapter for pinned 11.14. Native clock/state machines are never claimed seekable. */
-public class LumenRiveFactory(context:Context):LumenAssetFactory {
+public enum class LumenRiveRenderer { CANVAS, GPU }
+
+public class LumenRiveFactory @JvmOverloads constructor(context:Context,renderer:LumenRiveRenderer=LumenRiveRenderer.CANVAS):LumenAssetFactory {
     private val context=context.applicationContext?:context
+    private val rendererType=if(renderer==LumenRiveRenderer.GPU)RendererType.Rive else RendererType.Canvas
     override val format=LumenAssetFormat.RIVE
     override fun decode(bytes:ByteArray,selection:LumenAssetSelection,options:LumenAssetOptions):LumenDecodedAsset {
         Rive.init(context)
-        val file=File(bytes,RendererType.Rive)
+        val file=File(bytes,rendererType)
         try{
             val artboardName=selection.artboard;val animationName=selection.animation
             val artboard=if(artboardName!=null)file.artboard(artboardName)else file.artboard(0)
@@ -40,11 +43,11 @@ public class LumenRiveFactory(context:Context):LumenAssetFactory {
             else if(artboard.animationCount>0){val animation=if(animationName!=null)artboard.animation(animationName)else artboard.animation(0);duration=(animation.effectiveDurationInSeconds*1000).toLong();resolvedAnimation=animation.name}
             val metadata=LumenAssetMetadata(format,artboard.width.toInt(),artboard.height.toInt(),duration,false,nativeClock=true,speedControl=false,repeatControl=false,frameRateControl=false,inputs=inputs.toList())
             if(metadata.width.toLong()*metadata.height>options.maximumRenderPixels||duration>options.maximumDurationMs)throw LumenAssetException(LumenAssetFailure.BUDGET)
-            return Decoded(file,selection.copy(artboard=artboard.name,animation=resolvedAnimation),metadata)
+            return Decoded(file,selection.copy(artboard=artboard.name,animation=resolvedAnimation),metadata,rendererType)
         }catch(e:Exception){file.release();throw e}
     }
     override fun attach(context:Context,asset:LumenDecodedAsset,options:LumenAssetOptions):LumenAssetPlayer=Player(context,asset as Decoded,options)
-    private class Decoded(val file:File,val selection:LumenAssetSelection,override val metadata:LumenAssetMetadata):LumenDecodedAsset {
+    private class Decoded(val file:File,val selection:LumenAssetSelection,override val metadata:LumenAssetMetadata,val rendererType:RendererType):LumenDecodedAsset {
         private var closed=false
         override fun close(){if(!closed){closed=true;file.release()}}
     }
@@ -54,7 +57,7 @@ public class LumenRiveFactory(context:Context):LumenAssetFactory {
     }
     private class Player(context:Context,private val asset:Decoded,options:LumenAssetOptions):LumenAssetPlayer {
         private val lifecycle=OwnedLifecycle()
-        private val widget=RiveAnimationView(RiveAnimationView.Builder(context).setRendererType(RendererType.Rive).setAutoplay(false).setShouldLoadCDNAssets(false))
+        private val widget=RiveAnimationView(RiveAnimationView.Builder(context).setRendererType(asset.rendererType).setAutoplay(false).setShouldLoadCDNAssets(false))
         private var closed=false;private var playing=false
         private val inputTypes=asset.metadata.inputs.associate{it.name to it.kind}
         override val view:View get()=widget

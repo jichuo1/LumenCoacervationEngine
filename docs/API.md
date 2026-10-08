@@ -307,6 +307,6 @@
 - `LumenDecodedAsset.metadata/close`：可在解析线程或主线程关闭，宿主实现须保证幂等、只释放自己的资源。`LumenAssetPlayer.view/metadata/update/render(progress):Boolean/setPlaying/close`及默认`setNumber/setBoolean/fire`在主线程执行；false表示不支持或未提交。
 - `LumenAssetListener.onState(state,failure)`异步主线程通知；`LumenAssetPlayerFailureListener.onFailure(failure)`和默认`LumenAssetPlayer.setOnFailure(listener?)`供异步Surface回调失败上报，会话再次按代次过滤。
 - `LumenAssetSession(container,options=LumenAssetOptions(),clock=system)`：`setListener`、`load(source,factory,selection=LumenAssetSelection())`、`play/pause/resume`、`seek(progress)`、`update(value)`、`setNumber(name,value):Boolean`、`setBoolean(name,value):Boolean`、`fire(name):Boolean`、`advanceFrame/diagnostics/close`。输入名称1–128字符，progress为0–1有限值。
-- 独立工厂：`assets.lottie.LumenLottieFactory()`、`assets.pag.LumenPagFactory()`、`assets.rive.LumenRiveFactory(context)`，各实现上述统一工厂。公开签名无播放库类型。
+- 独立工厂：`assets.lottie.LumenLottieFactory()`、`assets.pag.LumenPagFactory()`、`assets.rive.LumenRiveFactory(context,renderer=LumenRiveRenderer.CANVAS)`，各实现上述统一工厂。`assets.rive.LumenRiveRenderer { CANVAS,GPU }`为引擎自有枚举，默认SDK Canvas后端，GPU需显式选择。公开签名无播放库类型。
 
 Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存及中断边界属于[P2配置](P2_EFFECTS_AND_ASSETS.md)明确约束，不能把帧率或字节门禁解释为原生运行时的硬实时／内存保证。

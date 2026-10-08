@@ -15,6 +15,7 @@ import com.lumen.coacervation.engine.assets.*
 import com.lumen.coacervation.engine.assets.lottie.LumenLottieFactory
 import com.lumen.coacervation.engine.assets.pag.LumenPagFactory
 import com.lumen.coacervation.engine.assets.rive.LumenRiveFactory
+import com.lumen.coacervation.engine.assets.rive.LumenRiveRenderer
 import com.lumen.coacervation.engine.effects.*
 import com.lumen.coacervation.engine.host.LumenSurfaceSession
 import com.lumen.coacervation.engine.host.LumenSurfaceOptions
@@ -35,6 +36,7 @@ class P2SandboxActivity:Activity(){
     private val fixedClock=LumenFixedFrameClock();private var fixed=false
     private var effectControls:P2Controls?=null
     private var selectedFormat=LumenAssetFormat.LOTTIE
+    private var riveRenderer=LumenRiveRenderer.CANVAS
     private lateinit var artboard:EditText;private lateinit var animation:EditText;private lateinit var stateMachine:EditText
     private lateinit var status:TextView;private lateinit var material:LumenSurfaceSession
     private fun dp(n:Int)=(n*resources.displayMetrics.density).toInt()
@@ -88,6 +90,7 @@ class P2SandboxActivity:Activity(){
         fun field(hint:String)=EditText(this).apply{this.hint=hint;setSingleLine();filters=arrayOf(android.text.InputFilter.LengthFilter(128));controls.addView(this)}
         artboard=field("Rive 画板名称（留空使用首个）");animation=field("Rive 动画名称（留空使用首个）");stateMachine=field("Rive 状态机名称（留空使用时间线）")
         button("加载 Lottie 示例"){loadAsset(LumenAssetFormat.LOTTIE)};button("加载 PAG 示例"){loadAsset(LumenAssetFormat.PAG)};button("加载 Rive 示例（原生时钟）"){loadAsset(LumenAssetFormat.RIVE)}
+        toggle("Rive GPU后端（下次加载生效）",false){riveRenderer=if(it)LumenRiveRenderer.GPU else LumenRiveRenderer.CANVAS;status.text="Rive后端：$riveRenderer"}
         button("打开自己的动画文件"){AlertDialog.Builder(this).setTitle("选择资产格式").setItems(arrayOf("Lottie JSON","PAG","Rive")){_,index->selectedFormat=LumenAssetFormat.entries[index]
             startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{type="*/*";addCategory(Intent.CATEGORY_OPENABLE)},71)}.show()}
         button("播放资产"){assetsSession?.play()};button("关闭资产"){assetsSession?.close();assetsSession=null}
@@ -122,7 +125,7 @@ class P2SandboxActivity:Activity(){
     }
     private fun loadSource(format:LumenAssetFormat,source:LumenAssetSource){
         assetsSession?.close();val clock=if(fixed)fixedClock else LumenFrameClock{System.nanoTime()}
-        val factory:LumenAssetFactory=when(format){LumenAssetFormat.LOTTIE->LumenLottieFactory();LumenAssetFormat.PAG->LumenPagFactory();LumenAssetFormat.RIVE->LumenRiveFactory(this)}
+        val factory:LumenAssetFactory=when(format){LumenAssetFormat.LOTTIE->LumenLottieFactory();LumenAssetFormat.PAG->LumenPagFactory();LumenAssetFormat.RIVE->LumenRiveFactory(this,riveRenderer)}
         if(format==LumenAssetFormat.RIVE)assetOptions=assetOptions.copy(speed=1f,repeatCount=1)
         val selection=LumenAssetSelection(artboard.text.toString().trim().ifEmpty{null},animation.text.toString().trim().ifEmpty{null},stateMachine.text.toString().trim().ifEmpty{null})
         assetsSession=LumenAssetSession(assetContainer,assetOptions,clock).also{it.setListener{state,error->status.text="$format / $state / $error"};it.load(source,factory,selection)}
