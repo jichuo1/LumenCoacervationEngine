@@ -88,8 +88,8 @@ jobs:
       fail-fast: false
       matrix:
         # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；33 / 34 = 高级材质 REFRACTION 后端。
-        # 33/34使用ATD；仪器测试临时开启最终硬件输出，仍要求真实窗口像素。
-        # 34标准镜像在安装Demo前已发生Google服务ANR与system_server Watchdog退出。
+        # API33 uses ATD with scoped final output; API34 needs a standard graphics surface.
+        # API34 ATD disconnects under real final-buffer pixel tests, despite ample host memory.
         include:
           - api-level: 27
             target: default
@@ -98,7 +98,7 @@ jobs:
           - api-level: 33
             target: aosp_atd
           - api-level: 34
-            target: aosp_atd
+            target: google_apis
     steps:
       - uses: actions/checkout@v4
         with:
