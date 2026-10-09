@@ -193,6 +193,15 @@ class LocalSurfaceIntegrationTest {
 
     @SdkSuppress(minSdkVersion = 31)
     @Test fun gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow() {
+        checkGpuFade(LumenSurfaceFadeCurve.SMOOTH)
+    }
+
+    @SdkSuppress(minSdkVersion = 31)
+    @Test fun linearGpuFadeHasUniformPixelCoverage() {
+        checkGpuFade(LumenSurfaceFadeCurve.LINEAR)
+    }
+
+    private fun checkGpuFade(curve: LumenSurfaceFadeCurve) {
         // ATD images disable final hardware output while still running View draw callbacks.
         val wasDrawing=if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.isEnabled()else true
         Log.i("Lumen-SurfaceTest","GPU fade: enable drawing")
@@ -211,7 +220,7 @@ class LocalSurfaceIntegrationTest {
                 activity.binding=activity.session.bindSource(activity.glass,
                     LumenSurfaceOptions(radiusDp=0f,tintEnabled=false,edgeEnabled=false,
                         sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.GPU,softwareFallback=false,
-                            blurEnabled=false,refractionEnabled=false,minIntervalMs=0,fadeEnabled=true)),custom)
+                            blurEnabled=false,refractionEnabled=false,minIntervalMs=0,fadeEnabled=true,fadeCurve=curve)),custom)
             }
             val deadline=SystemClock.uptimeMillis()+5000
             var gpu=false
@@ -229,10 +238,11 @@ class LocalSurfaceIntegrationTest {
             Log.i("Lumen-SurfaceTest","GPU fade: backend ready, copy pixels")
             var image:Bitmap?=null
             var copyResult=-1
-            var x=0;var top=0;var bottom=0;var outside=0
+            var x=0;var top=0;var bottom=0;var outside=0;var origin=0;var height=0
             scenario.onActivity { activity ->
                 val location=IntArray(2);activity.glass.getLocationInWindow(location)
                 x=location[0]+8;outside=location[0]-8
+                origin=location[1];height=activity.glass.height
                 top=location[1]+(activity.glass.height*.05f).toInt()
                 bottom=location[1]+(activity.glass.height*.95f).toInt()
                 val decor=activity.window.decorView
@@ -258,6 +268,18 @@ class LocalSurfaceIntegrationTest {
             assertTrue(kotlin.math.abs(Color.red(low)-Color.red(behind))<35)
             assertTrue(kotlin.math.abs(Color.green(low)-Color.green(behind))<35)
             assertTrue(kotlin.math.abs(Color.blue(low)-Color.blue(behind))<35)
+            if (curve == LumenSurfaceFadeCurve.LINEAR) {
+                for (step in 1..9) {
+                    val y=origin+(height*step/10f).toInt()
+                    val fraction=(y-origin+.5f)/height
+                    val actual=screenshot.getPixel(x,y)
+                    val background=screenshot.getPixel(outside,y)
+                    val expectedRed=255f*(1f-fraction)+Color.red(background)*fraction
+                    assertEquals("Linear red coverage at $step/10",expectedRed,Color.red(actual).toFloat(),4f)
+                    assertEquals("Linear green coverage at $step/10",Color.green(background)*fraction,Color.green(actual).toFloat(),4f)
+                    assertEquals("Linear blue coverage at $step/10",Color.blue(background)*fraction,Color.blue(actual).toFloat(),4f)
+                }
+            }
             screenshot.recycle()
         }
         } finally {

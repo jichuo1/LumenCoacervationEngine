@@ -7,6 +7,28 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LumenSurfacePolicyTest {
+    @Test fun linearFadeHasConstantRateAndRespectsDirectionAndBounds() {
+        for (reverse in listOf(false, true)) {
+            for (i in 0..100) {
+                val x = .2f + .6f * i / 100f
+                val fraction = if (reverse) 1f - x else x
+                assertEquals(1f - i / 100f,
+                    LumenSurfacePolicy.fade(fraction, .2f, .8f, reverse, LumenSurfaceFadeCurve.LINEAR), .00001f)
+            }
+        }
+        assertEquals(1f, LumenSurfacePolicy.fade(0f, .2f, .8f, false, LumenSurfaceFadeCurve.LINEAR), 0f)
+        assertEquals(0f, LumenSurfacePolicy.fade(1f, .2f, .8f, false, LumenSurfaceFadeCurve.LINEAR), 0f)
+        assertEquals(0f, LumenSurfacePolicy.fade(.6f, .5f, .5f, false, LumenSurfaceFadeCurve.LINEAR), 0f)
+    }
+
+    @Test fun defaultFadePreservesExistingSmoothCurve() {
+        assertEquals(LumenSurfaceFadeCurve.SMOOTH, LumenSurfaceSampling().fadeCurve)
+        for (i in 0..100) {
+            val t = i / 100f
+            assertEquals(1f - t * t * (3f - 2f * t), LumenSurfacePolicy.fade(t, 0f, 1f, false), .00001f)
+        }
+    }
+
     @Test fun fadeIsMonotonicAndReversible() {
         var previous = 1f
         for (i in 0..100) {

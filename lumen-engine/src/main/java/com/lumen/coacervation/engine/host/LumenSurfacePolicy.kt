@@ -5,12 +5,16 @@ import kotlin.math.sqrt
 
 /** Pure geometry, budgeting and degradation rules shared by both capture backends. */
 internal object LumenSurfacePolicy {
-    fun fade(fraction: Float, hold: Float, end: Float, reverse: Boolean): Float {
+    fun fade(fraction: Float, hold: Float, end: Float, reverse: Boolean,
+             curve: LumenSurfaceFadeCurve = LumenSurfaceFadeCurve.SMOOTH): Float {
         val x = if (reverse) 1f - fraction else fraction
         if (x <= hold) return 1f
         if (x >= end || end <= hold) return 0f
         val t = ((x - hold) / (end - hold)).coerceIn(0f, 1f)
-        return 1f - t * t * (3f - 2f * t)
+        return when (curve) {
+            LumenSurfaceFadeCurve.SMOOTH -> 1f - t * t * (3f - 2f * t)
+            LumenSurfaceFadeCurve.LINEAR -> 1f - t
+        }
     }
 
     fun gpuScale(width: Int, height: Int, desired: Float, pixelBudget: Int): Float {

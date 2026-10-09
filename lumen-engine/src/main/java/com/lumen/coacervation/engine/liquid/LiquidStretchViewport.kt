@@ -24,7 +24,7 @@ public enum class LiquidStretchEdge {
     BOTTOM
 }
 
-internal enum class LiquidStretchUnconsumedAction {
+public enum class LiquidStretchUnconsumedAction {
     PULL_AND_CONSUME,
     ABSORB_AND_PROPAGATE,
     PROPAGATE
@@ -39,7 +39,7 @@ public interface LiquidStretchGestureObserver {
 }
 
 /** 与 Android View 无关的方向、距离和速度收敛规则。 */
-internal object LiquidStretchOverscrollPolicy {
+public object LiquidStretchOverscrollPolicy {
     private const val MAX_ABSORB_VELOCITY = 100_000
 
     fun pullEdge(dyUnconsumed: Int): LiquidStretchEdge = when {
@@ -162,7 +162,7 @@ internal object LiquidStretchOverscrollPolicy {
  * 作用于控件组成的前景 RenderNode。
  */
 @SuppressLint("ViewConstructor")
-internal class LiquidStretchViewport private constructor(
+public class LiquidStretchViewport private constructor(
     context: Context,
     private val scrollTarget: View,
     private val isStretchAllowed: () -> Boolean,

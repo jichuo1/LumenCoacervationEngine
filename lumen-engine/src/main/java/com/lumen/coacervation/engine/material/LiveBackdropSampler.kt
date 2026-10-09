@@ -26,6 +26,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.ceil
 import kotlin.math.floor
+import kotlin.math.roundToInt
 
 /** Raw padded input for direct shader stages. Filtered siblings share one capture. */
 internal data class LumenRawSampleProfile(val haloDp: Float,val weakBlurDp: Float=0f,val strongBlurDp: Float=0f)
@@ -519,7 +520,10 @@ internal class LiveBackdropSampler(
         margin = entry.margin,
         outWidth = entry.outWidth,
         outHeight = entry.outHeight,
-        blurRadius = entry.profile?.let { (if (it.blurEnabled) it.blurRadiusDp * density / entry.scale else 0f).toInt().coerceIn(0, 32) }
+        blurRadius = entry.profile?.let {
+            val radius = if (it.blurEnabled) (it.softwareBlurRadiusDp ?: it.blurRadiusDp) * density / entry.scale else 0f
+            (if (it.softwareBlurRadiusDp != null) radius.roundToInt() else radius.toInt()).coerceIn(0, 32)
+        }
             ?: LensRefractionPolicy.blurRadius(entry.scale, density),
         profile = entry.profile,
         raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
@@ -687,7 +691,7 @@ internal class LiveBackdropSampler(
             if (profile?.fadeEnabled == true) {
                 val reverse = profile.fadeDirection == LumenSurfaceFadeDirection.BOTTOM_TO_TOP
                 for (y in 0 until job.outHeight) {
-                    val weight = LumenSurfacePolicy.fade((y + 0.5f) / job.outHeight, profile.fadeHold, profile.fadeEnd, reverse)
+                    val weight = LumenSurfacePolicy.fade((y + 0.5f) / job.outHeight, profile.fadeHold, profile.fadeEnd, reverse, profile.fadeCurve)
                     for (x in 0 until job.outWidth) {
                         val i = y * job.outWidth + x
                         val c = job.out[i]

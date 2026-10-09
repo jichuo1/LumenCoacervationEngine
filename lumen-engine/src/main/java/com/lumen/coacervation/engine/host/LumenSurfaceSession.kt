@@ -273,13 +273,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         require(aw.isFinite()&&ah.isFinite()&&bw.isFinite()&&bh.isFinite()&&aw>0f&&ah>0f&&bw>=0f&&bh>=0f)
         require(maxOf(aw,ah,bw,bh)<=8192f&&maxOf(kotlin.math.abs(ax),kotlin.math.abs(ay),kotlin.math.abs(bx),kotlin.math.abs(by))<=8192f)
         entries.firstOrNull {it.id==id}?.let {
-            if(!it.frame.customShape){
-                if(Build.VERSION.SDK_INT>=31)it.gpu?.close()
-                it.gpu=null;it.gpuPixels=0L
-            }
+            val wasNodeCompatible=it.nodeCompatible()
             val f=it.frame;f.customShape=true;f.secondShape=second
             f.shapeA[0]=ax;f.shapeA[1]=ay;f.shapeA[2]=aw;f.shapeA[3]=ah
-            f.shapeB[0]=bx;f.shapeB[1]=by;f.shapeB[2]=bw;f.shapeB[3]=bh;it.invalidateFrame()
+            f.shapeB[0]=bx;f.shapeB[1]=by;f.shapeB[2]=bw;f.shapeB[3]=bh
+            if(wasNodeCompatible&&!it.nodeCompatible())it.releaseGpu()
+            it.invalidateFrame()
         }
     }
     internal fun updateLight(id: Long,x: Float,y: Float,z: Float) {
@@ -293,8 +292,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         checkMain()
         entries.firstOrNull {it.id==id}?.let {
             if(!it.frame.customShape)return
+            val wasNodeCompatible=it.nodeCompatible()
             it.frame.customShape=false;it.frame.secondShape=false
-            if(!it.enhanced()){
+            if(!it.enhanced()&&!wasNodeCompatible){
                 it.releaseGpu();it.group?.dirty=true
                 it.host.get()?.let {view->it.group?.sampler?.unregister(view)}
             }
@@ -568,7 +568,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 val host = entry.host.get() ?: continue
                 if (entry.group !== this || !entry.config.enabled || !entry.config.sampling.enabled ||
                     entry.config.material == LumenSurfaceMaterial.STATIC || entry.config.opacity == 0f) continue
-                if(entry.enhanced())continue
+                if(entry.enhanced()&&!entry.nodeCompatible())continue
                 if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(host); entry.releaseGpu(); continue }
                 if (LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, entry.config.sampling.backend, true, entry.gpuFailed)) {
                     wanted = true; interval = minOf(interval, entry.config.sampling.minIntervalMs)
@@ -693,7 +693,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             }
             outputBounds.set(0f,0f,w,h)
             val c=appearance
-            val pad=if(enhanced())rawProfile.haloDp*density else maxOf(if(c.sampling.refractionEnabled)20f*c.sampling.refractionStrength else 0f,
+            val pad=if(enhanced()&&!nodeCompatible())rawProfile.haloDp*density else maxOf(if(c.sampling.refractionEnabled)20f*c.sampling.refractionStrength else 0f,
                 if(c.sampling.blurEnabled)c.sampling.blurRadiusDp*2f else 0f)*density+2f
             requiredBounds.set(-pad,-pad,w+pad,h+pad)
             recordedBounds.setEmpty();materializedBounds.setEmpty()
@@ -739,15 +739,23 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             gpu = null; gpuPixels = 0L
         }
         fun enhanced(): Boolean {
+            return frame.customShape||advancedEffects()
+        }
+        // One rounded rectangle can use the current content node throughout a shape animation.
+        // Switching it to an asynchronous bitmap introduces a fallback/stale first frame.
+        fun nodeCompatible(): Boolean = !frame.secondShape&&!advancedEffects()
+        private fun advancedEffects(): Boolean {
             val e=enhancements
-            return frame.customShape||e.geometry.cornersEnabled||e.geometry.fusionEnabled||e.geometry.shadowEnabled||e.press.enabled||e.press.rippleEnabled||
+            return e.geometry.cornersEnabled||e.geometry.fusionEnabled||e.geometry.shadowEnabled||e.press.enabled||e.press.rippleEnabled||
                 e.light.enabled||e.progressiveBlur.enabled||e.material.intent!=LumenMaterialIntent.UNCHANGED||e.material.reduceTransparency||
                 e.material.normalizeBySize||e.material.saturation!=1f
         }
         fun rebuild() {
             appearance=LumenMaterialRecipe.resolve(config,enhancements.material,palette)
             val requirements=LumenSurfaceEffectFactory.requirements(appearance,enhancements)
-            rawProfile=LumenRawSampleProfile(requirements.haloDp,requirements.weakBlurDp,requirements.strongBlurDp)
+            val softwareBlur=if(appearance.sampling.blurEnabled)appearance.sampling.softwareBlurRadiusDp else 0f
+            rawProfile=LumenRawSampleProfile(requirements.haloDp,requirements.weakBlurDp,
+                if(!enhancements.progressiveBlur.enabled&&softwareBlur!=null)softwareBlur else requirements.strongBlurDp)
             rawDetail=null;applyDetail(if(enhancements.quality.enabled)enhancements.quality.mode else LumenDetailMode.HIGH)
             val keep=if(enhanced()&&appearance.sampling.enabled&&appearance.material!=LumenSurfaceMaterial.STATIC)direct else null
             if(keep!=null)direct=null
@@ -781,6 +789,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     }
 
     private inner class SurfaceDrawable(val entry: Entry) : Drawable() {
+        private val nodeBounds = Rect()
         private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         private val edge = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
         private val rectangle = RectF()
@@ -803,25 +812,32 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val color = c.color ?: palette.surface
             colorAlpha = Color.alpha(color)
             fill.color = ColorUtils.setAlphaComponent(color, 255)
-            edgeAlpha = (70 * c.edgeIntensity).roundToInt().coerceIn(0, 255)
-            edge.color = ColorUtils.setAlphaComponent(palette.primary, 255)
+            edgeAlpha = ((c.edgeTopColor?.let(Color::alpha) ?: 70) * c.edgeIntensity).roundToInt().coerceIn(0, 255)
+            edge.color = ColorUtils.setAlphaComponent(c.edgeTopColor ?: palette.primary, 255)
+            val edgeTop = ColorUtils.setAlphaComponent(edge.color, edgeAlpha)
+            val edgeBottom = c.edgeBottomColor?.let {
+                ColorUtils.setAlphaComponent(it, (Color.alpha(it) * c.edgeIntensity).roundToInt().coerceIn(0, 255))
+            } ?: edgeTop
             edge.strokeWidth = c.edgeWidthDp * density
             gradient = null; edgeGradient = null; staticGradient = null
+            if (c.edgeTopColor != null || c.edgeBottomColor != null)
+                edgeGradient = LinearGradient(0f, 0f, 0f, 1f, edgeTop, edgeBottom, Shader.TileMode.CLAMP)
             if (c.sampling.fadeEnabled) {
-                fun mask(base: Int): Shader {
+                fun mask(base: Int, end: Int = base): Shader {
                     val colors = IntArray(33)
                     val stops = FloatArray(33)
                     for (i in colors.indices) {
                         val t = i / 32f; stops[i] = t
                         val weight = LumenSurfacePolicy.fade(t, c.sampling.fadeHold, c.sampling.fadeEnd,
-                            c.sampling.fadeDirection == LumenSurfaceFadeDirection.BOTTOM_TO_TOP)
-                        colors[i] = ColorUtils.setAlphaComponent(base, (Color.alpha(base) * weight).roundToInt())
+                            c.sampling.fadeDirection == LumenSurfaceFadeDirection.BOTTOM_TO_TOP, c.sampling.fadeCurve)
+                        val color = ColorUtils.blendARGB(base, end, t)
+                        colors[i] = ColorUtils.setAlphaComponent(color, (Color.alpha(color) * weight).roundToInt())
                     }
                     return LinearGradient(0f, 0f, 0f, 1f, colors, stops, Shader.TileMode.CLAMP)
                 }
                 gradient = mask(ColorUtils.setAlphaComponent(color, (colorAlpha * c.tintOpacity).roundToInt()))
                 staticGradient = mask(ColorUtils.setAlphaComponent(color, (colorAlpha * c.fallbackTintOpacity).roundToInt()))
-                edgeGradient = mask(ColorUtils.setAlphaComponent(edge.color, edgeAlpha))
+                edgeGradient = mask(edgeTop, edgeBottom)
             }
             fill.shader = gradient; edge.shader = edgeGradient
             onBoundsChange(bounds)
@@ -843,7 +859,11 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             var enhancedPainted=false
             var sampleGeometryReady = false
             val save = canvas.save()
-            if (c.clipBackground&&!entry.enhanced()) canvas.clipPath(clip)
+            if (c.clipBackground) {
+                if(entry.enhanced()&&entry.nodeCompatible()){
+                    configureEnhancedPath(c,host);canvas.clipPath(shapeA)
+                } else if(!entry.enhanced())canvas.clipPath(clip)
+            }
             try {
                 if (reason == LumenSurfaceFailure.NONE && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC &&
                     c.sampling.backend != LumenSurfaceBackend.STATIC) {
@@ -852,7 +872,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                     else if (group.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
                     val content = group.source.coordinateView
                     if (options.pauseWhenWindowUnfocused && !content.hasWindowFocus()) reason = LumenSurfaceFailure.PAUSED
-                    else if(entry.enhanced()) {
+                    else if(entry.enhanced()&&!entry.nodeCompatible()) {
                         val detail=entry.quality.update(entry.pressureHint,if(entry.frame.manualClock)entry.frame.frameNanos else System.nanoTime(),entry.enhancements.quality)
                         entry.applyDetail(detail)
                         val q=entry.enhancements.quality
@@ -880,7 +900,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     val source=group.sampler.rawShader(host,2)?:clear
                                     rawMatrix.setScale(group.sampler.rawScale(host),group.sampler.rawScale(host))
                                     rawMatrix.postTranslate(-group.sampler.rawMargin(host),-group.sampler.rawMargin(host))
-                                    source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*alpha).roundToInt()
+                                    source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*alpha*c.backdropOpacity).roundToInt()
                                     canvas.drawRect(rectangle,rawPaint);backend=LumenSurfaceBackend.SOFTWARE;softwareDraws++
                                 }
                             } else reason=if(group.sampler.hasFailed)LumenSurfaceFailure.SOFTWARE_FAILED else if(group.sampler.budgetRejected)LumenSurfaceFailure.BUDGET_EXCEEDED else LumenSurfaceFailure.FRAME_PENDING
@@ -896,18 +916,26 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     sampleGeometryReady = true
                                     // SurfaceCapture.draw pre-scales sampleMatrix in place; keep the pure relative map.
                                     sampleMatrix.getValues(scrollGeometryValues)
+                                    nodeBounds.set(bounds)
+                                    if(entry.frame.customShape){
+                                        val shape=entry.frame.shapeA
+                                        nodeBounds.set(shape[0].roundToInt(),shape[1].roundToInt(),
+                                            (shape[0]+shape[2]).roundToInt(),(shape[1]+shape[3]).roundToInt())
+                                        if(nodeBounds.width()<1)nodeBounds.right=nodeBounds.left+1
+                                        if(nodeBounds.height()<1)nodeBounds.bottom=nodeBounds.top+1
+                                    }
                                     val blur=if(c.sampling.blurEnabled)c.sampling.blurRadiusDp else 0f
                                     val pad = ((maxOf(20f * c.sampling.refractionStrength, blur * 2f) * density).roundToInt() + 2)
-                                    val area=(bounds.width().toLong() + 2 * pad) * (bounds.height().toLong() + 2 * pad)
+                                    val area=(nodeBounds.width().toLong() + 2 * pad) * (nodeBounds.height().toLong() + 2 * pad)
                                     val pixels = area
                                     val allocated = surfacePixels() - entry.gpuPixels
                                     if (pixels + allocated > options.maxGpuSurfacePixels || entry.enhancements.quality.enabled&&pixels>entry.enhancements.quality.maxExecutionPixels ||
-                                        bounds.width() + 2 * pad > options.maxGpuDimension || bounds.height() + 2 * pad > options.maxGpuDimension) {
+                                        nodeBounds.width() + 2 * pad > options.maxGpuDimension || nodeBounds.height() + 2 * pad > options.maxGpuDimension) {
                                         reason = LumenSurfaceFailure.BUDGET_EXCEEDED
                                     } else {
                                     entry.gpuPixels = pixels
                                     val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics).also { entry.gpu = it }
-                                    group.capture!!.draw(glass, canvas, bounds, c.radiusDp * density, sampleMatrix, alpha)
+                                    group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, alpha * c.backdropOpacity)
                                     backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(host)
                                     }
                                 } else reason = LumenSurfaceFailure.INVALID_GEOMETRY
@@ -915,7 +943,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         }
                         if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling)) {
                             group.sampler.register(host, c.sampling)
-                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, host, (255 * alpha).roundToInt())) {
+                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, host, (255 * alpha * c.backdropOpacity).roundToInt())) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
                             } else if (group.sampler.hasFailed) reason = LumenSurfaceFailure.SOFTWARE_FAILED
                             else if (group.sampler.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
@@ -954,7 +982,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                     entry.regionMatrix.mapRect(rectangle,entry.recordedBounds);drawRegion(rectangle,Color.MAGENTA)
                 }
                 rectangle.set(entry.materializedBounds)
-                if(entry.enhanced()&&g!=null){val scale=g.sampler.rawScale(host);val margin=g.sampler.rawMargin(host);rectangle.set(rectangle.left*scale-margin,rectangle.top*scale-margin,rectangle.right*scale-margin,rectangle.bottom*scale-margin)}
+                if(entry.enhanced()&&!entry.nodeCompatible()&&g!=null){val scale=g.sampler.rawScale(host);val margin=g.sampler.rawMargin(host);rectangle.set(rectangle.left*scale-margin,rectangle.top*scale-margin,rectangle.right*scale-margin,rectangle.bottom*scale-margin)}
                 else if(entry.stateBackend==LumenSurfaceBackend.GPU){val pad=entry.requiredBounds.left;rectangle.offset(pad,pad)}
                 drawRegion(rectangle,Color.CYAN);drawRegion(entry.outputBounds,Color.BLUE);rectangle.set(bounds)
             }

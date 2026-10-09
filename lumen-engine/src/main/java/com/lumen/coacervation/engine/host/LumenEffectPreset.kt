@@ -15,11 +15,13 @@ public data class LumenEffectPreset(
         root.put("surface",JSONObject().put("enabled",c.enabled).put("material",c.material.name).put("role",c.role.name)
             .put("radiusDp",c.radiusDp).put("opacity",c.opacity).put("color",c.color?:JSONObject.NULL)
             .put("tintEnabled",c.tintEnabled).put("tintOpacity",c.tintOpacity).put("fallbackTintOpacity",c.fallbackTintOpacity)
-            .put("edgeEnabled",c.edgeEnabled).put("edgeWidthDp",c.edgeWidthDp).put("edgeIntensity",c.edgeIntensity).put("clipBackground",c.clipBackground))
+            .put("edgeEnabled",c.edgeEnabled).put("edgeWidthDp",c.edgeWidthDp).put("edgeIntensity",c.edgeIntensity).put("clipBackground",c.clipBackground)
+            .put("edgeTopColor",c.edgeTopColor?:JSONObject.NULL).put("edgeBottomColor",c.edgeBottomColor?:JSONObject.NULL).put("backdropOpacity",c.backdropOpacity))
         root.put("sampling",JSONObject().put("enabled",s.enabled).put("backend",s.backend.name).put("blurEnabled",s.blurEnabled)
-            .put("blurRadiusDp",s.blurRadiusDp).put("refractionEnabled",s.refractionEnabled).put("refractionStrength",s.refractionStrength)
+            .put("blurRadiusDp",s.blurRadiusDp).put("softwareBlurRadiusDp",s.softwareBlurRadiusDp?:JSONObject.NULL)
+            .put("refractionEnabled",s.refractionEnabled).put("refractionStrength",s.refractionStrength)
             .put("minIntervalMs",s.minIntervalMs).put("softwareScale",s.softwareScale).put("maxSoftwarePixels",s.maxSoftwarePixels)
-            .put("softwareFallback",s.softwareFallback).put("fadeEnabled",s.fadeEnabled).put("fadeHold",s.fadeHold).put("fadeEnd",s.fadeEnd).put("fadeDirection",s.fadeDirection.name))
+            .put("softwareFallback",s.softwareFallback).put("fadeEnabled",s.fadeEnabled).put("fadeHold",s.fadeHold).put("fadeEnd",s.fadeEnd).put("fadeDirection",s.fadeDirection.name).put("fadeCurve",s.fadeCurve.name))
         val g=e.geometry
         root.put("geometry",JSONObject().put("cornersEnabled",g.cornersEnabled).put("corners",JSONArray().put(g.corners.topLeft).put(g.corners.topRight).put(g.corners.bottomRight).put(g.corners.bottomLeft))
             .put("mirrorCornersInRtl",g.mirrorCornersInRtl).put("fusionEnabled",g.fusionEnabled).put("fusionRadiusDp",g.fusionRadiusDp)
@@ -62,10 +64,13 @@ public data class LumenEffectPreset(
             val sd=LumenSurfaceSampling();val cd=LumenSurfaceOptions()
             val sampling=LumenSurfaceSampling(s.bool("enabled",sd.enabled),enumValue(s,"backend",sd.backend),s.bool("blurEnabled",sd.blurEnabled),s.number("blurRadiusDp",sd.blurRadiusDp),
                 s.bool("refractionEnabled",sd.refractionEnabled),s.number("refractionStrength",sd.refractionStrength),s.long("minIntervalMs",sd.minIntervalMs),s.number("softwareScale",sd.softwareScale),
-                s.integer("maxSoftwarePixels",sd.maxSoftwarePixels),s.bool("softwareFallback",sd.softwareFallback),s.bool("fadeEnabled",sd.fadeEnabled),s.number("fadeHold",sd.fadeHold),s.number("fadeEnd",sd.fadeEnd),enumValue(s,"fadeDirection",sd.fadeDirection))
+                s.integer("maxSoftwarePixels",sd.maxSoftwarePixels),s.bool("softwareFallback",sd.softwareFallback),s.bool("fadeEnabled",sd.fadeEnabled),s.number("fadeHold",sd.fadeHold),s.number("fadeEnd",sd.fadeEnd),enumValue(s,"fadeDirection",sd.fadeDirection),
+                enumValue(s,"fadeCurve",sd.fadeCurve),if(s.has("softwareBlurRadiusDp")&&!s.isNull("softwareBlurRadiusDp"))s.number("softwareBlurRadiusDp",0f)else null)
             val color=if(c.has("color")&&!c.isNull("color"))c.integer("color",0)else null
             val surface=LumenSurfaceOptions(c.bool("enabled",cd.enabled),enumValue(c,"material",cd.material),enumValue(c,"role",cd.role),c.number("radiusDp",cd.radiusDp),c.number("opacity",cd.opacity),color,
-                c.bool("tintEnabled",cd.tintEnabled),c.number("tintOpacity",cd.tintOpacity),c.number("fallbackTintOpacity",cd.fallbackTintOpacity),c.bool("edgeEnabled",cd.edgeEnabled),c.number("edgeWidthDp",cd.edgeWidthDp),c.number("edgeIntensity",cd.edgeIntensity),c.bool("clipBackground",cd.clipBackground),sampling)
+                c.bool("tintEnabled",cd.tintEnabled),c.number("tintOpacity",cd.tintOpacity),c.number("fallbackTintOpacity",cd.fallbackTintOpacity),c.bool("edgeEnabled",cd.edgeEnabled),c.number("edgeWidthDp",cd.edgeWidthDp),c.number("edgeIntensity",cd.edgeIntensity),c.bool("clipBackground",cd.clipBackground),sampling,
+                if(c.has("edgeTopColor")&&!c.isNull("edgeTopColor"))c.integer("edgeTopColor",0)else null,
+                if(c.has("edgeBottomColor")&&!c.isNull("edgeBottomColor"))c.integer("edgeBottomColor",0)else null,c.number("backdropOpacity",cd.backdropOpacity))
             val gd=LumenSurfaceGeometryOptions();val corners=if(g.has("corners"))g.get("corners").also {require(it is JSONArray)} as JSONArray else null
             require(corners==null||corners.length()==4)
             fun corner(index: Int): Float {val value=corners!!.get(index);require(value is Number);return value.toFloat().also {require(it.isFinite())}}

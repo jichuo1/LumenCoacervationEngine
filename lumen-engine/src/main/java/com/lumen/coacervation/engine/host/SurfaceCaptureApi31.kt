@@ -3,6 +3,8 @@ package com.lumen.coacervation.engine.host
 import android.graphics.BlendMode
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Matrix
 import android.graphics.Rect
@@ -98,6 +100,12 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         } else null
         val renderer = GlowChromeGlassApi31(pad) { width, height, padding, radius, intensity, direction ->
             var effect = blur
+            if(options.material==LumenSurfaceMaterial.FROSTED&&lens==null) {
+                val gain=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_GAIN
+                val bias=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_BIAS
+                effect=RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(ColorMatrix(floatArrayOf(
+                    gain,0f,0f,0f,bias,0f,gain,0f,0f,bias,0f,0f,gain,0f,bias,0f,0f,0f,1f,0f))),effect)
+            }
             if (lens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 effect = if (options.material == LumenSurfaceMaterial.LIQUID)
                     LiquidChromeLensApi33.effect(lens, effect, width, height, padding, radius, intensity, direction)
@@ -109,7 +117,7 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
                 for (i in colors.indices) {
                     val t = i / 32f
                     val weight = LumenSurfacePolicy.fade(t, sampling.fadeHold, sampling.fadeEnd,
-                        sampling.fadeDirection == LumenSurfaceFadeDirection.BOTTOM_TO_TOP)
+                        sampling.fadeDirection == LumenSurfaceFadeDirection.BOTTOM_TO_TOP, sampling.fadeCurve)
                     colors[i] = Color.argb((255 * weight).roundToInt(), 255, 255, 255)
                     positions[i] = t
                 }

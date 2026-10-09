@@ -7,6 +7,11 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LumenSurfaceContractTest {
+    @Test fun allFadeBackendsUseTheConfiguredCurve() {
+        assertTrue(session().contains("LumenSurfaceFadeDirection.BOTTOM_TO_TOP, c.sampling.fadeCurve"))
+        assertTrue(SourceContract.read("host/SurfaceCaptureApi31.kt").contains("LumenSurfaceFadeDirection.BOTTOM_TO_TOP, sampling.fadeCurve"))
+        assertTrue(SourceContract.read("material/LiveBackdropSampler.kt").contains("profile.fadeEnd, reverse, profile.fadeCurve"))
+    }
     private fun session()=SourceContract.read("host/LumenSurfaceSession.kt")
     @Test fun localSessionDoesNotTakeOverTheApplication() {
         val s=session()

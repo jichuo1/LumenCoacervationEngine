@@ -6,6 +6,8 @@ import com.lumen.coacervation.engine.model.SurfaceRole
 public enum class LumenSurfaceMaterial { FROSTED, LIQUID, STATIC }
 public enum class LumenSurfaceBackend { AUTO, GPU, SOFTWARE, STATIC }
 public enum class LumenSurfaceFadeDirection { TOP_TO_BOTTOM, BOTTOM_TO_TOP }
+/** SMOOTH preserves the original eased fade; LINEAR has a constant rate between hold and end. */
+public enum class LumenSurfaceFadeCurve { SMOOTH, LINEAR }
 public enum class LumenSurfaceFailure {
     NONE, NO_SOURCE, DETACHED, HIDDEN, DIFFERENT_WINDOW, SELF_FEEDBACK,
     INVALID_GEOMETRY, GPU_UNAVAILABLE, GPU_FAILED, SOFTWARE_FAILED, BUDGET_EXCEEDED,
@@ -27,10 +29,14 @@ public data class LumenSurfaceSampling(
     val fadeEnabled: Boolean = false,
     val fadeHold: Float = 0f,
     val fadeEnd: Float = 1f,
-    val fadeDirection: LumenSurfaceFadeDirection = LumenSurfaceFadeDirection.TOP_TO_BOTTOM
+    val fadeDirection: LumenSurfaceFadeDirection = LumenSurfaceFadeDirection.TOP_TO_BOTTOM,
+    val fadeCurve: LumenSurfaceFadeCurve = LumenSurfaceFadeCurve.SMOOTH,
+    /** Optional box-blur radius for software sampling; null uses blurRadiusDp unchanged. */
+    val softwareBlurRadiusDp: Float? = null
 ) {
     init {
         require(blurRadiusDp.isFinite() && blurRadiusDp in 0f..48f)
+        require(softwareBlurRadiusDp == null || softwareBlurRadiusDp.isFinite() && softwareBlurRadiusDp in 0f..48f)
         require(refractionStrength.isFinite() && refractionStrength in 0f..2f)
         require(minIntervalMs in 0L..1_000L)
         require(softwareScale.isFinite() && softwareScale in 0.05f..1f)
@@ -56,9 +62,15 @@ public data class LumenSurfaceOptions(
     val edgeWidthDp: Float = 1f,
     val edgeIntensity: Float = 1f,
     val clipBackground: Boolean = true,
-    val sampling: LumenSurfaceSampling = LumenSurfaceSampling()
+    val sampling: LumenSurfaceSampling = LumenSurfaceSampling(),
+    /** Optional ARGB edge gradient; null retains the original primary-color stroke. */
+    val edgeTopColor: Int? = null,
+    val edgeBottomColor: Int? = null,
+    /** Opacity of the sampled content, independent of the tint and edge. */
+    val backdropOpacity: Float = 1f
 ) {
     init {
+        require(backdropOpacity.isFinite() && backdropOpacity in 0f..1f)
         require(radiusDp.isFinite() && radiusDp in 0f..128f)
         require(opacity.isFinite() && opacity in 0f..1f)
         require(tintOpacity.isFinite() && tintOpacity in 0f..1f)

@@ -9,6 +9,7 @@ import android.graphics.Shader
 import androidx.annotation.RequiresApi
 import com.lumen.coacervation.engine.geometry.LumenSurfaceField
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.material.LensRefractionPolicy
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import kotlin.math.cos
 import kotlin.math.sin
@@ -77,10 +78,17 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
         s.setFloatUniform("lightStyle",if(detail==LumenDetailMode.LOW)0f else light.specularStrength,light.specularPower,lightEdge,
             if(light.transformNormals)1f else 0f)
         s.setColorUniform("tintColor",c.color?:palette.surface)
-        s.setColorUniform("edgeColor",palette.primary)
+        s.setFloatUniform("backdropOpacity",c.backdropOpacity)
+        s.setFloatUniform("softLens",if(c.material==LumenSurfaceMaterial.FROSTED)1f else 0f,
+            if(c.sampling.refractionEnabled)c.sampling.refractionStrength else 0f,
+            LensRefractionPolicy.LUMINANCE_GAIN,LensRefractionPolicy.LUMINANCE_BIAS/255f)
+        val customEdge=c.edgeTopColor!=null||c.edgeBottomColor!=null
+        val topEdge=c.edgeTopColor?:if(customEdge)(palette.primary and 0xFFFFFF)or(70 shl 24)else palette.primary
+        s.setColorUniform("edgeColor",topEdge)
+        s.setColorUniform("edgeColorBottom",c.edgeBottomColor?:topEdge)
         val strokeWidth=if(e.material.normalizeBySize)minOf(c.edgeWidthDp*density,short*e.material.maxEdgeFraction)else c.edgeWidthDp*density
         s.setFloatUniform("style",if(c.tintEnabled)c.tintOpacity else 0f,if(c.edgeEnabled)strokeWidth else 0f,
-            70f/255f*c.edgeIntensity,alpha)
+            (if(customEdge)1f else 70f/255f)*c.edgeIntensity,alpha)
         s.setFloatUniform("fade",if(c.sampling.fadeEnabled)1f else 0f,c.sampling.fadeHold,c.sampling.fadeEnd,
             if(c.sampling.fadeDirection==LumenSurfaceFadeDirection.BOTTOM_TO_TOP)1f else 0f)
         val shadowWidth=if(e.material.normalizeBySize)minOf(geometry.shadowRadiusDp*density,short*.25f)else geometry.shadowRadiusDp*density
@@ -123,7 +131,10 @@ uniform float4 light;
 uniform float4 normalMap;
 uniform float4 lightStyle;
 layout(color) uniform half4 tintColor;
+uniform float backdropOpacity;
+uniform float4 softLens;
 layout(color) uniform half4 edgeColor;
+layout(color) uniform half4 edgeColorBottom;
 uniform float4 style;
 uniform float4 fade;
 uniform float2 shadow;
@@ -184,6 +195,20 @@ half4 saturation(half4 c){
     float3 result=fromLinearSrgb(clamp(float3(luminance)+(linear-float3(luminance))*optics.w,float3(0.0),float3(1.0)));
     return half4(half3(result*float(c.a)),c.a);
 }
+float softAxis(float u,float gain,float push){
+    float c=clamp(u,-1.0,1.0);float rim=ramp(abs(c),0.62,1.0);
+    return c*(1.0-gain*(1.0-c*c))+(c<0.0?-1.0:1.0)*push*rim*rim;
+}
+float2 softPoint(float2 point){
+    float2 size=max(shapeA.zw,float2(1.0));float2 local=point-shapeA.xy;
+    float2 gain=float2(0.06,0.16)*softLens.y;float2 push=float2(0.10,0.34)*softLens.y;
+    float2 u=local/size*2.0-1.0;
+    float2 source=shapeA.xy+(float2(softAxis(u.x,gain.x,push.x),softAxis(u.y,gain.y,push.y))+1.0)*0.5*size;
+    float2 room=max(min(local-float2(0.5),size-float2(0.5)-local),float2(0.0));
+    float2 budget=max(size*max(abs(push),abs(gain)*0.385),float2(1.0));
+    source=point+(source-point)*clamp(room/budget,0.0,1.0);
+    return clamp(source,shapeA.xy+float2(0.5),shapeA.xy+size-float2(0.5));
+}
 half4 main(float2 coord){
     float2 p=coord+viewport.zw;float3 f=field(p);float aa=max(geometry.z,0.25);
     float coverage=1.0-ramp(f.x,-aa,aa);
@@ -196,8 +221,9 @@ half4 main(float2 coord){
     float2 waves=rippleSlope(p,rippleA)+rippleSlope(p,rippleB)+rippleSlope(p,rippleC)+rippleSlope(p,rippleD);
     float2 displacement=direction*optics.x*edgeWeight+(pressSlope+waves)*sigma;
     float travel=length(displacement);if(travel>warpLimit)displacement*=warpLimit/travel;
-    half4 color=background(p+displacement);
-    if(optics.z>0.001&&edgeWeight>0.01){
+    half4 color=background(softLens.x>0.5?softPoint(p):p+displacement);
+    if(softLens.x>0.5)color=half4(clamp(color.rgb*half(softLens.z)+half(softLens.w)*color.a,half3(0.0),half3(color.a)),color.a);
+    if(softLens.x<0.5&&optics.z>0.001&&edgeWeight>0.01){
         half4 red=background(p+displacement+direction*optics.z*edgeWeight);
         half4 blue=background(p+displacement-direction*optics.z*edgeWeight);
         color=half4(min(red.r,color.a),color.g,min(blue.b,color.a),color.a);
@@ -211,11 +237,13 @@ half4 main(float2 coord){
     shine+=length(pressSlope)*pressLight;
     color.rgb=min(color.rgb+half3(shine*float(color.a)),half3(color.a));
     float tintAlpha=float(tintColor.a)*style.x;
+    color*=half(backdropOpacity);
     color=half4(tintColor.rgb*half(tintAlpha),half(tintAlpha))+color*half(1.0-tintAlpha);
     float stroke=(1.0-ramp(abs(f.x),0.0,max(style.y,0.0001)))*style.z;
     if(style.y<=0.0)stroke=0.0;
-    stroke*=float(edgeColor.a);
-    color=half4(edgeColor.rgb*half(stroke),half(stroke))+color*half(1.0-stroke);
+    half4 edge=mix(edgeColor,edgeColorBottom,half(clamp(p.y/viewport.y,0.0,1.0)));
+    stroke*=float(edge.a);
+    color=half4(edge.rgb*half(stroke),half(stroke))+color*half(1.0-stroke);
     float dissolve=1.0;
     if(fade.x>0.5){float q=p.y/viewport.y;if(fade.w>0.5)q=1.0-q;dissolve=1.0-ramp(q,fade.y,fade.z);}
     color*=half(coverage*dissolve*style.w);
