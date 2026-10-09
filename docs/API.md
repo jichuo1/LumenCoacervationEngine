@@ -242,6 +242,7 @@
 - LumenSurfaceBinding：id / update / diagnostics / close；旧绑定不能关闭新绑定。
 - LumenContentSource：coordinateView / excludesSurfaces / drawContent(Canvas)。
 - LumenSurfaceOptions / LumenSurfaceSampling / LumenSurfaceSessionOptions：不可变配置，所有字段受范围约束。
+- `LumenSurfaceSampling.fadeCurve`：`LumenSurfaceFadeCurve.SMOOTH`（默认，保持原平滑曲线）或 `LINEAR`（hold 到 end 之间等速衰减）。方向、端点及透明尾部规则相同；GPU、软件采样和静态承托使用同一曲线。不改变未显式选择 LINEAR 的表面。
 - LumenSurfaceMaterial / LumenSurfaceBackend / LumenSurfaceFadeDirection / LumenSurfaceFailure：公开枚举。
 - LumenSurfaceState / LumenSurfaceDiagnostics：请求/实际材质、每绑定状态及会话计数。
 - LumenSurfaceListener.onSurfaceState(id, backend, failure, firstVisibleDraw)：异步合并、异常隔离。
@@ -310,3 +311,37 @@
 - 独立工厂：`assets.lottie.LumenLottieFactory()`、`assets.pag.LumenPagFactory()`、`assets.rive.LumenRiveFactory(context,renderer=LumenRiveRenderer.CANVAS)`，各实现上述统一工厂。`assets.rive.LumenRiveRenderer { CANVAS,GPU }`为引擎自有枚举，默认SDK Canvas后端，GPU需显式选择。公开签名无播放库类型。
 
 Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存及中断边界属于[P2配置](P2_EFFECTS_AND_ASSETS.md)明确约束，不能把帧率或字节门禁解释为原生运行时的硬实时／内存保证。
+
+## 19. 宿主 motion 原语（1.2.3，lumen-motion）
+
+既有高层 presenter/delegate 继续可用。下面的可选入口供已经拥有皮肤、窗口包装和业务页面的宿主接入；UI 类及动画入口在主线程调用，纯策略允许 JVM 调用。包名以 `com.lumen.coacervation.engine` 为根。
+
+| 包 / 类型 | 接入边界 |
+|---|---|
+| `interaction.ElasticClipBoundary` | 自定义视口标记；弹性形变不提升该节点、不解除该节点及外层的裁剪。原生 ScrollView、HorizontalScrollView、ScrollingView 和 LiquidStretchViewport 自动识别。 |
+| `interaction.ElasticInteractionController` | 每窗口一实例，`dispatch(event, original)` 只分发一次原流；`clear/dispose` 恢复自身借用的变换与裁剪。`travelPolicy` 默认 `AVOID_NEIGHBORS`，旧宿主可显式选 `PARENT_BOUNDS`。 |
+| `interaction.ElasticMotionPolicy/ElasticMotionGroupPolicy` 与配套策略、spring、lease 类型 | 纯运动学和归属协议。宿主标签必须使用引擎 `EXCLUDED_TAG/CONTAINER_TAG`，不能继续写旧字符串。 |
+| `motion.modal.IconAnchoredMotionLayer/Controller/Spec` | 保留同一个表面；动画 `applyFrame` 与展开 `clearShape` 都裁正文，落定路径随真实卡片布局更新。控制器的内容移动回调由宿主接到自己的采样位置通知。 |
+| `motion.modal.BubblePanelLayer/BubbleMotionController`、`BubbleIconProxy`、`BubbleLayerMotionSpec`、`BubblePlacementSpec` 及几何类型 | 气泡放置、图标借用和退场由引擎统一持有。宿主使用同一个 `widget.CoverableRippleDrawable` 类型，覆盖退场才能识别真实按钮涟漪。 |
+| `motion.modal.BubbleSkinSurfaceView/BubbleSurfaceDrawable` | 可直接承载宿主 Drawable，不要求创建第二个皮肤会话。 |
+| `motion.modal.ModalCardRoot/ModalTitleMotion`、标题颜色与描述策略、`ModalBackdropBlur/Spec` | 子面板遮挡、原生标题交接与平台模糊；宿主保留标题文字、配色和功能开关。 |
+| `motion.pager.LumenPagePager/PageTextChain` 与配套 motion/lifecycle/navigation 策略 | 页数由真实子页面决定；`LumenPagePager` 可继承，支持宿主提供 `switchParts`，继续识别 AppCompat 开关的 track/thumb。 |
+| `motion.expansion.SectionExpansionController/ExpansionMotionPolicy/NestedExpansionPolicy` | 同一个进度驱动高度、兄弟位移和轮廓；位置通知必须接到宿主采样会话。 |
+| `motion.reveal.RevealRequest/RevealScrollMotion` | 取消和滚动定位使用统一代次与速度续接；宿主保留导航目的地。 |
+| `motion.morph.ContainerMorphHost/Geometry/Spec/ContentTiming/TitleMode` | 宿主提供内容、标题、颜色和 Drawable，host 的位置回调保持接线。 |
+| `widget.BoundedNavigationMotion(maxItems)` | 几何委托给 `NavigationBarMotion`；非法点击 count 被拒绝，其余位置按宿主上限钳制。默认控件原有容量不变。 |
+| `motion.LumenAnimator` | `ofFloat/ofInt/property` 返回原生 Android animator；不另建时钟、不接管宿主监听器和取消语义。 |
+| `motion.CompactMotionPolicy` | `requireHeights/heightAt/rowAlphaAt` 让折叠高度与伴随行透明度共享进度；业务尺寸和时长由宿主提供。 |
+
+`liquid.LiquidStretchViewport`、`LiquidStretchOverscrollPolicy`、`LiquidStretchEdge`、`LiquidStretchUnconsumedAction`、`LiquidStretchGestureObserver` 位于 **lumen-engine**。`installAround(scrollTarget,isStretchAllowed,onStretchDistance)` 只替换指定滚动容器的直接父槽位，失败恢复原位置；`samplingOverscroll/samplingBeforeContent` 供宿主在同一帧进行反向采样，`finishStretch` 在退场时清零。宿主不同时安装旧的回弹副本。
+
+### ContainerMorphController 的回调构造
+
+第三个参数可以传 `notifyPositionChanged: () -> Unit`。其他既有参数保持相同含义；可选参数增加：
+
+- `resolveGeometry: ((preferLiveOrigin: Boolean) -> ContainerMorphGeometry?)?`：提供宿主已有来源坐标协议；只在准备形变时计算，不在逐帧路径调用。
+- `exitTitleMode`：根据当前业务页选择来源标题或跨页标题淡变。
+- `shouldFinishOnBack/onInternalBack`：保留页面内部返回逻辑；业务阻塞仍由 `isBusinessBlocked` 提供。
+- `hasLaunchOrigin`：使用宿主原来的 Intent/弱引用来源时，告知入场是否可解析。
+
+`start/beginPredictiveBack/progressPredictiveBack/cancelPredictiveBack/commitBack/onDestroy` 的调用顺序沿用原入口。`showExpanded()` 用于替换内部业务页前结束形变；`isExpanded/isSettledExpanded/isClosingOrFinished` 为只读状态。`onDestroy` 后这些入口为空操作，原 delegate 重载仍把位置刷新接到 `lumen.notifyPositionChanged()`。

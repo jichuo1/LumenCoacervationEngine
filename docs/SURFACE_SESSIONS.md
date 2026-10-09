@@ -47,6 +47,7 @@ Dialog/Story 浮层要传入本窗口的来源。来源或目标 detach 后会�
 | Sampling | minIntervalMs / softwareScale | 28ms，0–1000；1/3，0.05–1 |
 | Sampling | maxSoftwarePixels | 24000，1024–96000（含外沿） |
 | Sampling | fadeEnabled / fadeHold / fadeEnd / fadeDirection | 关闭；0 / 1，0–1且end≥hold；从上到下 |
+| Sampling | fadeCurve | `SMOOTH` 保留原缓动；`LINEAR` 在 hold–end 区间等速衰减，所有后端一致 |
 | Session | enabled / maxSurfaces | 开启；16，1–32；降低前需解绑多余表面 |
 | Session | maxSoftwareBytes | 8MiB，256KiB–16MiB；所有来源活跃软件缓冲合计 |
 | Session | maxGpuContentPixels / maxGpuSurfacePixels | 各4194304，16384–8388608；录制和效果层分别计量 |
