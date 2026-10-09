@@ -8,7 +8,7 @@ import kotlin.math.roundToInt
  * 只服务 Material You 美学：Liquid 皮肤本身就在做实时液态玻璃采样，再叠一层跨窗口模糊
  * 既是双重代价，两种质感也会打架。
  */
-internal object ModalBackdropBlurSpec {
+public object ModalBackdropBlurSpec {
 
     /**
      * 浅浅一层就够：目的是让面板与背景分层，不是把背景糊掉。

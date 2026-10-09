@@ -14,7 +14,7 @@ import kotlin.math.sqrt
  * 与 [AdaptiveGlowPolicy]/[ElasticMotionPolicy] 同风格：纯 Kotlin、不碰 android 类型，
  * 可在 JVM 单测里直接跑。
  */
-internal object ExpansionMotionPolicy {
+public object ExpansionMotionPolicy {
 
     /** 弹簧刚度（p/s² 单位制）。~300 → ω≈17 rad/s，整段 settle ≈0.3s。 */
     const val STIFFNESS = 300f
@@ -85,7 +85,7 @@ internal object ExpansionMotionPolicy {
      * 半隐式欧拉积分：先更新速度再更新位置，帧率不稳时也保持能量形态。
      * [step] 返回 true 表示已静止并精确落在目标上。
      */
-    internal class Spring(
+    public class Spring(
         var p: Float = 0f,
         var v: Float = 0f,
         var target: Float = 0f

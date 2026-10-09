@@ -31,7 +31,7 @@ import kotlin.math.abs
  * 横向分页器：页数不限（来源工程固定 4 页，已去掉上限，适配标准 §15.1）；只有与视口相交的页参与渲染，
  * 其余页保持 INVISIBLE 但不销毁。每一页都常驻内存，页数很多、页面很重时宿主应当自己按需填充页内容。
  */
-public class LumenPagePager @JvmOverloads constructor(
+public open class LumenPagePager @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
 ) : FrameLayout(context, attrs) {

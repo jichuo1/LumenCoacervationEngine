@@ -13,7 +13,7 @@ import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
 
 /** 描述留在原位置，在形变背景上方渐隐/渐显；合成行只绘制第二行以后。 */
-internal class ModalTitleDescriptions(
+public class ModalTitleDescriptions(
     private val source: TextView,
     private val anchor: View,
     private val originalColors: ColorStateList

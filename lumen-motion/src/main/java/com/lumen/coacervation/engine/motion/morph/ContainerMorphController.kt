@@ -85,7 +85,7 @@ public object ContainerMorphLauncher {
 public class ContainerMorphController @JvmOverloads constructor(
     private val activity: Activity,
     public val host: ContainerMorphHost,
-    private val lumen: LumenActivityDelegate,
+    private val notifyPositionChanged: () -> Unit,
     destination: Class<out Activity>,
     private val launchOrigin: ContainerMorphOrigin?,
     private val allowLaunchOriginForExit: Boolean,
@@ -93,9 +93,35 @@ public class ContainerMorphController @JvmOverloads constructor(
     private val collapsedCornerRadiusDp: Float = ContainerMorphEntrySpec.CORNER_RADIUS_DP,
     private val isBusinessBlocked: () -> Boolean = { false },
     private val onMotionStarted: () -> Unit = {},
-    private val onExpanded: () -> Unit = {}
+    private val onExpanded: () -> Unit = {},
+    private val resolveGeometry: ((preferLiveOrigin: Boolean) -> ContainerMorphGeometry?)? = null,
+    private val exitTitleMode: (ContainerMorphGeometry?) -> ContainerMorphTitleMode = {
+        if (it?.titleMotionEnabled == true) ContainerMorphTitleMode.SOURCE_TITLE
+        else ContainerMorphTitleMode.HIDDEN
+    },
+    private val shouldFinishOnBack: () -> Boolean = { true },
+    private val onInternalBack: () -> Unit = {},
+    private val hasLaunchOrigin: () -> Boolean = { launchOrigin != null }
 ) {
-    private enum class BackTarget { NONE, FINISH_ACTIVITY, BLOCKED }
+    /** 保留原 delegate 接入签名；已绑定皮肤的宿主可直接提供位置刷新回调。 */
+    @JvmOverloads
+    public constructor(
+        activity: Activity,
+        host: ContainerMorphHost,
+        lumen: LumenActivityDelegate,
+        destination: Class<out Activity>,
+        launchOrigin: ContainerMorphOrigin?,
+        allowLaunchOriginForExit: Boolean,
+        destinationTitle: () -> TextView?,
+        collapsedCornerRadiusDp: Float = ContainerMorphEntrySpec.CORNER_RADIUS_DP,
+        isBusinessBlocked: () -> Boolean = { false },
+        onMotionStarted: () -> Unit = {},
+        onExpanded: () -> Unit = {}
+    ) : this(activity, host, lumen::notifyPositionChanged, destination, launchOrigin,
+        allowLaunchOriginForExit, destinationTitle, collapsedCornerRadiusDp,
+        isBusinessBlocked, onMotionStarted, onExpanded)
+
+    private enum class BackTarget { NONE, FINISH_ACTIVITY, INTERNAL, BLOCKED }
 
     private val registry = ContainerMorphOriginRegistry.of(destination)
     private val density get() = activity.resources.displayMetrics.density
@@ -110,6 +136,7 @@ public class ContainerMorphController @JvmOverloads constructor(
     private var gestureStartExpansion = 1f
     private var predictiveMotionActive = false
     private var finishingAfterMotion = false
+    private var closed = false
 
     private val enterInterpolator = PathInterpolator(0.05f, 0.7f, 0.1f, 1f)
     private val closeInterpolator = PathInterpolator(
@@ -125,7 +152,7 @@ public class ContainerMorphController @JvmOverloads constructor(
 
     init {
         host.onWindowSizeChangedDuringMotion = ::handleMotionWindowSizeChange
-        host.onContentMoved = { lumen.notifyPositionChanged() }
+        host.onContentMoved = notifyPositionChanged
     }
 
     /** 已到达并停在展开端（回弹视口的 `isStretchAllowed` 应当以此为准）。 */
@@ -136,13 +163,24 @@ public class ContainerMorphController @JvmOverloads constructor(
     /** 页内容是否可以正常渲染（入场动画中延后的内容应当等它为 true 再渲染，并在 [onExpanded] 里补上）。 */
     public val isExpanded: Boolean get() = motionState == MotionState.EXPANDED && motionAnimator == null
 
+    public val isClosingOrFinished: Boolean
+        get() = finishingAfterMotion || motionState == MotionState.CLOSING || motionState == MotionState.FINISHED
+
+    /** 更换业务页前结束当前形变；新页面仍由同一控制器负责后续返回。 */
+    public fun showExpanded() {
+        if (closed || isClosingOrFinished || activity.isFinishing || activity.isDestroyed) return
+        cancelMotionAnimator()
+        completeExpandedMotion()
+    }
+
     // ---------------- 入场 ----------------
 
     /** 在 `onCreate` 末尾调用。[isFreshLaunch] 通常为 `savedInstanceState == null`（重建不再播入场）。 */
     public fun start(isFreshLaunch: Boolean) {
+        if (closed) return
         motionState = MotionState.PREPARING_ENTRY
         val entryToken = motionSession.invalidate()
-        val canResolveOrigin = launchOrigin != null || registry.snapshot() != null
+        val canResolveOrigin = hasLaunchOrigin() || registry.snapshot() != null
         val shouldAnimate = isFreshLaunch && canResolveOrigin && ValueAnimator.areAnimatorsEnabled()
         if (shouldAnimate) host.prepareFirstFrameForEntry()
         host.doOnPreDraw {
@@ -182,6 +220,7 @@ public class ContainerMorphController @JvmOverloads constructor(
 
     /** 预测式返回开始（`OnBackPressedCallback.handleOnBackStarted` / `OnBackAnimationCallback.onBackStarted`）。 */
     public fun beginPredictiveBack() {
+        if (closed) return
         if (predictiveMotionActive || finishingAfterMotion || activity.isFinishing || activity.isDestroyed) return
         predictiveMotionActive = false
         backTarget = resolveBackTarget()
@@ -196,6 +235,7 @@ public class ContainerMorphController @JvmOverloads constructor(
 
     /** 预测式返回进度 0..1。 */
     public fun progressPredictiveBack(rawProgress: Float) {
+        if (closed) return
         if (backTarget != BackTarget.FINISH_ACTIVITY || !predictiveMotionActive) return
         if (!ValueAnimator.areAnimatorsEnabled()) {
             predictiveMotionActive = false
@@ -208,6 +248,7 @@ public class ContainerMorphController @JvmOverloads constructor(
 
     /** 预测式返回取消：按当前速度回弹到展开端。 */
     public fun cancelPredictiveBack() {
+        if (closed) return
         if (backTarget == BackTarget.FINISH_ACTIVITY && predictiveMotionActive) {
             predictiveMotionActive = false
             motionState = MotionState.CANCELLING_BACK
@@ -221,6 +262,7 @@ public class ContainerMorphController @JvmOverloads constructor(
 
     /** 返回提交（手势松手、三键返回、页内返回按钮都走这里）：收缩回入口后 `finish()`。 */
     public fun commitBack() {
+        if (closed) return
         if (predictiveMotionActive && isBusinessBlocked()) {
             cancelPredictiveBack()
             return
@@ -229,11 +271,17 @@ public class ContainerMorphController @JvmOverloads constructor(
         val hadInteractiveStart = predictiveMotionActive
         predictiveMotionActive = false
         backTarget = BackTarget.NONE
-        if (target == BackTarget.FINISH_ACTIVITY) requestClose(interactiveCommit = hadInteractiveStart)
+        when (target) {
+            BackTarget.FINISH_ACTIVITY -> requestClose(interactiveCommit = hadInteractiveStart)
+            BackTarget.INTERNAL -> onInternalBack()
+            BackTarget.NONE, BackTarget.BLOCKED -> Unit
+        }
     }
 
     /** 在目标 Activity `onDestroy` 调用。 */
     public fun onDestroy() {
+        if (closed) return
+        closed = true
         cancelMotionAnimator()
         host.onWindowSizeChangedDuringMotion = null
         host.onContentMoved = null
@@ -242,7 +290,8 @@ public class ContainerMorphController @JvmOverloads constructor(
     private fun resolveBackTarget(): BackTarget = when {
         !InterruptibleMotionPolicy.canNavigate(motionState,
             businessBlocked = isBusinessBlocked() || finishingAfterMotion) -> BackTarget.BLOCKED
-        else -> BackTarget.FINISH_ACTIVITY
+        InterruptibleMotionPolicy.preserveFrame(motionState) || shouldFinishOnBack() -> BackTarget.FINISH_ACTIVITY
+        else -> BackTarget.INTERNAL
     }
 
     private fun handleMotionWindowSizeChange() {
@@ -268,11 +317,7 @@ public class ContainerMorphController @JvmOverloads constructor(
         motionWasInterrupted = false
         motionGeometry = resolveMotionGeometry(preferLiveOrigin = true)
         motionContentTiming = contentTiming
-        motionTitleMode = if (motionGeometry?.titleMotionEnabled == true) {
-            ContainerMorphTitleMode.SOURCE_TITLE
-        } else {
-            ContainerMorphTitleMode.HIDDEN
-        }
+        motionTitleMode = exitTitleMode(motionGeometry)
         host.beginMotion()
         applyMotionExpansion(host.expansion)
     }
@@ -402,6 +447,7 @@ public class ContainerMorphController @JvmOverloads constructor(
     }
 
     private fun resolveMotionGeometry(preferLiveOrigin: Boolean = false): ContainerMorphGeometry? {
+        resolveGeometry?.let { return it(preferLiveOrigin) }
         if (host.width <= 0 || host.height <= 0) return null
         val display = host.display ?: return null
         val tolerancePx = 4f * density

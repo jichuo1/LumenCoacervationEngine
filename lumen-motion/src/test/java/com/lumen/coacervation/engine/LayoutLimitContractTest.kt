@@ -72,7 +72,7 @@ class LayoutLimitContractTest {
         val snapshot = origin.after("fun snapshot(").before("private fun View.boundsOnScreen()")
         assertTrue(snapshot.contains("title.boundsWithin(sourceWindowGroup)?.toTextBounds(title)"))
         assertTrue(snapshot.contains("title.boundsOnScreen().toTextBounds(title)"))
-        val toText = origin.after("internal fun MotionRect.toTextBounds(").before("internal fun View.boundsWithin(")
+        val toText = origin.after("fun MotionRect.toTextBounds(").before("fun View.boundsWithin(")
         assertTrue(toText.contains("left + title.totalPaddingLeft + lineLeft"))
         assertTrue(toText.contains("top + title.totalPaddingTop"))
         val controller = MotionSource.file("ContainerMorphController")
@@ -83,7 +83,7 @@ class LayoutLimitContractTest {
 
     @Test fun morphTitleAndBadgeFollowTheHostsTypeAndDirection() {
         val host = MotionSource.file("ContainerMorphHost")
-        val replace = host.after("fun replacePage(").before("internal fun prepareFirstFrameForEntry()")
+        val replace = host.after("fun replacePage(").before("fun prepareFirstFrameForEntry()")
         assertTrue(replace.contains("transitionTitle.typeface = toolbarTitle.typeface"))
         val micro = MotionSource.file("MicroMotion")
         assertTrue(micro.contains("val pivotAtLeft = rtl == growFromEnd"))

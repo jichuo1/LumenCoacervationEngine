@@ -67,7 +67,7 @@ private object SourceIconAlpha {
  * Bitmap 仅在准备阶段生成一次，最长边不超过 192px。颜色、tint、state、imageAlpha 均沿用
  * 已配置的 drawable；不更改其 bounds，也不改动真实控件的图片属性。动画期只改 alpha 和矩形。
  */
-internal class BubbleIconProxy(private val source: ImageView) {
+public class BubbleIconProxy(private val source: ImageView) {
     private val originalAlpha = SourceIconAlpha.acquire(source)
     /**
      * 按钮原位的静止图标：面板从按钮处长出时，最初约 150ms 它的玻璃表面正好盖在按钮上，

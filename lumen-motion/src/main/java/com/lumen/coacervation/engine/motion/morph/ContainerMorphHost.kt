@@ -29,7 +29,7 @@ import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
-internal data class ContainerMorphGeometry(
+public data class ContainerMorphGeometry(
     val collapsedBounds: MotionRect,
     val expandedBounds: MotionRect,
     val collapsedTitleBounds: MotionRect,
@@ -41,7 +41,7 @@ internal data class ContainerMorphGeometry(
     val titleMotionEnabled: Boolean
 )
 
-internal enum class ContainerMorphTitleMode {
+public enum class ContainerMorphTitleMode {
     SOURCE_TITLE,
     CROSSFADE_FROM_PAGE_TITLE,
     HIDDEN
@@ -151,14 +151,14 @@ public class ContainerMorphHost(
     var expansion: Float = 1f
         private set
 
-    internal var onWindowSizeChangedDuringMotion: (() -> Unit)? = null
+    public var onWindowSizeChangedDuringMotion: (() -> Unit)? = null
 
     /**
      * 正文被平移/缩放后回调。父层 translation 不会让子 View 重录，玻璃卡片会一直按录制时的
      * 屏幕位置采样背景；动画结束后等抑制解除整组重录才对齐，卡片内部颜色一跳（2026-09-24
      * 真机逐帧：两张卡片反向变色 4～5 级，背景不变）。宿主 Activity 接到皮肤的位移通知上。
      */
-    internal var onContentMoved: (() -> Unit)? = null
+    public var onContentMoved: (() -> Unit)? = null
 
     private fun View.notifyIfMoved(beforeY: Float, beforeScaleX: Float, beforeScaleY: Float) {
         if (translationY != beforeY || scaleX != beforeScaleX || scaleY != beforeScaleY) {
@@ -239,7 +239,7 @@ public class ContainerMorphHost(
         showExpandedImmediately()
     }
 
-    internal fun prepareFirstFrameForEntry() {
+    public fun prepareFirstFrameForEntry() {
         backdropClip.visibility = View.INVISIBLE
         surface.visibility = View.INVISIBLE
         currentPage?.alpha = 0f
@@ -248,13 +248,13 @@ public class ContainerMorphHost(
         blockInteraction(true)
     }
 
-    internal fun beginMotion() {
+    public fun beginMotion() {
         backdropClip.visibility = View.VISIBLE
         transitionTitle.visibility = View.VISIBLE
         blockInteraction(true)
     }
 
-    internal fun applyExpansion(
+    public fun applyExpansion(
         geometry: ContainerMorphGeometry,
         value: Float,
         titleMode: ContainerMorphTitleMode,
@@ -364,7 +364,7 @@ public class ContainerMorphHost(
     }
 
     /** 来源坐标不再可靠时的无方向退化动画，不使用过期矩形。 */
-    internal fun applyFallbackExpansion(
+    public fun applyFallbackExpansion(
         value: Float,
         contentTravelPx: Float,
         contentTiming: ContainerMorphContentTiming
@@ -407,7 +407,7 @@ public class ContainerMorphHost(
         transitionTitle.visibility = View.INVISIBLE
     }
 
-    internal fun showExpandedImmediately() {
+    public fun showExpandedImmediately() {
         shapedMotion = false
         expansion = 1f
         backdropClip.visibility = View.VISIBLE
@@ -446,7 +446,7 @@ public class ContainerMorphHost(
         blockInteraction(false)
     }
 
-    internal fun blockInteraction(blocked: Boolean) {
+    public fun blockInteraction(blocked: Boolean) {
         interactionBlocked = blocked
         // Keep ownership of an existing back-button press across the final expansion frame.
         inputBlocker.visibility = if (InterruptibleMotionPolicy.keepInputBlocked(blocked, pressedBackTarget != null))

@@ -8,7 +8,7 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 /** Original, bounded geometry for a native four-item floating navigation surface. */
-internal object NavigationBarMotion {
+public object NavigationBarMotion {
     /** 胶囊底栏最多 6 项（来源工程固定 4 项；5 项底栏很常见，6 项以上应当改用侧边栏或"更多"）。 */
     const val MAX_ITEMS = 6
     /** 分段档位条最多 8 段（来源工程 4 段）。 */
@@ -54,11 +54,18 @@ internal object NavigationBarMotion {
 }
 
 /** Analytic damped spring. Retargets preserve position/velocity; no frame-time allocations. */
-public class LumenSpring(start: Float, target: Float, velocity: Float = 0f) {
+public class LumenSpring @JvmOverloads constructor(start: Float, target: Float, velocity: Float = 0f,
+    stiffness: Float = 400f, dampingRatio: Float = .78f) {
+    init {
+        require(stiffness.isFinite() && stiffness > 0f)
+        require(dampingRatio.isFinite() && dampingRatio > 0f && dampingRatio < 1f)
+    }
     private val target = if (target.isFinite()) target else 0f
     private val displacement = (if (start.isFinite()) start else this.target) - this.target
-    private val decay = 15.6f
-    private val frequency = 12.51559f
+    // Preserve the original navigation coefficients exactly when no profile is supplied.
+    private val defaultProfile = stiffness == 400f && dampingRatio == .78f
+    private val decay = if (defaultProfile) 15.6f else sqrt(stiffness) * dampingRatio
+    private val frequency = if (defaultProfile) 12.51559f else sqrt(stiffness) * sqrt(1f - dampingRatio * dampingRatio)
     private val sine = ((if (velocity.isFinite()) velocity else 0f) + decay * displacement) / frequency
 
     fun value(seconds: Float): Float {
@@ -75,10 +82,10 @@ public class LumenSpring(start: Float, target: Float, velocity: Float = 0f) {
     }
 }
 
-internal enum class NavigationBarIntent { NONE, SCRUB, ELASTIC }
+public enum class NavigationBarIntent { NONE, SCRUB, ELASTIC }
 
 /** DOWN only previews. Cancellation, multi-touch and vertical elastic movement never select a page. */
-internal class NavigationBarGesture {
+public class NavigationBarGesture {
     private var active = false
     private var downIndex = -1
     private var canScrub = false

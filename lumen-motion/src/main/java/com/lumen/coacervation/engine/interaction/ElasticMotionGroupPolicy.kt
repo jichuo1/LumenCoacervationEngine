@@ -5,14 +5,14 @@ package com.lumen.coacervation.engine.interaction
  * clamps its travel inside the parent layer, and caps stretch in pixels.
  */
 
-internal data class ElasticGroupNode(
+public data class ElasticGroupNode(
     val hasSurface: Boolean,
     val fillsWindow: Boolean,
     val containerOnly: Boolean,
     val childCount: Int
 )
 
-internal object ElasticMotionGroupPolicy {
+public object ElasticMotionGroupPolicy {
     const val MAX_PROMOTION_STEPS = 6
     const val STRETCH_CAP_DP = 2.5f
 

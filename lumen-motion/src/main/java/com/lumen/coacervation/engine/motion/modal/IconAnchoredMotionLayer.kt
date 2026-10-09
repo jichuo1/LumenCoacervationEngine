@@ -14,6 +14,7 @@ import android.view.View
 import android.view.ViewOutlineProvider
 import android.widget.FrameLayout
 import com.lumen.coacervation.engine.liquid.LiquidMotionSurfaceFrameProvider
+import com.lumen.coacervation.engine.interaction.ElasticClipBoundary
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -30,13 +31,13 @@ import kotlin.math.floor
  * 不去继承或改造它。
  */
 @SuppressLint("ViewConstructor")
-internal class IconAnchoredMotionLayer(
+public class IconAnchoredMotionLayer(
     context: Context,
     surfaceBackground: Drawable? = null,
     private val fallbackColor: Int = 0,
     private val surfaceRadiusPx: Float = 0f,
     surfaceElevation: Float = 0f
-) : FrameLayout(context), LiquidMotionSurfaceFrameProvider {
+) : FrameLayout(context), LiquidMotionSurfaceFrameProvider, ElasticClipBoundary {
 
     // 覆盖式子面板始终由同一个表面画填充和描边；只裁正文，不裁表面自身的抗锯齿边缘。
     // 复用气泡的皮肤桥接，Liquid 仍从真实 View 取得位置与刷新登记。
@@ -145,7 +146,7 @@ internal class IconAnchoredMotionLayer(
     }
 
     /**
-     * 回到稳定端：关闭正文裁剪。普通弹窗交还卡片背景，覆盖式面板保留同一个表面。
+     * 回到稳定端：撤掉动画几何，正文边界改由真实卡片布局更新。
      *
      * 必须显式清掉 outline，否则最后一帧的圆角会永久留在层上，卡片内容一旦超出该矩形
      * （例如展开的搜索结果列表）就会被裁掉。
@@ -172,6 +173,8 @@ internal class IconAnchoredMotionLayer(
         if (childCount < 2) return
         val card = getChildAt(1)
         motionBounds.set(card.left.toFloat(), card.top.toFloat(), card.right.toFloat(), card.bottom.toFloat())
+        contentClip.rewind()
+        contentClip.addRoundRect(motionBounds, surfaceRadiusPx, surfaceRadiusPx, Path.Direction.CW)
         surface.updateFrame(motionBounds, surfaceRadiusPx, 1f)
         // 落定矩形同时是投影轮廓：卡片重排版后阴影跟着走，不留旧形。
         invalidateOutline()
@@ -184,7 +187,7 @@ internal class IconAnchoredMotionLayer(
     }
 
     override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
-        if (!usesPersistentSurface || child === persistentSurface || !shaped) {
+        if (!usesPersistentSurface || child === persistentSurface || contentClip.isEmpty) {
             return super.drawChild(canvas, child, drawingTime)
         }
         val saved = canvas.save()

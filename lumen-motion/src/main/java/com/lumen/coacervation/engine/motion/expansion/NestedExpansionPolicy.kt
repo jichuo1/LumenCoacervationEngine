@@ -1,7 +1,7 @@
 package com.lumen.coacervation.engine.motion.expansion
 
 /** 嵌套区域先扣子级，再收父级；每段高度只由一个控制器计入共享祖先。 */
-internal object NestedExpansionPolicy {
+public object NestedExpansionPolicy {
     fun ownShrink(height: Float, descendantShrink: Float, progress: Float): Float =
         (height - descendantShrink).coerceAtLeast(0f) * (1f - progress.coerceAtLeast(0f))
 
@@ -31,7 +31,7 @@ internal object NestedExpansionPolicy {
  * `max(E, m) - max(E - s, m)`（E = 卡片展开高度，m = 同行其他格的最高高度，s = 卡片当前收缩量）——
  * 同行有更高的格子时，下面的行一动不动。
  */
-internal object ExpansionFollowPolicy {
+public object ExpansionFollowPolicy {
     /** 一个"行"容器（横排、网格）把卡片的收缩量换算成行的收缩量。 */
     fun rowShrink(expandedHeight: Float, othersMax: Float, shrink: Float): Float {
         if (!expandedHeight.isFinite() || expandedHeight <= 0f || !shrink.isFinite()) return 0f

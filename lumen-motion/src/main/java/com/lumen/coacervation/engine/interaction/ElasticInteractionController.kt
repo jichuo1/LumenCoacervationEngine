@@ -462,7 +462,7 @@ public class ElasticInteractionController(
         for (v in chain) nodes.add(ElasticGroupNode(
             hasSurface = v.background?.alpha ?: 0 > 0,
             fillsWindow = v.width >= windowContentWidth * .9f && v.height >= windowContentHeight * .9f,
-            containerOnly = v.tag == CONTAINER_TAG,
+            containerOnly = v.tag == CONTAINER_TAG || ElasticClipPolicy.isViewport(v),
             childCount = (v as? ViewGroup)?.childCount ?: 0))
         var depth = ElasticMotionGroupPolicy.promotionDepth(nodes).coerceAtMost(chain.lastIndex)
         // A tight wrapper (the badge frame around the GitHub icon) leaves the promoted node
@@ -471,7 +471,8 @@ public class ElasticInteractionController(
         val slack = 4f * density
         while (depth < chain.lastIndex) {
             val parent = chain[depth + 1]
-            if (parent === root || parent !is ViewGroup) break
+            if (parent === root || parent !is ViewGroup || parent.tag == CONTAINER_TAG ||
+                ElasticClipPolicy.isViewport(parent)) break
             if (parent.width >= windowContentWidth * .9f && parent.height >= windowContentHeight * .9f) break
             val current = chain[depth]
             if (!ElasticMotionGroupPolicy.isTightWrap(
@@ -607,12 +608,18 @@ public class ElasticInteractionController(
         val view = target ?: return
         var node = view.parent
         while (node != null && clipReliefs.size < 32) {
+            val boundary = node as? View
+            val action = ElasticClipPolicy.action(node === root,
+                boundary != null && ElasticClipPolicy.isViewport(boundary), boundary?.tag == CONTAINER_TAG)
+            if (action == ElasticClipAction.STOP) break
             val group = node as? ViewGroup
             if (group != null && (group.clipChildren || group.clipToPadding)) {
                 clipReliefs += ClipRelief(group, group.clipChildren, group.clipToPadding)
-                group.clipChildren = false
+                // Panel padding is travel room; its child bounds and outer ancestors stay protected.
+                if (action == ElasticClipAction.RELIEVE) group.clipChildren = false
                 group.clipToPadding = false
             }
+            if (action == ElasticClipAction.PANEL_PADDING) break
             node = if (node === root) null else node.parent
         }
     }
@@ -664,7 +671,7 @@ public class ElasticInteractionController(
         val role = ElasticEligibilityPolicy.nodeRole(
             view.alpha, view.hasTransientState(), view.animation?.hasEnded() == false,
             view.isClickable, view === root, view.width, view.height, windowContentWidth, windowContentHeight,
-            containerOnly = view.tag == CONTAINER_TAG
+            containerOnly = view.tag == CONTAINER_TAG || ElasticClipPolicy.isViewport(view)
         )
         if (role == ElasticNodeRole.BLOCKED) return Hit(null)
         resultPath.add(view)

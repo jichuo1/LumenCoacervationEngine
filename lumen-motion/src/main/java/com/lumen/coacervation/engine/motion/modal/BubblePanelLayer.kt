@@ -20,7 +20,7 @@ import com.lumen.coacervation.engine.motion.MotionRect
 
 /** 三个顶栏气泡专用：玻璃表面、原生内容、图标轮廓独立，不缩放文字或改变布局。 */
 @SuppressLint("ViewConstructor")
-internal class BubblePanelLayer(
+public class BubblePanelLayer(
     context: Context,
     private val content: LinearLayout,
     source: ImageView?,

@@ -10,12 +10,12 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 import kotlin.math.tanh
 
-internal enum class ElasticGestureDecision { OBSERVE, YIELD, CAPTURE, DRAG }
+public enum class ElasticGestureDecision { OBSERVE, YIELD, CAPTURE, DRAG }
 
-internal enum class ElasticNodeRole { BLOCKED, TRAVERSE, TARGET }
+public enum class ElasticNodeRole { BLOCKED, TRAVERSE, TARGET }
 
 /** Static opacity belongs to visual styling; only animation/state changes make a hit unstable. */
-internal object ElasticEligibilityPolicy {
+public object ElasticEligibilityPolicy {
     fun stableOpacity(alpha: Float, transientState: Boolean, animationActive: Boolean): Boolean =
         alpha.isFinite() && alpha > 0f && alpha <= 1f && !transientState && !animationActive
 
@@ -47,7 +47,7 @@ internal object ElasticEligibilityPolicy {
 }
 
 /** Once a normal scroll crosses slop it can never turn into an elastic hold later in that stream. */
-internal class ElasticGestureGate {
+public class ElasticGestureGate {
     private var downTime = 0L
     private var lastTime = 0L
     private var decision = ElasticGestureDecision.YIELD
@@ -81,9 +81,9 @@ internal class ElasticGestureGate {
 }
 
 /** Mutable output, reused by the View controller for both gesture and animation frames. */
-internal class ElasticVector(var x: Float = 0f, var y: Float = 0f)
+public class ElasticVector(var x: Float = 0f, var y: Float = 0f)
 
-internal object ElasticMotionPolicy {
+public object ElasticMotionPolicy {
     const val HOLD_MILLIS = 160L
     const val MAX_SETTLE_MILLIS = 720L
     const val PRESS_DEPTH = .016f
@@ -147,7 +147,7 @@ internal object ElasticMotionPolicy {
  * 长按拖动光晕的调参换算（[com.lumen.coacervation.engine.model.LumenEffectTuning] 的两个 drag 倍率）。
  * 倍率为 1 时逐位返回原值。
  */
-internal object ElasticGlowTuning {
+public object ElasticGlowTuning {
     /** 基准 alpha（0..255）；越界堆积的增益由光晕策略在此之上叠加，最终仍钳在 255。 */
     fun baseAlpha(base: Int, intensity: Float): Int =
         if (intensity == 1f) base else (base * intensity).roundToInt().coerceIn(0, 255)
@@ -159,7 +159,7 @@ internal object ElasticGlowTuning {
  * 长按拖动形变程度（[com.lumen.coacervation.engine.model.LumenEffectTuning.dragDeformation]）的换算。
  * 倍率为 1 时逐位返回原值；0 时行程为 0、缩放恒为 1。
  */
-internal object ElasticDeformationTuning {
+public object ElasticDeformationTuning {
     /** 跟手位移的行程上限。相邻卡片与父容器的钳制在此之后照常生效。 */
     fun travelLimit(base: Float, deformation: Float): Float = if (deformation == 1f) base else base * deformation
 
@@ -179,7 +179,7 @@ internal object ElasticDeformationTuning {
 }
 
 /** Exact damped-spring solution; stepping twice is consistent with one frame of the same duration. */
-internal class ElasticSpringAxis(var value: Float = 0f, var velocity: Float = 0f) {
+public class ElasticSpringAxis(var value: Float = 0f, var velocity: Float = 0f) {
     fun advance(seconds: Float, target: Float, stiffness: Float = 310f, dampingRatio: Float = .7f) {
         if (!seconds.isFinite() || seconds <= 0f) return
         if (!value.isFinite() || !velocity.isFinite() || !target.isFinite() ||
@@ -214,13 +214,13 @@ internal class ElasticSpringAxis(var value: Float = 0f, var velocity: Float = 0f
     }
 }
 
-internal data class ElasticTransform(
+public data class ElasticTransform(
     val translationX: Float, val translationY: Float, val scaleX: Float, val scaleY: Float
 )
 
 /** The weak key is never referenced by a value. A late callback only owns its exact lease identity. */
-internal class ElasticTransformLeases<Key : Any, Owner : Any> {
-    internal class Lease<Owner : Any>(val original: ElasticTransform, owner: Owner) {
+public class ElasticTransformLeases<Key : Any, Owner : Any> {
+    public class Lease<Owner : Any> internal constructor(val original: ElasticTransform, owner: Owner) {
         val owner = WeakReference(owner)
         var writtenX = original.translationX
         var writtenY = original.translationY

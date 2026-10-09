@@ -15,7 +15,7 @@ import kotlin.math.abs
  * - **目标在运动中移动**（行高因折行或面板仍在展开而变化）：调用方每帧用行的实时几何更新 [target]，
  *   插值基于实时目标，选中框收尾时恰好落在行上。
  */
-internal class SlidingSelectionMotion(private val durationMs: Long = DURATION_MS) {
+public class SlidingSelectionMotion(private val durationMs: Long = DURATION_MS) {
     private val from = FloatArray(4)
     /** 终点矩形；调用方每帧可以改写（跟随行的实时几何）。 */
     val target = FloatArray(4)
@@ -70,7 +70,7 @@ internal class SlidingSelectionMotion(private val durationMs: Long = DURATION_MS
 }
 
 /** 选项高亮：选中框沿排列方向盖住这一行的比例。 */
-internal object SlidingSelectionHighlight {
+public object SlidingSelectionHighlight {
     /** [indicatorStart]..[indicatorEnd] 覆盖 [rowStart]..[rowEnd] 的比例，0..1；行长度为 0 时返回 0。 */
     fun coverage(indicatorStart: Float, indicatorEnd: Float, rowStart: Float, rowEnd: Float): Float {
         val length = rowEnd - rowStart
@@ -84,7 +84,7 @@ internal object SlidingSelectionHighlight {
  * CSS 语义的三次贝塞尔缓动（端点固定为 (0,0) 与 (1,1)），与 `PathInterpolator(x1, y1, x2, y2)` 等价，
  * 但不依赖 `android.*`，可以在 JVM 上单测。求值先牛顿迭代、不收敛时退回二分，零分配。
  */
-internal class CubicBezierEasing(
+public class CubicBezierEasing(
     private val x1: Float,
     private val y1: Float,
     private val x2: Float,

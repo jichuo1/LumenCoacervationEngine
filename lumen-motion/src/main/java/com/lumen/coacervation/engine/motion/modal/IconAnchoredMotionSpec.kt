@@ -12,7 +12,7 @@ import com.lumen.coacervation.engine.motion.MotionRect
  * 与容器形变的另一处结构差异：**不引入 morph surface**。形状由承载层的 outline 裁剪表达，
  * 因此不新增 `LiquidMotionSurfaceFrameProvider` 采样面，实时液态玻璃的逐帧像素预算不受影响。
  */
-internal enum class IconAnchoredContentTiming {
+public enum class IconAnchoredContentTiming {
     TIMED,
     PREDICTIVE
 }
@@ -23,7 +23,7 @@ internal enum class IconAnchoredContentTiming {
  * [collapsedBounds] 通常完全落在 [expandedBounds] 之外（图标在工具栏、卡片在屏幕中央），
  * 这是正常的：承载层是全屏的，outline 在它自己的坐标系里从图标矩形长到卡片矩形。
  */
-internal data class IconAnchoredMotionGeometry(
+public data class IconAnchoredMotionGeometry(
     val collapsedBounds: MotionRect,
     val expandedBounds: MotionRect,
     val collapsedRadiusPx: Float,
@@ -43,7 +43,7 @@ internal data class IconAnchoredMotionGeometry(
 }
 
 /** 动画热路径复用的帧缓冲；避免每个 progress 分配对象。 */
-internal class IconAnchoredMotionFrameBuffer {
+public class IconAnchoredMotionFrameBuffer {
     var left = 0f
         private set
     var top = 0f
@@ -67,7 +67,7 @@ internal class IconAnchoredMotionFrameBuffer {
     var contentTranslationYPx = 0f
         private set
 
-    internal fun set(
+    public fun set(
         left: Float,
         top: Float,
         right: Float,
@@ -92,7 +92,7 @@ internal class IconAnchoredMotionFrameBuffer {
     }
 }
 
-internal object IconAnchoredMotionSpec {
+public object IconAnchoredMotionSpec {
 
     /**
      * 展开：标准 fast-out-slow-in。
@@ -199,7 +199,7 @@ internal object IconAnchoredMotionSpec {
      * `PREDICTIVE` 更宽，因为 `BackEvent.progress` 已经过强非线性手势映射；沿用定时窗口会把
      * 正文淡出压缩到原始手势最初的极小一段里，表现为一碰就消失。
      */
-    internal fun contentFraction(
+    public fun contentFraction(
         expansion: Float,
         timing: IconAnchoredContentTiming
     ): Float = when (timing) {
@@ -216,7 +216,7 @@ internal object IconAnchoredMotionSpec {
      * 与 [contentFraction] 分开的理由见 [STROKE_EDGE_START]。方向无关：收起时同一条曲线
      * 反向推进，描边先淡出、再看到形状缩回，"出现"与"消失"用的是同一段渐变。
      */
-    internal fun strokeAlpha(expansion: Float): Float =
+    public fun strokeAlpha(expansion: Float): Float =
         smoothStep(STROKE_EDGE_START, 1f, expansion.coerceIn(0f, 1f))
 
     /**
@@ -237,10 +237,10 @@ internal object IconAnchoredMotionSpec {
     const val COVERED_PARENT_FADE_END = 1f
 
     /** 被盖住的父面板在给定展开进度下的可见度。0＝完全让位给子面板。 */
-    internal fun coveredParentAlpha(expansion: Float): Float =
+    public fun coveredParentAlpha(expansion: Float): Float =
         1f - smoothStep(COVERED_PARENT_FADE_START, COVERED_PARENT_FADE_END, expansion.coerceIn(0f, 1f))
 
-    internal fun smoothStep(edgeStart: Float, edgeEnd: Float, value: Float): Float {
+    public fun smoothStep(edgeStart: Float, edgeEnd: Float, value: Float): Float {
         if (edgeStart >= edgeEnd) return if (value < edgeStart) 0f else 1f
         val fraction = ((value - edgeStart) / (edgeEnd - edgeStart)).coerceIn(0f, 1f)
         return fraction * fraction * (3f - 2f * fraction)

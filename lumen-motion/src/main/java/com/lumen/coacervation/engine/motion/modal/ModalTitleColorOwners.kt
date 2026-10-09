@@ -3,7 +3,7 @@ package com.lumen.coacervation.engine.motion.modal
 import java.util.WeakHashMap
 
 /** 主线程上的来源文字颜色记账。旧弹窗延迟释放时，不得恢复新弹窗仍借用的标题。 */
-internal class ModalTitleColorOwners<K : Any, V : Any> {
+public class ModalTitleColorOwners<K : Any, V : Any> {
     private class Entry<V>(val original: V, val owners: MutableMap<Any, Float> = mutableMapOf())
     private val entries = WeakHashMap<K, Entry<V>>()
 

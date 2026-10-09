@@ -233,14 +233,14 @@ public class ContainerMorphOriginRegistry private constructor() {
     }
 }
 
-internal data class MappedContainerMorphOrigin(
+public data class MappedContainerMorphOrigin(
     val entryBounds: MotionRect,
     val titleBounds: MotionRect,
     val usedSourceWindowCoordinates: Boolean
 )
 
 /** 统一两 Activity 的坐标协议；优先根视图局部坐标，避免系统栏造成稳定的 Y 轴偏移。 */
-internal object ContainerMorphCoordinateMapper {
+public object ContainerMorphCoordinateMapper {
     fun map(
         origin: ContainerMorphOrigin,
         destinationWindowWidth: Int,
@@ -311,7 +311,7 @@ internal object ContainerMorphCoordinateMapper {
  * 标题带内边距时落点差一个内边距，动画结束换回真标题时横跳一下（2026-09-28 真机录屏：
  * 示例全屏页标题 `paddingStart = 8dp`，飞行标题停在 x=230、真标题文字在 x=262）。
  */
-internal fun MotionRect.toTextBounds(title: TextView): MotionRect {
+public fun MotionRect.toTextBounds(title: TextView): MotionRect {
     val layout = title.layout
     val lineLeft = if (layout != null && layout.lineCount > 0) layout.getLineLeft(0) else 0f
     val textLeft = left + title.totalPaddingLeft + lineLeft
@@ -321,7 +321,7 @@ internal fun MotionRect.toTextBounds(title: TextView): MotionRect {
     return MotionRect(textLeft, textTop, textRight, textBottom)
 }
 
-internal fun View.boundsWithin(ancestor: ViewGroup): MotionRect? {
+public fun View.boundsWithin(ancestor: ViewGroup): MotionRect? {
     if (width <= 0 || height <= 0) return null
     val rect = Rect(0, 0, width, height)
     return runCatching {

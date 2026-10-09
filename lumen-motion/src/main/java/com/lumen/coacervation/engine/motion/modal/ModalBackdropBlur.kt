@@ -26,7 +26,7 @@ import android.view.WindowManager
  * lint 的 `NewApi` 只认得它，而且 [apply] 与工厂不在同一个方法里，
  * 工厂上的守卫管不到它——两处都得各自带一个本地守卫。
  */
-internal class ModalBackdropBlur private constructor(
+public class ModalBackdropBlur private constructor(
     private val window: Window,
     private val maxRadiusPx: Int
 ) {

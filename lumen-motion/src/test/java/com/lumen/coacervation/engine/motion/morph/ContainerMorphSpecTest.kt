@@ -159,7 +159,8 @@ class SettingsBackupMotionSpecTest {
         assertTrue(host.contains("onContentMoved?.invoke()"))
         // 来源工程由两个目标页各自接线；抽离后由控制器统一接上引擎的位移通知，并在销毁时摘掉。
         val controller = SourceContract.read("motion/morph/ContainerMorphController.kt")
-        assertTrue(controller.contains("host.onContentMoved = { lumen.notifyPositionChanged() }"))
+        assertTrue(controller.contains("host.onContentMoved = notifyPositionChanged"))
+        assertTrue(controller.contains("this(activity, host, lumen::notifyPositionChanged"))
         assertTrue(controller.contains("host.onContentMoved = null"))
     }
 }

@@ -30,7 +30,7 @@ import kotlin.math.roundToInt
  * @param resolveGeometry 每次进入形变时重新解析，旋转/分屏后不沿用旧矩形。
  * @param onClosed 收缩到来源端后真正 dismiss。
  */
-internal class IconAnchoredMotionController(
+public class IconAnchoredMotionController(
     private val layer: IconAnchoredMotionLayer,
     private val content: View,
     private val surfaceDrawable: Drawable,

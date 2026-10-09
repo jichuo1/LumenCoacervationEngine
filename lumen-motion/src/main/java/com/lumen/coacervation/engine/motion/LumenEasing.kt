@@ -12,6 +12,12 @@ import android.view.animation.PathInterpolator
  * 新增动画先按行程长度选曲线，别按"看起来更灵动"。
  */
 public object LumenEasing {
+    /** Material standard deceleration; preserves hosts using (0, 0, 0.2, 1). */
+    @JvmStatic public fun standardDecelerate(): PathInterpolator = PathInterpolator(0f, 0f, 0.2f, 1f)
+
+    /** Material standard acceleration; preserves hosts using (0.4, 0, 1, 1). */
+    @JvmStatic public fun standardAccelerate(): PathInterpolator = PathInterpolator(0.4f, 0f, 1f, 1f)
+
     /** 展开、进入：减速收尾（Material 3 emphasized decelerate）。 */
     @JvmStatic public fun emphasizedDecelerate(): PathInterpolator = PathInterpolator(0.2f, 0f, 0f, 1f)
 

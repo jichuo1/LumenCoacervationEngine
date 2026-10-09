@@ -4,7 +4,7 @@ import com.lumen.coacervation.engine.motion.MotionRect
 import kotlin.math.roundToLong
 
 /** expansion=0 为来源卡片，expansion=1 为完整备份页面。 */
-internal data class ContainerMorphFrame(
+public data class ContainerMorphFrame(
     val bounds: MotionRect,
     val cornerRadiusPx: Float,
     val surfaceAlpha: Float,
@@ -16,7 +16,7 @@ internal data class ContainerMorphFrame(
 )
 
 /** UI 动画热路径复用的帧缓冲；避免每个 progress 创建 Frame 与 Rect。 */
-internal class ContainerMorphFrameBuffer {
+public class ContainerMorphFrameBuffer {
     var left = 0f
         private set
     var top = 0f
@@ -40,7 +40,7 @@ internal class ContainerMorphFrameBuffer {
     var titleTextSizePx = 1f
         private set
 
-    internal fun set(
+    public fun set(
         left: Float,
         top: Float,
         right: Float,
@@ -66,7 +66,7 @@ internal class ContainerMorphFrameBuffer {
         this.titleTextSizePx = titleTextSizePx
     }
 
-    internal fun snapshot(): ContainerMorphFrame = ContainerMorphFrame(
+    public fun snapshot(): ContainerMorphFrame = ContainerMorphFrame(
         bounds = MotionRect(left, top, right, bottom),
         cornerRadiusPx = cornerRadiusPx,
         surfaceAlpha = surfaceAlpha,
@@ -78,12 +78,12 @@ internal class ContainerMorphFrameBuffer {
     )
 }
 
-internal enum class ContainerMorphContentTiming {
+public enum class ContainerMorphContentTiming {
     TIMED,
     PREDICTIVE
 }
 
-internal object ContainerMorphSpec {
+public object ContainerMorphSpec {
 
     /** 普通关闭使用均衡的 Fast-out-slow-in：中段完成主要位移，末尾稳定减速而不拖尾。 */
     const val CLOSE_EASING_X1 = 0.4f
@@ -148,7 +148,7 @@ internal object ContainerMorphSpec {
         return buffer.snapshot()
     }
 
-    internal fun fillFrame(
+    public fun fillFrame(
         out: ContainerMorphFrameBuffer,
         expansion: Float,
         collapsedBounds: MotionRect,
@@ -188,7 +188,7 @@ internal object ContainerMorphSpec {
         )
     }
 
-    internal fun contentFraction(
+    public fun contentFraction(
         expansion: Float,
         timing: ContainerMorphContentTiming
     ): Float = when (timing) {
@@ -204,18 +204,18 @@ internal object ContainerMorphSpec {
         ContainerMorphContentTiming.PREDICTIVE -> smoothStep(0.45f, 0.8f, expansion)
     }
 
-    internal fun smoothStep(edgeStart: Float, edgeEnd: Float, value: Float): Float {
+    public fun smoothStep(edgeStart: Float, edgeEnd: Float, value: Float): Float {
         if (edgeStart >= edgeEnd) return if (value < edgeStart) 0f else 1f
         val fraction = ((value - edgeStart) / (edgeEnd - edgeStart)).coerceIn(0f, 1f)
         return fraction * fraction * (3f - 2f * fraction)
     }
 
     /** 只在形变接近来源卡片时渐显其边框，避免全屏阶段出现无意义的外框。 */
-    internal fun collapsedChromeFraction(expansion: Float): Float =
+    public fun collapsedChromeFraction(expansion: Float): Float =
         1f - smoothStep(0f, 0.28f, expansion)
 
     /** 遮罩仅在抵达来源端的最后一小段交给下层真实入口，避免提前消失或终点双层叠色。 */
-    internal fun transitionSurfaceAlpha(
+    public fun transitionSurfaceAlpha(
         expansion: Float,
         handoffExpansion: Float
     ): Float = smoothStep(

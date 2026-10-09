@@ -17,7 +17,7 @@ import androidx.core.graphics.ColorUtils
  *
  * 尖端对齐图标，根部独立避让圆角，避免贴边时连尖端也一起被推偏。
  */
-internal class BubbleSurfaceDrawable(
+public class BubbleSurfaceDrawable(
     private val fillColor: Int,
     private val cornerRadiusPx: Float,
     private val tailHeightPx: Float,

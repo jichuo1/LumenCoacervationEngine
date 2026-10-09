@@ -10,7 +10,7 @@ import com.lumen.coacervation.engine.motion.MotionRect
  * 屏幕中央的大卡片"，适合宽度接近整屏的来源；工具栏上的 27dp 小图标飞到屏幕正中会显得莫名，
  * 所以走这条。
  */
-internal enum class BubbleTailEdge {
+public enum class BubbleTailEdge {
     /** 小角在气泡顶边，气泡位于锚点下方。 */
     TOP,
 
@@ -18,7 +18,7 @@ internal enum class BubbleTailEdge {
     BOTTOM
 }
 
-internal data class BubblePlacement(
+public data class BubblePlacement(
     /** 气泡整体（**含**小角占用的那条）在窗口内的左上角。 */
     val left: Float,
     val top: Float,
@@ -43,7 +43,7 @@ internal data class BubblePlacement(
  * 完整地从图标中心展开，并沿同一路径收回；不再在 72% 尺寸时淡出。
  * 入场曲线单调并在展开端减速到零，打断则由 continuation 接续实时速度。
  */
-internal object BubbleMotionSpec {
+public object BubbleMotionSpec {
     const val ENTER_EASING_X1 = 0.2f
     const val ENTER_EASING_Y1 = 0f
     const val ENTER_EASING_X2 = 0.2f
@@ -108,7 +108,7 @@ internal object BubbleMotionSpec {
 
 }
 
-internal object BubblePlacementSpec {
+public object BubblePlacementSpec {
 
     /**
      * @param anchor 来源图标在窗口内的矩形。

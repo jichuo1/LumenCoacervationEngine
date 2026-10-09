@@ -3,7 +3,7 @@ package com.lumen.coacervation.engine.motion.reveal
 import kotlin.math.roundToInt
 
 /** 归请求所有的滚动帧：取消后绝不再写位置，也不影响更新的请求。 */
-internal class RevealScrollMotion(
+public class RevealScrollMotion(
     private val currentPosition: () -> Int,
     private val setPosition: (Int) -> Unit
 ) {

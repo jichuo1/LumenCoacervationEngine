@@ -1,7 +1,7 @@
 package com.lumen.coacervation.engine.motion.pager
 
 /** Tracks accepted page scrolling even when NestedScrollView discards pageScroll's return value. */
-internal class PageUserScrollSession {
+public class PageUserScrollSession {
     private var navigationKey = false
     private var pageAccepted = false
 

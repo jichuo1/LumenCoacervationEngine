@@ -22,7 +22,7 @@ import com.lumen.coacervation.engine.motion.InterruptibleMotionSession
  * 打断续接同样复用 [InterruptibleMotionSession] / [InterruptibleMotionContinuation] /
  * [InterruptibleMotionPolicy]，与另外两条动画路径保持同一套语义。
  */
-internal class BubbleMotionController(
+public class BubbleMotionController(
     private val layer: BubblePanelLayer,
     /** 每帧的展开进度；供背景毛玻璃这类"跟着同一个时钟"的附属效果使用，不另开动画。 */
     private val onFrame: (Float) -> Unit = {},

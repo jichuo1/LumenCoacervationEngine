@@ -17,7 +17,7 @@ import android.widget.TextView
 import androidx.core.graphics.withSave
 import kotlin.math.roundToInt
 
-internal object ModalTitleMotionSpec {
+public object ModalTitleMotionSpec {
     /** 不猜测近义标题、不去掉标点；编辑规则与功能名称不同就只做容器动画。 */
     fun matches(source: String, target: String): Boolean =
         source.isNotBlank() && source == target
@@ -95,7 +95,7 @@ internal object ModalTitleMotionSpec {
  */
 // 仅由配对的来源/目标创建，不参与 XML inflation。
 @SuppressLint("ViewConstructor")
-internal class ModalTitleMotion private constructor(
+public class ModalTitleMotion private constructor(
     private val source: TextView,
     private val target: TextView,
     private val root: ViewGroup,

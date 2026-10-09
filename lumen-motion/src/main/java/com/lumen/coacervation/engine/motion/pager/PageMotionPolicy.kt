@@ -6,10 +6,10 @@ import kotlin.math.pow
 import kotlin.math.roundToLong
 import kotlin.math.sqrt
 
-internal data class SwitchTouchBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
+public data class SwitchTouchBounds(val left: Int, val top: Int, val right: Int, val bottom: Int)
 
 /** Motion can pause under DOWN or settle before UP; both ownerships must finish before interaction resumes. */
-internal class PageMotionLifecycle {
+public class PageMotionLifecycle {
     private var motionActive = false
     private var gestureActive = false
     val isSettled: Boolean get() = !motionActive && !gestureActive
@@ -31,7 +31,7 @@ internal class PageMotionLifecycle {
 }
 
 /** Keyboard and accessibility navigation cancel earlier user work before changing the visible page. */
-internal object PageUserNavigation {
+public object PageUserNavigation {
     fun request(
         current: Int, target: Int, count: Int,
         onUserInteraction: () -> Unit, selectPage: (Int) -> Unit
@@ -44,7 +44,7 @@ internal object PageUserNavigation {
 }
 
 /** Page coordinates increase in reading order; pixels are converted only at the View boundary. */
-internal object PageMotionPolicy {
+public object PageMotionPolicy {
     const val EDGE_LIMIT = .18f
     private const val PAGE_THRESHOLD = .22f
     private const val FLING_THRESHOLD = .5f
@@ -166,7 +166,7 @@ internal object PageMotionPolicy {
  * 长尾减速滑入，陡度随跨页距离增大，不过冲；拖动松手（false）保持原来的 Hermite 回弹。两种曲线都叠加
  * 同一个速度项，动画途中再次点击时从当前速度无缝接续。
  */
-internal class PageMotionContinuation(
+public class PageMotionContinuation(
     start: Float, target: Int, velocity: Float, duration: Long, count: Int, private val navigation: Boolean = false
 ) {
     private val last = PageMotionPolicy.lastPage(count).toFloat()

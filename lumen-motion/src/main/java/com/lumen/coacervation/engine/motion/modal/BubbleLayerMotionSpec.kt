@@ -6,7 +6,7 @@ package com.lumen.coacervation.engine.motion.modal
  * 所有层共用同一个展开进度；退场及打断只需反向推进，不另开延迟任务或第二条动画时钟。
  * 内容在表面展开后由上至下滑入，同一业务行保持一个动画单位，不拆散标题与说明。
  */
-internal object BubbleLayerMotionSpec {
+public object BubbleLayerMotionSpec {
     /** 正文起点：表面已在 0.15 处完全不透明，正文从这里才开始，不与表面淡入抢戏。 */
     const val CONTENT_START = 0.26f
 

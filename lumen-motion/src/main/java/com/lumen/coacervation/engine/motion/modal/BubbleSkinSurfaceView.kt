@@ -21,7 +21,7 @@ import kotlin.math.roundToInt
  * 每个实例必须使用调用方单独创建的背景 Drawable，不能与另一个表面共享 callback。
  */
 @SuppressLint("ViewConstructor")
-internal class BubbleSkinSurfaceView(
+public class BubbleSkinSurfaceView(
     context: Context,
     surfaceBackground: Drawable,
     private val fallbackColor: Int

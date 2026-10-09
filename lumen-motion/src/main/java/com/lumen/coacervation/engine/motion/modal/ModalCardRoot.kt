@@ -29,7 +29,7 @@ import kotlin.math.roundToInt
  * 只重录本层 display list（子 View 的 display list 复用）；离屏层只有子面板矩形大小，
  * 且只在形变期间存在。
  */
-internal class ModalCardRoot(context: Context) : FrameLayout(context) {
+public class ModalCardRoot(context: Context) : FrameLayout(context) {
     private val exclusion = Path()
     private val exclusionRect = RectF()
     private val sourceLocation = IntArray(2)
