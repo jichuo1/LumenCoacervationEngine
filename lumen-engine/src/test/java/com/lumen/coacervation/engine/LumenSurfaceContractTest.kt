@@ -7,6 +7,15 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class LumenSurfaceContractTest {
+    @Test fun frostedLensKeepsPressAndRippleDisplacementWithinTheCombinedBudget() {
+        val shader = SourceContract.read("host/DirectSurfaceProgramApi33.kt")
+            .after("half4 main(float2 coord){").before("color=saturation(color);")
+        assertTrue(shader.contains("(pressSlope+waves)*sigma"))
+        assertTrue(shader.contains("displacement+=softPoint(p)-p"))
+        assertTrue(shader.indexOf("displacement+=softPoint(p)-p") < shader.indexOf("float travel=length(displacement)"))
+        assertTrue(shader.contains("background(p+displacement)"))
+        assertFalse(shader.contains("background(softLens.x>0.5?softPoint(p)"))
+    }
     @Test fun allFadeBackendsUseTheConfiguredCurve() {
         assertTrue(session().contains("LumenSurfaceFadeDirection.BOTTOM_TO_TOP, c.sampling.fadeCurve"))
         assertTrue(SourceContract.read("host/SurfaceCaptureApi31.kt").contains("LumenSurfaceFadeDirection.BOTTOM_TO_TOP, sampling.fadeCurve"))

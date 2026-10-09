@@ -131,7 +131,8 @@ class SurfacePixelContractTest {
             // sRGB ARGB8888 source over black; the same source remains visible below the transparent surface.
             val sourceAlpha=64f/255f;val tint=.2f;val outputAlpha=tint+sourceAlpha*(1f-tint)
             for((observed,straight)in listOf(Color.red(color) to 120,Color.green(color) to 40,Color.blue(color) to 200)){
-                val expected=255f*tint+straight*sourceAlpha*(1f-tint)+straight*sourceAlpha*(1f-outputAlpha)
+                val frosted=(straight*1.08f+10f).coerceAtMost(255f)
+                val expected=255f*tint+frosted*sourceAlpha*(1f-tint)+straight*sourceAlpha*(1f-outputAlpha)
                 assertEquals("SDR premultiplied composition",expected,observed.toFloat(),4f)
             }
             actual.recycle()

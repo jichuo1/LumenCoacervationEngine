@@ -213,6 +213,11 @@ class LocalSurfaceIntegrationTest {
             Log.i("Lumen-SurfaceTest","GPU fade: window ready")
             scenario.onActivity { activity ->
                 activity.binding.close()
+                // A uniform real underlay makes the outside pixel a valid composition oracle.
+                activity.preview.removeView(activity.content)
+                activity.content=View(activity).apply { setBackgroundColor(Color.rgb(80,110,140)) }
+                activity.preview.addView(activity.content,0,FrameLayout.LayoutParams(-1,-1))
+                activity.glass.text=""
                 val custom=object:LumenContentSource {
                     override val coordinateView:View get()=activity.content
                     override fun drawContent(canvas:Canvas) { canvas.drawColor(Color.RED) }
@@ -274,10 +279,11 @@ class LocalSurfaceIntegrationTest {
                     val fraction=(y-origin+.5f)/height
                     val actual=screenshot.getPixel(x,y)
                     val background=screenshot.getPixel(outside,y)
+                    // FROSTED also applies its established +10 sRGB tone bias to captured red.
                     val expectedRed=255f*(1f-fraction)+Color.red(background)*fraction
                     assertEquals("Linear red coverage at $step/10",expectedRed,Color.red(actual).toFloat(),4f)
-                    assertEquals("Linear green coverage at $step/10",Color.green(background)*fraction,Color.green(actual).toFloat(),4f)
-                    assertEquals("Linear blue coverage at $step/10",Color.blue(background)*fraction,Color.blue(actual).toFloat(),4f)
+                    assertEquals("Linear green coverage at $step/10",10f*(1f-fraction)+Color.green(background)*fraction,Color.green(actual).toFloat(),4f)
+                    assertEquals("Linear blue coverage at $step/10",10f*(1f-fraction)+Color.blue(background)*fraction,Color.blue(actual).toFloat(),4f)
                 }
             }
             screenshot.recycle()

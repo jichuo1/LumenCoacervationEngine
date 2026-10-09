@@ -220,8 +220,9 @@ half4 main(float2 coord){
     float2 pressSlope=-delta/(sigma*sigma)*bump;
     float2 waves=rippleSlope(p,rippleA)+rippleSlope(p,rippleB)+rippleSlope(p,rippleC)+rippleSlope(p,rippleD);
     float2 displacement=direction*optics.x*edgeWeight+(pressSlope+waves)*sigma;
+    if(softLens.x>0.5)displacement+=softPoint(p)-p;
     float travel=length(displacement);if(travel>warpLimit)displacement*=warpLimit/travel;
-    half4 color=background(softLens.x>0.5?softPoint(p):p+displacement);
+    half4 color=background(p+displacement);
     if(softLens.x>0.5)color=half4(clamp(color.rgb*half(softLens.z)+half(softLens.w)*color.a,half3(0.0),half3(color.a)),color.a);
     if(softLens.x<0.5&&optics.z>0.001&&edgeWeight>0.01){
         half4 red=background(p+displacement+direction*optics.z*edgeWeight);
