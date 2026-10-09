@@ -15,7 +15,7 @@ android {
         targetSdk = providers.gradleProperty("lumen.targetSdk").get().toInt()
         versionCode = 1
         versionName = providers.gradleProperty("lumen.version").get()
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.lumen.coacervation.sample.LumenPixelTestRunner"
     }
     buildTypes {
         // 发布到 Release 页的演示包：不混淆（便于对照源码排查），用调试签名即可直接安装。
