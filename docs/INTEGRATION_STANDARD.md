@@ -194,7 +194,9 @@
 
 ## 4. 位移与手势通知
 
-- **滚动不需要通知。** 引擎自己监听 `ViewTreeObserver` 的滚动回调。
+- 引擎保留 `ViewTreeObserver` 的窗口滚动监听作保底。滚动容器**应当**在实际 scrollX/Y 更新后，同步调用 `notifyScrollPositionChanged(scrollHost)`；零位移不调用。这覆盖拖动、惯性和程序滚动，避免 `computeScroll` 在 pre-draw 之后推进位置时，玻璃用上一帧采样原点录制。
+  - 窗口监听可以在本次 pre-draw 之后收到窗口滚动通知时补刷；`OnDraw` 只复位阶段标记。`computeScroll` 在 `OnDraw` 之后才改变位置时，仍依赖滚动容器的同步通知，不能把窗口监听当作完整覆盖。
+- `notifyScrollPositionChanged` 只比较该容器后代中可见表面的实际录制位置，同步失效过期的表面；不会消费其他页或动画的窗口合并批次，也不会把未重录的位置当作已完成。调用方**必须**在页面销毁时解除自己绑定的回调。
 - 以下几种方式移动带引擎表面的 View（或它的祖先）时，宿主**必须**在**每一帧**调用 `notifyPositionChanged()`：
   - `translationX/Y`、`scaleX/Y`、`rotation`；
   - 属性动画、`ViewPropertyAnimator`；
@@ -207,7 +209,7 @@
   - 拖拽排序；
   - 展开/收起。
 - 翻页器、弹窗这类同一帧里会同时改 `translation` 和 `visibility` 的宿主，**必须**在两者**都**应用之后再通知。否则引擎会按半新半旧的几何采样一帧，出现一帧错位。
-- 这个通知很廉价，只是标记脏并按帧合并。同一帧里多次调用不会重复工作，宿主不需要自己节流。
+- `notifyPositionChanged()` 很廉价，只是标记脏并按帧合并。同一帧里多次调用不会重复工作，宿主不需要自己节流；滚动的同步通知与它分开，不提前刷新尚未完成的动画变换。
 - `onDispatchTouchEvent(event)` 的转发时机见 §2.1。
 
 ## 5. 表面
@@ -422,6 +424,7 @@ root（bindRoot）
 - [ ] `Application.onTrimMemory` 只在 15 或 ≥ 80 时调用 `releaseGraphics()`。
 - [ ] 材质开关：`selectMaterial` 返回 true 时 `recreate()`，返回 false 时恢复开关并提示。
 - [ ] 每一个属性动画位移，都逐帧调用 `notifyPositionChanged()`；翻页器在平移和可见性都应用之后才通知。
+- [ ] 滚动容器在实际 scrollX/Y 改变后调用 `notifyScrollPositionChanged(scrollHost)`，拖动、惯性、程序滚动和停下的最后一帧均覆盖；页面销毁时解除回调。
 - [ ] 悬浮栏是 `GlowBackdropTarget` 的兄弟；`bindContentSource` 已调用；`onDestroy` 前 `dispose()`。
 - [ ] 回弹的滚动容器支持嵌套滚动；宿主的按压高光检查 `ElasticGestureClaim.claimedAbove`。
 - [ ] 替换控件 Drawable 后调用了 `refreshDrawableState()`。
@@ -609,6 +612,8 @@ root（bindRoot）
 - 页内容器**应当**放行两层裁剪，否则文字链会被行矩形截断。带表面的文字控件（按钮、胶囊）不参与文字链。
 - 使用 AppCompat 开关的宿主**应当**设置 `pager.switchParts = { LumenControls.switchParts(it) ?: LumenPagePager.frameworkSwitchParts(it) }`：按在开关拨钮上时交给开关，按在开关行的文字上横滑时照常翻页。
 - 页内滚动容器**应当**用 `LumenPageScrollView`：它会把用户滚动、键盘翻页、无障碍滚动都报成"用户导航"。
+  - 构造后设置 `scroll.onScrollPositionChanged = lumen::notifyScrollPositionChanged`；这是每次实际位移的同步通知，独立于用于取消定位等操作的 `onUserScroll`。
+  - 销毁页面时设置 `scroll.onScrollPositionChanged = null`，再销毁引擎委托。
 - 销毁时调用 `textChain.dispose()`。
 
 ### 13.7 手风琴

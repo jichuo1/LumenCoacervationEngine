@@ -51,6 +51,9 @@ public interface GlowEngine : AutoCloseable {
     /** 显式动画/形变的位移通知（滚动由引擎自己监听）。 */
     fun notifyPositionChanged()
 
+    /** Actual scroll offset already changed: refresh stale descendant sampling origins synchronously. */
+    fun notifyScrollPositionChanged(scrollHost: View) = Unit
+
     /** 手指按下/抬起。 */
     fun notifyGestureActive(active: Boolean) = Unit
 

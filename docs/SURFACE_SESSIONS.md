@@ -10,6 +10,8 @@ session.setListener { id, backend, failure, firstVisible -> /* 绘制栈之外�
 binding.update(LumenSurfaceOptions(opacity = 0.8f))
 session.updatePalette(nextPalette)
 session.notifyPositionChanged()
+// 在滚动容器实际 scrollX/Y 更新后；动画仍用上面的显式位置通知。
+session.notifyScrollPositionChanged(scrollHost)
 binding.close()
 session.close()
 ```
@@ -18,6 +20,10 @@ session.close()
 
 source 应当是表面下面的现有内容，不能包含会话注入的任何表面。引擎检查窗口 token 与祖先关系，拒绝不同窗口和反馈回路。
 同一来源的多个表面共享 GPU 录制；软件路径沿用后台单飞、有界的区域透镜采样。
+滚动容器应在实际位移回调中同步调用 `session.notifyScrollPositionChanged(scrollHost)`，覆盖拖动、惯性和程序滚动，销毁时解除自己的回调。只比较受该容器影响的 source/target 相对矩阵；两者跟随同一祖先平移且相对矩阵不变时，不重录目标。通知不提前更新几何足迹，足迹只由成功的硬件绘制登记。
+来源本身就是滚动容器、或来源包含该容器时，通知只将内容采样标脏；从干净变脏时最多安排一次来源绘制帧，不在滚动回调中录制来源或新建位图。纯粹移动来源祖先只刷新相对几何，不强制重录来源像素。
+来源录制中的 child `computeScroll` 也可能更新位置；这种重入只临时记下滚动容器身份，同一容器去重，最外层同步录制结束后再补做相对几何检查。暂停、关闭或异常退出都会清空暂存，不递归录制来源。
+共享 GPU 内容正常重录且尺寸/采样倍率保持不变时，目标继续引用同一个内容节点；录制尺寸或倍率改变后，只失效该来源已有的 GPU 代理，让它们重新登记矩阵中的逆倍率。
 GPU共享录制按该来源最快表面的间隔更新；软件逐表面的像素处理分别遵守各自间隔，较慢表面在运动结束后仍补采最后的变化。
 Dialog/Story 浮层要传入本窗口的来源。来源或目标 detach 后会解绑；重新附着需要重建绑定。
 可实现 LumenContentSource；coordinateView 在绑定期间必须稳定，drawContent 在其局部坐标录制。

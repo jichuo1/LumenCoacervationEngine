@@ -1,4 +1,4 @@
-# 公开 API 清单（1.2.1，含1.2.0兼容面）
+# 公开 API 清单（1.2.2，含1.2.0/1.2.1兼容面）
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。
 >
@@ -48,7 +48,7 @@
 | 状态 | `val palette: LumenPalette`、`val isPrepared: Boolean`、`val engine: GlowEngine?`（每次现取，**不得缓存**） | §2.2、§6 |
 | | `val effectTuning: LumenEffectTuning`（自 1.1.0；首次读取后缓存） | §2.5 |
 | 会话 | `fun prepare()`、`fun bindRoot(root: View, onFailure: (() -> Unit)? = null): Boolean` | §2.3、§2.4 |
-| 通知 | `fun onDispatchTouchEvent(event: MotionEvent)`、`fun notifyPositionChanged()`、`fun bindContentSource(view: View)` | §4、§6.1 |
+| 通知 | `fun onDispatchTouchEvent(event: MotionEvent)`、`fun notifyPositionChanged()`、`fun notifyScrollPositionChanged(scrollHost: View)`、`fun bindContentSource(view: View)` | §4、§6.1 |
 | 表面 | `fun surface(color, radiusDp, role: SurfaceRole): Drawable` | §5 |
 | | `cardBackground` / `floatingBackground` / `topBarBackground` / `selectionBackground` / `modalBackground`（`color = palette.surface`，`radiusDp` 有默认值） | §5 |
 | | `motionSurfaceBackground(color, radiusDp)`、`liquidMotionSurfaceBackgroundOrNull(color, radiusDp): Drawable?` | §5.2 |
@@ -206,7 +206,7 @@
 |---|---|---|
 | `LumenPagePager(context)` | 页数不限；`selectPage(index, animate = true)`、`selectedPage`、`pagePosition`、`isSettled`、`motionAnchorY`、`switchParts`；回调 `onPageSelected` / `onMotionStarted` / `onUserInteraction` / `onPositionChanged`；`LumenPagePager.frameworkSwitchParts(view)` | §13.6 |
 | `PageTextChain(pager, headings)` | `onPositionChanged()`、`dispose()` | §13.6 |
-| `LumenPageScrollView(context, onUserScroll, onContentTouch)` | 页内滚动容器（`NestedScrollView`，实现 `LiquidStretchGestureObserver`） | §13.6 |
+| `LumenPageScrollView(context, onUserScroll, onContentTouch)` | 页内滚动容器（`NestedScrollView`，实现 `LiquidStretchGestureObserver`）；可空属性 `onScrollPositionChanged: ((View) -> Unit)?` 在实际 scrollX/Y 改变后同步回调，构造签名保持不变；销毁时设为 null | §13.6 |
 | `SectionExpansionController(card, content, chevron, density, cornerRadiusDp = 12f, notifyPositionChanged)` | `setExpanded(target, animate = true)`、`expanded`、`cancel()` | §13.7 |
 | `LumenReveal(accentColor, highlightDelayMs = 240, highlightDurationMs = 560)` | `reveal(scrollView, target, settling = [], topOffsetPx = 0, highlight = true, afterReveal = null)`（目标在横向轮播里时先横向滚到可见）、`highlight(target)`、`cancel()`、`isActive` | §13.8、§14.6 |
 
@@ -237,7 +237,7 @@
 
 - LumenSurfaceSession(context, palette, options)：不接管根/窗口/输入、不读写偏好的AutoCloseable会话。
 - bind(view, surface, source: View?) / bindSource(view, surface, source: LumenContentSource?)：可逆背景绑定。
-- setListener / updatePalette / updateOptions / notifyContentChanged / notifyPositionChanged。
+- setListener / updatePalette / updateOptions / notifyContentChanged / notifyPositionChanged / `notifyScrollPositionChanged(scrollHost: View)`。
 - pause / resume / releaseGraphics / diagnostics / close；关闭后入口无副作用。
 - LumenSurfaceBinding：id / update / diagnostics / close；旧绑定不能关闭新绑定。
 - LumenContentSource：coordinateView / excludesSurfaces / drawContent(Canvas)。

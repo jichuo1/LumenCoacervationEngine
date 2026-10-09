@@ -23,6 +23,10 @@ import android.view.ViewTreeObserver
 import androidx.annotation.MainThread
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
+import com.lumen.coacervation.engine.geometry.ScrollSamplingGeometry
+import com.lumen.coacervation.engine.geometry.ScrollSurfaceScope
+import com.lumen.coacervation.engine.geometry.CaptureSamplingGeometry
+import com.lumen.coacervation.engine.geometry.RecordingScrollNotifications
 import com.lumen.coacervation.engine.material.LiveBackdropSampler
 import com.lumen.coacervation.engine.material.LumenSampleBudget
 import com.lumen.coacervation.engine.material.LumenRawSampleProfile
@@ -53,6 +57,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     private val entries = ArrayList<Entry>()
     private val groups = ArrayList<Group>()
     private val matrices = ViewSamplingMatrix()
+    private val scrollSampleMatrix = Matrix()
+    private val scrollMatrixValues = FloatArray(9)
     private var budget = LumenSampleBudget(options.maxSoftwareBytes.toLong())
     private var nextId = 1L
     private var nextSourceId = 1L
@@ -67,7 +73,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     private var firstDraws = 0L
     private var lastFailure = LumenSurfaceFailure.NONE
     private var retiredRecordings = 0L
-    private var recordingDepth = 0
+    private val recordingScrolls = RecordingScrollNotifications<View>()
+    private val recordingDepth: Int get() = recordingScrolls.depth
+    private val applyDeferredScroll: (View) -> Unit = { host ->
+        // A failed late geometry comparison must not replace the original source-recording exception.
+        runCatching { notifyScrollPositionChanged(host) }
+    }
     private var listener: LumenSurfaceListener? = null
     private var trimRegistered = false
     private val memoryListener = LumenMemoryPressureListener { releaseGraphics() }
@@ -162,9 +173,51 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         entries.forEach { it.invalidateFrame() }
     }
 
+    /** Call after the actual scroll offset changes; animated transforms retain notifyPositionChanged. */
+    public fun notifyScrollPositionChanged(scrollHost: View) {
+        if (closed) return
+        checkMain()
+        if (paused || memoryReleased || !options.enabled || entries.isEmpty() ||
+            !scrollHost.isAttachedToWindow || !scrollHost.isShown) return
+        if (recordingDepth > 0) {
+            recordingScrolls.defer(scrollHost)
+            return
+        }
+        val windowRoot = scrollHost.rootView
+        for (group in groups) {
+            val content = group.source.coordinateView
+            if (!content.isAttachedToWindow || !content.isShown || content.rootView !== windowRoot ||
+                options.pauseWhenWindowUnfocused && !content.hasWindowFocus()) continue
+            val sourceMoved = ScrollSurfaceScope.contains(content, scrollHost) { it.parent as? View }
+            val contentChanged = content === scrollHost ||
+                ScrollSurfaceScope.contains(scrollHost, content) { it.parent as? View }
+            if (contentChanged) group.invalidateScrollContent()
+            var sampleMoved = false
+            for (entry in entries) {
+                if (entry.group !== group) continue
+                val host = entry.host.get() ?: continue
+                val c = entry.appearance
+                if (!c.enabled || !c.sampling.enabled || c.material == LumenSurfaceMaterial.STATIC ||
+                    c.sampling.backend == LumenSurfaceBackend.STATIC || c.opacity == 0f ||
+                    !host.isShown || host.alpha <= 0f || host.background !== entry.drawable) continue
+                if (!sourceMoved && !ScrollSurfaceScope.contains(host, scrollHost) { it.parent as? View }) continue
+                if (failure(host, entry) != LumenSurfaceFailure.NONE) continue
+                if (!matrices.sourceToTarget(content, host, scrollSampleMatrix)) continue
+                scrollSampleMatrix.getValues(scrollMatrixValues)
+                if (entry.scrollGeometry.needsRefresh(scrollMatrixValues)) {
+                    entry.invalidateFrame()
+                    sampleMoved = true
+                }
+            }
+            if (sampleMoved) group.sampler.invalidate()
+        }
+        // Neither source recording nor footprint publication belongs to a scroll callback.
+    }
+
     public fun pause() {
         if (closed || paused) return
         checkMain(); paused = true
+        recordingScrolls.clear()
         groups.forEach { it.sampler.suspend(); it.releaseGpu() }
         entries.forEach { it.releaseGpu(); it.resetState(LumenSurfaceFailure.PAUSED); it.invalidateFrame() }
     }
@@ -313,8 +366,10 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     }
 
     private fun recordSource(source: LumenContentSource, canvas: Canvas) {
-        recordingDepth++
-        try { source.drawContent(canvas) } finally { recordingDepth-- }
+        recordingScrolls.beginRecord()
+        try { source.drawContent(canvas) } finally {
+            recordingScrolls.finishRecord(!closed && !paused, applyDeferredScroll)
+        }
     }
 
     private fun contentPixels(): Long {
@@ -383,6 +438,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         checkMain()
         while (entries.isNotEmpty()) remove(entries.last())
         closed = true; listener = null
+        recordingScrolls.clear()
         unregisterTrim(); LumenMemoryPressureHub.removeListener(memoryListener)
     }
 
@@ -425,6 +481,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         }
         var sampler = makeSampler()
         var capture: SurfaceCaptureApi31? = null
+        private val captureGeometry = CaptureSamplingGeometry()
         var dirty = true
         var failed = false
         var budgetRejected = false
@@ -454,6 +511,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         }
         override fun onWindowFocusChanged(hasFocus: Boolean) { dirty = true; entries.forEach { if (it.group === this) it.invalidateFrame() } }
         override fun onScrollChanged() { dirty = true; timeline.contentChanged(); sampler.invalidate() }
+        fun invalidateScrollContent() {
+            if (!dirty) {
+                dirty = true
+                source.coordinateView.postInvalidateOnAnimation()
+            }
+            timeline.contentChanged()
+            sampler.invalidate()
+        }
         override fun onGlobalLayout() { dirty = true; timeline.contentChanged(); sampler.invalidate() }
         override fun onViewAttachedToWindow(v: View) { observe(); dirty = true; sampler.resume() }
         override fun onViewDetachedFromWindow(v: View) {
@@ -528,6 +593,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         budgetRejected = false; dirty = false; lastRecording = now; recordings++
                         graphics.contentRecorded(if(measuredStart!=0L)System.nanoTime()-measuredStart else 0L)
                         timeline.completed(timeline.epoch,timeline.contentVersion,now,System.nanoTime())
+                        if (captureGeometry.update(content.width, content.height, current.recordedWidth,
+                                current.recordedHeight, current.scaleX, current.scaleY)) {
+                            // The proxy baked in inverse recording scale; unchanged content-only records share it.
+                            for (entry in entries) if (entry.group === this && entry.gpu != null &&
+                                entry.stateBackend == LumenSurfaceBackend.GPU && entry.host.get()?.background === entry.drawable) {
+                                entry.invalidateFrame()
+                            }
+                        }
                     }
                     else { budgetRejected = true; lastFailure = LumenSurfaceFailure.BUDGET_EXCEEDED }
                 } catch (_: Throwable) { failed = true; releaseGpu(); lastFailure = LumenSurfaceFailure.GPU_FAILED }
@@ -545,6 +618,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         fun releaseGpu() {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) capture?.close()
             capture = null; dirty = true; budgetRejected = false
+            captureGeometry.clear()
         }
         fun release() { timeline.sourceChanged();releaseGpu(); sampler.suspend(); autoSuspended = true }
         fun close() {
@@ -585,6 +659,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         var enhancements=LumenSurfaceEnhancements.DEFAULT
         val graphics=LumenGraphicsCounters()
         val frame=LumenSurfaceRenderState()
+        val scrollGeometry = ScrollSamplingGeometry()
         val quality=LumenSurfaceQualityPolicy()
         var pressureHint=0f
         var direct: DirectSurfaceProgramApi33?=null
@@ -711,6 +786,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         private val rectangle = RectF()
         private val clip = Path()
         private val sampleMatrix = Matrix()
+        private val scrollGeometryValues = FloatArray(9)
         private val gradientMatrix = Matrix()
         private val shapeA=Path();private val shapeB=Path();private val cornerValues=FloatArray(4);private val pathRadii=FloatArray(8)
         private val rawMatrix=Matrix();private val rawPaint=Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -765,6 +841,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val alpha = c.opacity * alphaValue / 255f
             var visibleEffect = false
             var enhancedPainted=false
+            var sampleGeometryReady = false
             val save = canvas.save()
             if (c.clipBackground&&!entry.enhanced()) canvas.clipPath(clip)
             try {
@@ -816,6 +893,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && group.capture?.recorded == true) {
                             try {
                                 if (matrices.sourceToTarget(content, host, sampleMatrix)) {
+                                    sampleGeometryReady = true
+                                    // SurfaceCapture.draw pre-scales sampleMatrix in place; keep the pure relative map.
+                                    sampleMatrix.getValues(scrollGeometryValues)
                                     val blur=if(c.sampling.blurEnabled)c.sampling.blurRadiusDp else 0f
                                     val pad = ((maxOf(20f * c.sampling.refractionStrength, blur * 2f) * density).roundToInt() + 2)
                                     val area=(bounds.width().toLong() + 2 * pad) * (bounds.height().toLong() + 2 * pad)
@@ -879,6 +959,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 drawRegion(rectangle,Color.CYAN);drawRegion(entry.outputBounds,Color.BLUE);rectangle.set(bounds)
             }
             entry.report(backend, reason, (canvas.isHardwareAccelerated || !host.isHardwareAccelerated) && visibleEffect && host.isShown && host.isAttachedToWindow && alpha > 0f)
+            if (canvas.isHardwareAccelerated && backend != LumenSurfaceBackend.STATIC && visibleEffect &&
+                host.isShown && host.isAttachedToWindow && alpha > 0f) {
+                val content = entry.group?.source?.coordinateView
+                if (content != null && (sampleGeometryReady || matrices.sourceToTarget(content, host, sampleMatrix))) {
+                    if (!sampleGeometryReady) sampleMatrix.getValues(scrollGeometryValues)
+                    entry.scrollGeometry.record(scrollGeometryValues)
+                }
+            }
         }
         private fun configureEnhancedPath(c: LumenSurfaceOptions,host: View) {
             val f=entry.frame;val e=entry.enhancements.geometry

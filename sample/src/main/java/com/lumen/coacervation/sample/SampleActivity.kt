@@ -143,6 +143,7 @@ class SampleActivity : AppCompatActivity() {
             headings += heading
             build(content, palette)
             val scroll = LumenPageScrollView(this, onUserScroll = { reveal.cancel() }, onContentTouch = {}).apply {
+                onScrollPositionChanged = lumen::notifyScrollPositionChanged
                 isFillViewport = true
                 isVerticalScrollBarEnabled = false
                 clipToPadding = false
@@ -428,6 +429,7 @@ class SampleActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        scrolls.forEach { it.onScrollPositionChanged = null }
         backgroundPreviewLoader?.close()
         backgroundPreviewLoader = null
         chrome?.dispose()

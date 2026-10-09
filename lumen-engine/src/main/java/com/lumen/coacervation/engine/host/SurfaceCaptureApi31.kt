@@ -29,6 +29,10 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         private set
     var scaleY = 1f
         private set
+    var recordedWidth = 0
+        private set
+    var recordedHeight = 0
+        private set
     val recorded: Boolean get() = content.recorded
     var pixels = 0L
         private set
@@ -50,6 +54,8 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
             canvas.scale(scaleX, scaleY)
             source.drawContent(canvas)
         } finally { content.end() }
+        recordedWidth = width
+        recordedHeight = height
         return true
     }
 

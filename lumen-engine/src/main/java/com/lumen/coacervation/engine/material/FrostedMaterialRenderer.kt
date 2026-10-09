@@ -38,6 +38,7 @@ import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.liquid.LiquidMotionSurfaceFrameProvider
 import com.lumen.coacervation.engine.geometry.SamplingMatrixMath
+import com.lumen.coacervation.engine.geometry.ScrollSurfaceScope
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.model.LumenPalette
@@ -358,6 +359,12 @@ internal class FrostedMaterialRenderer(
      */
     override fun notifyPositionChanged() = onPositionChanged()
 
+    override fun notifyScrollPositionChanged(scrollHost: View) {
+        if (!lifecycle.canWork || !scrollHost.isAttachedToWindow) return
+        live.invalidate()
+        flushPositionChanges(scrollHost.rootView, scrollHost)
+    }
+
     private fun onPositionChanged() {
         if (!lifecycle.canWork) return
         live.invalidate()
@@ -374,7 +381,7 @@ internal class FrostedMaterialRenderer(
         }
     }
 
-    private fun flushPositionChanges(windowRoot: View) {
+    private fun flushPositionChanges(windowRoot: View, scrollHost: View? = null) {
         if (!lifecycle.canWork) return
         // 本段只读几何；所有可见表面共用祖先前缀，备忘严格不跨回调保存。
         samplingMatrices.withAncestorMemo {
@@ -385,6 +392,7 @@ internal class FrostedMaterialRenderer(
                 val (view, position) = iterator.next()
                 if (!view.isAttachedToWindow) { iterator.remove(); continue }
                 if (view.rootView !== windowRoot || !view.isShown) continue
+                if (scrollHost != null && !ScrollSurfaceScope.contains(view, scrollHost) { it.parent as? View }) continue
                 if (!sourceValid || !samplingMatrices.localToScreen(view, movedTransform) ||
                     !SamplingMatrixMath.equal(position.target, movedTransform) ||
                     !SamplingMatrixMath.equal(position.source, sourceTransform)) view.invalidate()

@@ -5,6 +5,7 @@ import android.content.Context
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.View
 import android.view.ViewConfiguration
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.core.widget.NestedScrollView
@@ -19,12 +20,20 @@ public class LumenPageScrollView(
     private val onContentTouch: () -> Unit
 ) :
     NestedScrollView(context), LiquidStretchGestureObserver {
+    /** Bind after construction; owners clear this callback when disposing their page. */
+    public var onScrollPositionChanged: ((View) -> Unit)? = null
+
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
     private var pointer = MotionEvent.INVALID_POINTER_ID
     private var originX = 0f
     private var originY = 0f
     private var notified = false
     private val keySession = PageUserScrollSession()
+
+    override fun onScrollChanged(l: Int, t: Int, oldl: Int, oldt: Int) {
+        super.onScrollChanged(l, t, oldl, oldt)
+        if (l != oldl || t != oldt) onScrollPositionChanged?.invoke(this)
+    }
 
     override fun executeKeyEvent(event: KeyEvent): Boolean {
         val navigationKey = event.action == KeyEvent.ACTION_DOWN && when (event.keyCode) {

@@ -118,10 +118,19 @@ public class LumenActivityDelegate @JvmOverloads constructor(
     /**
      * 显式位移通知：用 `translationX/Y`、`scale`、属性动画移动了带引擎表面的 View 时，**每一帧**都要调用。
      * 属性动画不触发滚动回调、也不重录子 View 的显示列表；不通知的话玻璃采样会停在动画中途的位置。
-     * 普通滚动由引擎自己监听，不需要调用。
+     * 滚动位置的同步通知使用 [notifyScrollPositionChanged]，不提前消费本方法合并的动画批次。
      */
     public fun notifyPositionChanged() {
         if (!lifecycleEnded) session?.notifyPositionChanged()
+    }
+
+    /**
+     * 在滚动容器实际更新 scrollX/Y 后调用，包含拖动、惯性和程序滚动。
+     * 只同步刷新该容器后代中采样原点已过期的可见表面；零位移时不调用。
+     * ViewTreeObserver 的窗口滚动监听仍作保底，调用方负责解绑自己的滚动回调。
+     */
+    public fun notifyScrollPositionChanged(scrollHost: View) {
+        if (!lifecycleEnded) session?.notifyScrollPositionChanged(scrollHost)
     }
 
     /** 悬浮表面下方的内容层（必须是悬浮表面的兄弟而不是祖先），供柔光的软件透镜采样。 */

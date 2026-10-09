@@ -104,8 +104,7 @@ class LiquidFeedbackIsolationTest {
         // flushSurfaceRefresh 的"表面原点真的变化"门控，否则点击/按压
         // 也会在无事发生时把底图 real→stable 闪一下（2026-09-21 真机实证）。
         val notify = renderer.after("fun notifyPositionChanged()")
-            .substringBefore("private fun invalidateMovedSurfaces()", "MISSING")
-        assertNotEquals("MISSING", notify)
+            .before("override fun notifyScrollPositionChanged(")
         assertFalse("transform callbacks must not suppress unconditionally",
             notify.contains("suppressRealtimeSamplingWhileScrolling()"))
         val flush = renderer.after("private fun flushSurfaceRefresh(")
