@@ -139,8 +139,8 @@ jobs:
           ram-size: 4096M
           heap-size: 576M
           disk-size: 4096M
-          # API34's indirect path loses ColorBuffers and disconnects; use the supported direct mode.
-          emulator-options: -no-window -gpu ${{ matrix.api-level == 34 && 'swiftshader' || 'swiftshader_indirect' }} ${{ matrix.api-level == 34 && '-feature -Vulkan' || '' }} -noaudio -no-boot-anim -camera-back none -show-kernel
+          # API34 SwiftShader loses ColorBuffers; validate real pixels through the supported Mesa backend.
+          emulator-options: -no-window -gpu ${{ matrix.api-level == 34 && 'lavapipe' || 'swiftshader_indirect' }} -noaudio -no-boot-anim -camera-back none -show-kernel
           script: |
             bash .github/scripts/run-smoke.sh || { timeout 15s adb logcat -d -b crash || true; exit 1; }
 
