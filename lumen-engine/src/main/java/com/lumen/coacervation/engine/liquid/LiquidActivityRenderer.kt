@@ -30,6 +30,7 @@ import androidx.core.graphics.createBitmap
 import com.lumen.coacervation.engine.background.LiquidBackgroundMode
 import com.lumen.coacervation.engine.background.LiquidBackgroundStore
 import com.lumen.coacervation.engine.geometry.SamplingMatrixMath
+import com.lumen.coacervation.engine.geometry.ScrollSurfaceScope
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.glow.GlowBackdropTarget
 import com.lumen.coacervation.engine.glow.GlowChromeGlassApi31
@@ -55,6 +56,7 @@ private class LiquidWindowRefresh(
     val observer: WeakReference<ViewTreeObserver>,
     val preDraw: ViewTreeObserver.OnPreDrawListener,
     val scroll: ViewTreeObserver.OnScrollChangedListener,
+    val draw: ViewTreeObserver.OnDrawListener,
     val batch: LiquidRefreshBatch = LiquidRefreshBatch()
 ) {
     val position = LiquidWindowPositionState()
@@ -1227,6 +1229,39 @@ internal class LiquidActivityRenderer(
         queueSurfaceRefresh(contentChanged = false)
     }
 
+    /** Scroll offsets may advance in computeScroll, after the window's pre-draw already ran. */
+    @MainThread
+    override fun notifyScrollPositionChanged(scrollHost: View) {
+        val root = boundRoot ?: return
+        if (closed || !activityVisible || !scrollHost.isAttachedToWindow || !scrollHost.isShown || surfaceViews.isEmpty()) return
+        val windowRoot = scrollHost.rootView
+        if (!refreshWindows.containsKey(windowRoot)) return
+        if (windowRoot === root.rootView) {
+            lastContentShiftNanos = System.nanoTime()
+            suppressionFromMorphOnly = false
+            suppressRealtimeSamplingWhileScrolling()
+        }
+        try {
+            val iterator = surfaceViews.entries.iterator()
+            while (iterator.hasNext()) {
+                val (view, footprint) = iterator.next()
+                if (!view.isAttachedToWindow) { iterator.remove(); continue }
+                if (view.rootView !== windowRoot ||
+                    !ScrollSurfaceScope.contains(view, scrollHost) { it.parent as? View }) continue
+                val visible = isSurfacePotentiallyVisible(view)
+                if (!visible) {
+                    footprint.refreshState.shouldRefresh(visible = false, originChanged = false, contentChanged = false)
+                    continue
+                }
+                val transformChanged = surfaceCoordinates.localToScreen(view, refreshSurfaceTransform) &&
+                    (!footprint.hasTransform || !SamplingMatrixMath.equal(footprint.screenTransform, refreshSurfaceTransform))
+                val originChanged = !footprint.matchesOrigin(movedSurfaceLocation[0], movedSurfaceLocation[1]) || transformChanged
+                if (footprint.refreshState.shouldRefresh(visible = true, originChanged = originChanged, contentChanged = false)) view.invalidate()
+            }
+        } finally { refreshWindowRoot = null }
+        // Do not take the window batch or advance footprints: only actual hardware draws own them.
+    }
+
     /**
      * 只失效采样原点已经过期的表面。
      *
@@ -1357,6 +1392,7 @@ internal class LiquidActivityRenderer(
                 // 输入法 adjustPan / 整窗移动不经过 View 动画与滚动通知。
                 // 仅比较一份根变换；稳定窗口不遍历或失效所有表面。
                 val state = refreshWindows[root]
+                state?.batch?.beforeDraw()
                 if (state != null && surfaceCoordinates.localToScreen(root, refreshRootTransform) &&
                     state.position.update(refreshRootTransform)) state.batch.mark(contentChanged = false)
                 flushSurfaceRefresh(root)
@@ -1364,19 +1400,34 @@ internal class LiquidActivityRenderer(
             true
         }
         val scroll = ViewTreeObserver.OnScrollChangedListener {
-            rootRef.get()?.let { refreshWindows[it]?.batch?.mark(contentChanged = false) }
+            rootRef.get()?.let { root ->
+                val state = refreshWindows[root] ?: return@let
+                state.batch.mark(contentChanged = false)
+                // A later pre-draw listener may scroll after ours: repair before this frame records.
+                if (state.batch.isAfterPreDraw) flushSurfaceRefresh(root)
+            }
         }
-        val state = LiquidWindowRefresh(WeakReference(observer), preDraw, scroll)
+        val draw = ViewTreeObserver.OnDrawListener { rootRef.get()?.let { refreshWindows[it]?.batch?.drawn() } }
+        val state = LiquidWindowRefresh(WeakReference(observer), preDraw, scroll, draw)
         if (surfaceCoordinates.localToScreen(windowRoot, refreshRootTransform)) state.position.update(refreshRootTransform)
         refreshWindows[windowRoot] = state
         observer.addOnPreDrawListener(preDraw)
         observer.addOnScrollChangedListener(scroll)
+        observer.addOnDrawListener(draw)
     }
 
     private fun removeRefreshWindow(state: LiquidWindowRefresh) {
         state.observer.get()?.takeIf { it.isAlive }?.let {
             it.removeOnPreDrawListener(state.preDraw)
             it.removeOnScrollChangedListener(state.scroll)
+            runCatching { it.removeOnDrawListener(state.draw) }.onFailure {
+                // ViewTreeObserver rejects removal during its OnDraw dispatch; close must still finish.
+                mainHandler.post {
+                    state.observer.get()?.takeIf { observer -> observer.isAlive }?.let { observer ->
+                        runCatching { observer.removeOnDrawListener(state.draw) }
+                    }
+                }
+            }
         }
     }
 

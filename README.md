@@ -19,7 +19,7 @@
 [![JitPack](https://jitpack.io/v/jichuo1/LumenCoacervationEngine.svg)](https://jitpack.io/#jichuo1/LumenCoacervationEngine)
 [![Issues](https://img.shields.io/github/issues/jichuo1/LumenCoacervationEngine?style=flat-square)](https://github.com/jichuo1/LumenCoacervationEngine/issues)
 
-**[直接下载 Demo 1.2.1 APK](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/lumen-demo-1.2.1.apk)** · [查看最新版发布页](https://github.com/jichuo1/LumenCoacervationEngine/releases/latest)
+**[直接下载 Demo 1.2.2 APK](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.2/lumen-demo-1.2.2.apk)** · [查看最新版发布页](https://github.com/jichuo1/LumenCoacervationEngine/releases/latest)
 
 [功能](#功能) · [下载 Demo](#下载-demo) · [材质](#两套材质) · [要求](#要求) · [接入](#接入) · [构建](#构建) · [文档](#文档) · [出处与许可](#出处与许可)
 
@@ -67,15 +67,17 @@
 
 ## 下载 Demo
 
-**当前正式 Demo：1.2.1。点击下面的 APK 链接即可下载，安装后直接体验。**
+**当前正式 Demo：1.2.2。点击下面的 APK 链接即可下载，安装后直接体验。**
 
 | 入口 | 用途 |
 |---|---|
-| **[下载 Demo 1.2.1 APK](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/lumen-demo-1.2.1.apk)** | 当前正式演示安装包 |
+| **[下载 Demo 1.2.2 APK](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.2/lumen-demo-1.2.2.apk)** | 当前正式演示安装包 |
 | [查看最新版发布页](https://github.com/jichuo1/LumenCoacervationEngine/releases/latest) | 始终前往最新正式版本；后续更新从这里查看 |
-| [下载 SHA-256 校验清单](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.1/SHA256SUMS.txt) | 核对安装包与库产物的完整性 |
+| [下载 SHA-256 校验清单](https://github.com/jichuo1/LumenCoacervationEngine/releases/download/1.2.2/SHA256SUMS.txt) | 核对安装包与库产物的完整性 |
 
 1.2.1增加可选传感器光源、薄膜／纸张／有限能量、有限池粒子，以及分别接入Lottie、PAG、Rive的独立模块。全部参数和能力边界见[下一轮功能与接入](docs/P2_EFFECTS_AND_ASSETS.md)；所有所选模块使用同一版本。
+
+1.2.2修复快速滚动时玻璃采样原点滞后，并补齐Activity与局部会话的实际滚动通知。滚动容器应在实际位置改变后接入 `notifyScrollPositionChanged(scrollHost)`；使用 `LumenPageScrollView` 时构造后绑定 `onScrollPositionChanged`。详见[位移接入标准](docs/INTEGRATION_STANDARD.md#4-位移与手势通知)和[局部会话说明](docs/SURFACE_SESSIONS.md)。
 
 | 页 | 可以看到 |
 |:---|:---|
@@ -112,7 +114,7 @@
 | 项 | 说明 |
 |:---|:---|
 | **系统** | Android 8.1 及以上（`minSdk 27`） |
-| **版本** | 1.2.1（契约版本 1，规则见 [`docs/VERSIONING.md`](docs/VERSIONING.md)） |
+| **版本** | 1.2.2（契约版本 1，规则见 [`docs/VERSIONING.md`](docs/VERSIONING.md)） |
 | **依赖** | 引擎本体只依赖 AndroidX core |
 | **可选** | `lumen-motion` 不依赖 AppCompat；`lumen-controls` 依赖 AppCompat + RecyclerView |
 
@@ -153,10 +155,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.2.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.2.2")
     // 可选模块，版本号保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.2.1")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.2.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.2.2")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.2.2")
 }
 ```
 
@@ -168,13 +170,13 @@ includeBuild("../LumenCoacervationEngine")
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.lumen.coacervation.engine:lumen-engine:1.2.1")
+    implementation("com.lumen.coacervation.engine:lumen-engine:1.2.2")
 }
 ```
 
 方式 C —— 本地 maven 仓：`./gradlew publishAllPublicationsToProjectLocalRepository`，产物在 `build/repo`，加进 `repositories` 后按 `com.lumen.coacervation.engine` 坐标引用。
 
-1.2增加四角、融合选择器、按压、光源、渐进模糊和独立细节预算，全部开关/调节和平台回退见[`docs/VISUAL_EFFECTS.md`](docs/VISUAL_EFFECTS.md)。所有所选模块使用同一版本1.2.1，Release附件和JitPack坐标均对应该版本标签。
+1.2增加四角、融合选择器、按压、光源、渐进模糊和独立细节预算，全部开关/调节和平台回退见[`docs/VISUAL_EFFECTS.md`](docs/VISUAL_EFFECTS.md)。所有所选模块使用同一版本1.2.2，Release附件和JitPack坐标均对应该版本标签。
 
 **2. Activity**：组合式委托，任何 Activity 基类都能用。
 

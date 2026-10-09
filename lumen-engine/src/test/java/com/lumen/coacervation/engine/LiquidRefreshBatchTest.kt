@@ -10,6 +10,46 @@ import com.lumen.coacervation.engine.contract.after
 import com.lumen.coacervation.engine.contract.before
 
 class LiquidRefreshBatchTest {
+    @Test fun lateScrollKeepsFramePhaseAndPendingContentUntilTheSingleWindowFlush() {
+        val batch = LiquidRefreshBatch()
+        assertFalse(batch.isAfterPreDraw)
+        batch.mark(false)
+        assertEquals(LiquidRefreshBatch.POSITION, batch.take())
+        batch.beforeDraw()
+        assertTrue(batch.isAfterPreDraw)
+        assertEquals(0, batch.take())
+        batch.mark(true, captureOnly = true)
+        batch.mark(true)
+        batch.mark(false)
+        assertTrue(batch.isAfterPreDraw)
+        assertEquals(LiquidRefreshBatch.POSITION or LiquidRefreshBatch.CONTENT or LiquidRefreshBatch.CAPTURE, batch.take())
+        assertEquals(0, batch.take())
+        assertTrue("Taking flags must not reset the traversal phase", batch.isAfterPreDraw)
+        batch.drawn()
+        assertFalse(batch.isAfterPreDraw)
+        batch.mark(false)
+        assertEquals("Post-OnDraw work stays pending; actual scroll uses the scoped bridge", LiquidRefreshBatch.POSITION, batch.take())
+    }
+
+    @Test fun framePhaseAndFlagsRemainIndependentAcrossDialogAndActivity() {
+        val activity = LiquidRefreshBatch()
+        val dialog = LiquidRefreshBatch()
+        activity.beforeDraw()
+        dialog.mark(true)
+        activity.mark(false)
+        assertTrue(activity.isAfterPreDraw)
+        assertFalse(dialog.isAfterPreDraw)
+        activity.drawn()
+        assertEquals(LiquidRefreshBatch.CONTENT, dialog.take())
+        assertEquals(LiquidRefreshBatch.POSITION, activity.take())
+        repeat(120) {
+            activity.beforeDraw()
+            assertEquals(0, activity.take())
+            activity.drawn()
+            assertFalse(activity.isAfterPreDraw)
+        }
+    }
+
     @Test fun preDrawReadsFinalTransformsOnceAndMergesNewContentInTheSameWindow() {
         val batch = LiquidRefreshBatch()
         var position = 0

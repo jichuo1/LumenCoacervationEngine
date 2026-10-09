@@ -156,6 +156,11 @@ internal class ActivitySkinSession private constructor(
         if (!isClosed) activeEngine.notifyPositionChanged()
     }
 
+    @MainThread
+    fun notifyScrollPositionChanged(scrollHost: View) {
+        if (!isClosed) activeEngine.notifyScrollPositionChanged(scrollHost)
+    }
+
     /**
      * 手势起止。Liquid 用它把"抑制解除"这类重同步挪出手指按着的时段——那是一次
      * 两次整组表面重录加一次全屏 PixelCopy，落在新手势头几帧上就是可感知的迟滞。

@@ -2,6 +2,22 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
+## [1.2.2] - 2026-10-09
+
+### 修复
+
+- 玻璃表面在拖动、惯性或程序滚动中仍重放旧采样矩阵的问题：增加实际位置更新后的同步通知，按滚动容器作用域只刷新过期的表面；窗口监听补刷晚于pre-draw的滚动，动画通知继续按帧合并。
+- 局部会话的source/target相对位置变化，以及来源录制期间child computeScroll引发的重入；同一祖先平移且相对矩阵不变时不重录目标，录制重入在最外层finally后去重补查，暂停、关闭和异常退出均清空暂存。
+- 共享GPU来源录制尺寸或采样倍率变化后，已有代理仍使用旧逆倍率；只在成功录制且几何变化时刷新相应GPU代理，普通内容更新继续共享节点。
+- 后台Activity的迟到滚动通知，以及OnDraw分发期间移除监听的异常中断清理问题。
+
+### 新增
+
+- `LumenActivityDelegate.notifyScrollPositionChanged(scrollHost)`与`LumenSurfaceSession.notifyScrollPositionChanged(scrollHost)`；`GlowEngine`提供默认实现。
+- `LumenPageScrollView.onScrollPositionChanged`可空属性，在实际scrollX/Y改变后同步回调，构造后绑定、销毁时清空；原三参数构造保持不变。
+
+本轮按用户指定编号发布为1.2.2，契约版本仍为1；版本规则与接入说明已同步。单测、构建和静态审计不等于真实设备视觉验收，发布Demo仍由四版本模拟器门禁控制。
+
 ## [1.2.1] - 2026-10-08
 
 ### 新增
