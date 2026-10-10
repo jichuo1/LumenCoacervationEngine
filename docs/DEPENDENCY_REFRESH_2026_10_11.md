@@ -59,3 +59,11 @@ Sample 发布 Demo 默认仍不混淆；显式 `-Plumen.verifySampleR8=true` 启
 R8 初次真实运行发现 Lottie 6.7.1 固定要求的 Okio 1.17.6 缺少可选 JSR-305 `javax.annotation.Nullable`。已读取 [Okio 1.17.6 官方 sources JAR](https://repo.maven.apache.org/maven2/com/squareup/okio/okio/1.17.6/okio-1.17.6-sources.jar)：全部 25 处使用只有 import 与注解，没有运行时调用。仅在可选 Lottie 模块增加该注解的精确 `-dontwarn`，没有全包忽略、keep-all 或引入 JSR-305 新依赖。重新运行 R8 成功，六个约定携带许可证的库 AAR 和 sources 继续校验；Rive SDK 11.14.1 的许可证与旧样本 11.14.0 的来源分开保留。
 
 本地门禁不等同于 Actions 已运行或所有系统版本实际播放验收；远端与设备结果须另行记录。
+
+## 高密度设备的既有 P2 夹具
+
+扩展实际设备验收时发现三条粒子/程序效果断言失败。升级前保留的同签名 Sample APK 对照也在相同三条失败；旧夹具使用 `MATCH_PARENT × 150dp`，在高密度设备上面积超过效果层默认 `262144` 物理像素预算，生产代码正确返回 BUDGET，而夹具假设必能发射和编译 shader。
+
+仅将测试目标限制为最多 `480 × 320` 物理像素，等待真实重布局，并明确断言它位于原预算内。生产上限、渲染保护、粒子生命期、shader 构建次数、实际窗口像素差和关闭归还断言均保留；不把提高生产预算当成测试修复。
+
+同一 Android SDK 37 设备上，旧 Sample + 原夹具的三项对照全部失败；旧 Sample + 有界夹具的全部 13 项 P2 通过（15.835 秒）。最终候选恢复安装后，用同一测试包连续运行 P2 13 项与新旧裁剪 13 项，26 项全部通过（32.825 秒），其中包含真实 Lottie/PAG/Rive 加载、Rive 状态输入、GPU 程序效果像素与 portal 最终窗口 PixelCopy。回拉候选 Sample 的 APK 字节与本地产物 SHA-256 一致。设备结果不代表 API 27/31/33/34 的新候选已在远端执行。

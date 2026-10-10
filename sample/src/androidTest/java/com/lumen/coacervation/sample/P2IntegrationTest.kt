@@ -24,8 +24,25 @@ import java.util.concurrent.atomic.AtomicInteger
 @RunWith(AndroidJUnit4::class)
 class P2IntegrationTest {
     @get:org.junit.Rule val hardwareOutput=HardwareOutputRule()
-    private fun ready(s:ActivityScenario<P2SandboxActivity>){var ready=false;val end=SystemClock.uptimeMillis()+5000
-        while(!ready&&SystemClock.uptimeMillis()<end){s.onActivity{ready=it.target.width>0&&it.target.hasWindowFocus()};if(!ready)SystemClock.sleep(20)};assertTrue(ready)}
+    private fun ready(s:ActivityScenario<P2SandboxActivity>){
+        var ready=false;var end=SystemClock.uptimeMillis()+5000
+        while(!ready&&SystemClock.uptimeMillis()<end){s.onActivity{ready=it.target.width>0&&it.target.hasWindowFocus()};if(!ready)SystemClock.sleep(20)}
+        assertTrue("P2 test window must finish its initial layout",ready)
+        var width=0;var height=0
+        s.onActivity{a->
+            // Production effects deliberately stop above their pixel budget.
+            // MATCH_PARENT × 150dp exceeds it on high-density physical devices;
+            // keep this rendering fixture bounded without raising that budget.
+            width=minOf(a.target.width,480);height=minOf(a.target.height,320)
+            if(a.target.width!=width||a.target.height!=height){
+                a.target.layoutParams=a.target.layoutParams.apply{this.width=width;this.height=height}
+            }
+        }
+        ready=false;end=SystemClock.uptimeMillis()+5000
+        while(!ready&&SystemClock.uptimeMillis()<end){s.onActivity{ready=it.target.width==width&&it.target.height==height&&!it.target.isLayoutRequested&&it.target.hasWindowFocus()};if(!ready)SystemClock.sleep(20)}
+        assertTrue("Bounded P2 fixture must complete a real relayout",ready)
+        assertTrue("Fixture must fit the unchanged default effect budget",width.toLong()*height<=LumenEffectOptions().maximumRenderPixels)
+    }
     private fun window(s:ActivityScenario<P2SandboxActivity>):Bitmap{
         val latch=CountDownLatch(1);var bitmap:Bitmap?=null;var result=-1
         s.onActivity{a->bitmap=Bitmap.createBitmap(a.window.decorView.width,a.window.decorView.height,Bitmap.Config.ARGB_8888);PixelCopy.request(a.window,bitmap!!,{result=it;latch.countDown()},Handler(Looper.getMainLooper()))}
