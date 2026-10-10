@@ -2,7 +2,7 @@
 #
 # - PR 与 push main：只构建并测试，不发布。
 # - 发布新 Release：自动把演示包附到该 Release。
-# - 手动运行（workflow_dispatch）：从指定已发布 tag 构建并附到该 Release（默认 1.2.5），同名文件覆盖。
+# - 手动运行（workflow_dispatch）：从指定已发布 tag 构建并附到该 Release（默认 1.2.6），同名文件覆盖。
 name: Demo APK
 
 on:
@@ -46,7 +46,7 @@ on:
       tag:
         description: '要附加演示包的 Release tag'
         required: true
-        default: '1.2.5'
+        default: '1.2.6'
 
 concurrency:
   group: demo-${{ github.ref }}-${{ github.event_name }}
