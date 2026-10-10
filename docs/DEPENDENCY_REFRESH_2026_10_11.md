@@ -14,6 +14,8 @@
 
 Gradle 发行包 SHA-256 为 `dce76f55f8e251a3a1f130eb120f30b3d271de2b76c9b0729d316b5a1b6dc01f`；用已校验的发行版生成 wrapper，wrapper JAR 对照[官方 SHA-256](https://services.gradle.org/distributions/gradle-9.8.1-wrapper.jar.sha256)为 `3b8a25775a69158b5ad2b1d17a80a88dc7b40a352a73eb27d06c612a7ce68e98`。Windows 短临时目录启动脚本保留，不以通用生成脚本覆盖它。
 
+SDK Build Tools 对照[Google 官方 SDK 元数据](https://dl.google.com/android/repository/repository2-3.xml)固定到最新稳定 `37.0.0`，九个 Android 模块统一读取 `lumen.buildTools`，避免 AGP 默认 `36.0.0` 与 CI 安装版本分叉。元数据同样列出 stable `platforms;android-37.2`，本轮保留 compile/target API 37 的现有基础平台语义，minor SDK API 迁移不混入控件修复；minSdk 27 不变。
+
 Kotlin 继续只在根脚本声明插件版本供 AGP 内置编译器读取，各模块不 apply Kotlin Android 插件。AGP 9.5 alpha 与 Kotlin 2.5 beta 属预览版，本次不采用。
 
 ## 当前已经是最新稳定版

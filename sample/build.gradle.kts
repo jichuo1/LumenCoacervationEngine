@@ -8,6 +8,7 @@ plugins {
 android {
     namespace = "com.lumen.coacervation.sample"
     compileSdk = providers.gradleProperty("lumen.compileSdk").get().toInt()
+    buildToolsVersion = providers.gradleProperty("lumen.buildTools").get()
 
     defaultConfig {
         applicationId = "com.lumen.coacervation.sample"

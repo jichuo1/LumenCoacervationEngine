@@ -12,6 +12,7 @@ version = providers.gradleProperty("lumen.version").get()
 android {
     namespace = "com.lumen.coacervation.engine.controls"
     compileSdk = providers.gradleProperty("lumen.compileSdk").get().toInt()
+    buildToolsVersion = providers.gradleProperty("lumen.buildTools").get()
     defaultConfig {
         minSdk = providers.gradleProperty("lumen.minSdk").get().toInt()
     }
