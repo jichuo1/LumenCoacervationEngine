@@ -7,10 +7,12 @@ import android.graphics.ColorFilter
 import android.graphics.PixelFormat
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.ScrollView
 import androidx.test.core.app.ActivityScenario
@@ -30,6 +32,8 @@ import org.junit.runner.RunWith
 /** Pixel assertions include the source overlay; no ancestor's flags are relaxed. */
 @RunWith(AndroidJUnit4::class)
 class HeldRowOverflowPortalTest {
+    @get:org.junit.Rule val hardwareOutput = HardwareOutputRule()
+
     @Test fun hardwareBufferContainsOnlyTheHeldControlOutsideViewport() {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             lateinit var fixture: Fixture
@@ -40,25 +44,54 @@ class HeldRowOverflowPortalTest {
                 scenario.onActivity { fixture.start() }
                 SystemClock.sleep(220)
                 scenario.onActivity { fixture.drag(-100f) }
-                SystemClock.sleep(120)
                 fun copyWindow(check: (Bitmap) -> Unit) {
-                    val bitmap = Bitmap.createBitmap(fixture.panel.width, fixture.panel.height, Bitmap.Config.ARGB_8888)
-                    val complete = java.util.concurrent.CountDownLatch(1)
-                    var result = -1
-                    scenario.onActivity {
-                        assertTrue("The actual native window must use hardware acceleration", fixture.panel.isHardwareAccelerated)
-                        val origin = IntArray(2)
-                        fixture.panel.getLocationInWindow(origin)
-                        android.view.PixelCopy.request(activity.window,
-                            android.graphics.Rect(origin[0], origin[1], origin[0] + fixture.panel.width, origin[1] + fixture.panel.height), bitmap,
-                            { value -> result = value; complete.countDown() },
-                            android.os.Handler(android.os.Looper.getMainLooper()))
+                    val deadline = SystemClock.uptimeMillis() + 5_000
+                    repeat(4) { attempt ->
+                        awaitHardwareFrame(scenario, fixture, deadline)
+                        val bitmap = Bitmap.createBitmap(fixture.panel.width, fixture.panel.height, Bitmap.Config.ARGB_8888)
+                        val complete = java.util.concurrent.CountDownLatch(1)
+                        val ownership = Any()
+                        var inFlight = false
+                        var abandoned = false
+                        var result = -1
+                        try {
+                            scenario.onActivity {
+                                val origin = IntArray(2)
+                                fixture.panel.getLocationInWindow(origin)
+                                synchronized(ownership) { inFlight = true }
+                                try {
+                                    android.view.PixelCopy.request(activity.window,
+                                        android.graphics.Rect(origin[0], origin[1], origin[0] + fixture.panel.width, origin[1] + fixture.panel.height), bitmap,
+                                        { value ->
+                                            synchronized(ownership) {
+                                                result = value
+                                                inFlight = false
+                                                // A timeout cannot recycle a destination still owned by PixelCopy.
+                                                if (abandoned) bitmap.recycle()
+                                            }
+                                            complete.countDown()
+                                        }, android.os.Handler(android.os.Looper.getMainLooper()))
+                                } catch (failure: Throwable) {
+                                    synchronized(ownership) { inFlight = false }
+                                    throw failure
+                                }
+                            }
+                            val remaining = (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)
+                            assertTrue("PixelCopy must complete within the shared deadline", complete.await(remaining, java.util.concurrent.TimeUnit.MILLISECONDS))
+                            if (result == android.view.PixelCopy.ERROR_SOURCE_NO_DATA && attempt < 3 && SystemClock.uptimeMillis() < deadline) {
+                                // Only a source with no queued buffer may retry, after another real frame.
+                                return@repeat
+                            }
+                            assertEquals("PixelCopy must succeed after a committed frame (attempt ${attempt + 1})", android.view.PixelCopy.SUCCESS, result)
+                            check(bitmap)
+                            return
+                        } finally {
+                            synchronized(ownership) {
+                                abandoned = true
+                                if (!inFlight && !bitmap.isRecycled) bitmap.recycle()
+                            }
+                        }
                     }
-                    try {
-                        assertTrue("PixelCopy must complete", complete.await(5, java.util.concurrent.TimeUnit.SECONDS))
-                        assertEquals(android.view.PixelCopy.SUCCESS, result)
-                        check(bitmap)
-                    } finally { bitmap.recycle() }
                 }
                 copyWindow { bitmap ->
                     assertTrue("The final hardware buffer must carry the overlay outside the viewport", Color.green(bitmap.getPixel(16, 66)) > 80)
@@ -66,9 +99,41 @@ class HeldRowOverflowPortalTest {
                     assertEquals("Other scrolled-out content must remain hidden", Color.WHITE, bitmap.getPixel(32, 124))
                 }
                 scenario.onActivity { fixture.controller.clear(); fixture.assertFlags(resting = true) }
-                SystemClock.sleep(120)
                 copyWindow { assertEquals("The final buffer must remove the portal after clear", Color.WHITE, it.getPixel(16, 66)) }
             } finally { scenario.onActivity { fixture.close() } }
+        }
+    }
+
+    private fun awaitHardwareFrame(scenario: ActivityScenario<SurfaceSandboxActivity>, fixture: Fixture, deadline: Long) {
+        val complete = java.util.concurrent.CountDownLatch(1)
+        val committed = Runnable { complete.countDown() }
+        var observer: ViewTreeObserver? = null
+        var sawDraw = false
+        val drawn = ViewTreeObserver.OnDrawListener {
+            if (!sawDraw) {
+                sawDraw = true
+                // API 27/28 have no commit callback. Post after draw, then retry only NO_DATA.
+                fixture.panel.post(committed)
+            }
+        }
+        try {
+            scenario.onActivity {
+                assertTrue("The actual native window must use hardware acceleration", fixture.panel.isHardwareAccelerated)
+                observer = fixture.panel.viewTreeObserver
+                if (Build.VERSION.SDK_INT >= 29) observer!!.registerFrameCommitCallback(committed)
+                else observer!!.addOnDrawListener(drawn)
+                fixture.panel.postInvalidateOnAnimation()
+            }
+            val remaining = (deadline - SystemClock.uptimeMillis()).coerceAtLeast(0)
+            assertTrue("A real hardware frame must finish within the shared deadline", complete.await(remaining, java.util.concurrent.TimeUnit.MILLISECONDS))
+        } finally {
+            scenario.onActivity {
+                fixture.panel.removeCallbacks(committed)
+                observer?.takeIf { it.isAlive }?.let {
+                    if (Build.VERSION.SDK_INT >= 29) it.unregisterFrameCommitCallback(committed)
+                    else it.removeOnDrawListener(drawn)
+                }
+            }
         }
     }
 
