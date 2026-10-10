@@ -95,6 +95,7 @@ public class ElasticInteractionController(
     private var lease: ElasticTransformLeases.Lease<ElasticInteractionController>? = null
     private var highlight: TouchHighlight? = null
     private var highlightAttached = false
+    private var overflowPortal: ElasticHorizontalOverflowPortal? = null
     private var motion = Motion.NONE
     private var pointerId = MotionEvent.INVALID_POINTER_ID
     private var downX = 0f
@@ -250,6 +251,7 @@ public class ElasticInteractionController(
                     interceptParent?.requestDisallowInterceptTouchEvent(true)
                     motion = Motion.DRAG
                     relieveAncestorClipping()
+                    overflowPortal?.attach()
                 }
                 dragTo(event.rawX - downX, event.rawY - downY, event.eventTime)
                 return true
@@ -362,6 +364,13 @@ public class ElasticInteractionController(
             ElasticMotionPolicy.positionLimit(group.width, group.height, density), deformation)
         groupWidth = group.width
         groupHeight = group.height
+        if (!continuing) {
+            var prepared: ElasticHorizontalOverflowPortal? = null
+            prepared = ElasticHorizontalOverflowPortal.prepare(group, root, ::validGeometry) {
+                if (overflowPortal === prepared) clear()
+            }
+            overflowPortal = prepared
+        }
         captureGroupGaps(group)
         captureRetainedClipGaps(group)
         gate.begin(event.eventTime)
@@ -472,6 +481,7 @@ public class ElasticInteractionController(
         highlight?.update(pressAxis.value, xAxis.value, yAxis.value, xAxis.velocity, yAxis.velocity,
             xAxis.value - grabbedX, yAxis.value - grabbedY)
         notifyPositionChanged(view)
+        overflowPortal?.invalidateSelf()
     }
 
     /** The visual unit that must bounce: the hit view promoted to its surface owner. */
@@ -560,7 +570,10 @@ public class ElasticInteractionController(
         if (disposed || !root.hasWindowFocus() || !leases.owns(view, owned)) return false
         root.getLocationOnScreen(currentRootLocation)
         if (currentRootLocation[0] != rootLocation[0] || currentRootLocation[1] != rootLocation[1]) return false
-        for (stamp in path) if (!stamp.matches(if (stamp.view.get() === view) owned else null)) return false
+        for (index in path.indices) {
+            val stamp = path[index]
+            if (!stamp.matches(if (stamp.view.get() === view) owned else null)) return false
+        }
         return true
     }
 
@@ -589,20 +602,23 @@ public class ElasticInteractionController(
                 if (action == ElasticClipAction.RELIEVE) children = false
                 padding = false
             }
-            fun constrain(left: Float, top: Float, right: Float, bottom: Float) {
-                retainedClipGaps[0] = minOf(retainedClipGaps[0], x - left)
+            fun constrain(left: Float, top: Float, right: Float, bottom: Float, horizontal: Boolean = true) {
+                if (horizontal) retainedClipGaps[0] = minOf(retainedClipGaps[0], x - left)
                 retainedClipGaps[1] = minOf(retainedClipGaps[1], y - top)
-                retainedClipGaps[2] = minOf(retainedClipGaps[2], right - x - groupWidth)
+                if (horizontal) retainedClipGaps[2] = minOf(retainedClipGaps[2], right - x - groupWidth)
                 retainedClipGaps[3] = minOf(retainedClipGaps[3], bottom - y - groupHeight)
             }
             if (children || parent === root || parent is ElasticClipBoundary) {
-                constrain(0f, 0f, parent.width.toFloat(), parent.height.toFloat())
+                constrain(0f, 0f, parent.width.toFloat(), parent.height.toFloat(),
+                    horizontal = overflowPortal?.bridgesHorizontalClip(parent) != true)
             }
             if (padding && (parent.paddingLeft != 0 || parent.paddingTop != 0 ||
                     parent.paddingRight != 0 || parent.paddingBottom != 0)) {
                 constrain(parent.paddingLeft.toFloat(), parent.paddingTop.toFloat(),
                     (parent.width - parent.paddingRight).toFloat(),
-                    (parent.height - parent.paddingBottom).toFloat())
+                    (parent.height - parent.paddingBottom).toFloat(),
+                    horizontal = overflowPortal?.bridgesHorizontalClip(parent) != true &&
+                        overflowPortal?.bridgesPanelPadding(parent) != true)
             }
             parent.clipBounds?.let {
                 constrain(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
@@ -651,6 +667,8 @@ public class ElasticInteractionController(
 
     private fun removeVisual(restore: Boolean, releaseLease: Boolean) {
         stopFrames()
+        overflowPortal?.detach()
+        overflowPortal = null
         val view = target
         val owned = lease
         motion = Motion.NONE

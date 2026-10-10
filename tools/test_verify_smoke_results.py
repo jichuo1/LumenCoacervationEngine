@@ -69,6 +69,15 @@ class SmokeResultsTest(unittest.TestCase):
                 "restingPanelMasksOverflowAndTracksContentRelayout",
                 "heldDragPreservesViewportAndRestoresOnlyInnerClipReliefs",
             },
+            "HeldRowOverflowPortalTest": {
+                "hardwareBufferContainsOnlyTheHeldControlOutsideViewport",
+                "anAlreadyUnclippedViewportDoesNotDrawADuplicateSource",
+                "horizontalOverflowCarriesTheSourceOverlayWithoutDuplicatingInterior",
+                "realSurfaceAndTouchHighlightKeepTheirOriginalPositionThroughPortal",
+                "partiallyVisibleRowAndOtherContentKeepVerticalViewportClipping",
+                "cancelDisposeAndClearRemoveOnlyTheHeldOverflow",
+                "releaseAndRegrabDoNotDuplicateThePortal",
+            },
         }
         for owner, methods in regressions.items():
             for name in methods:

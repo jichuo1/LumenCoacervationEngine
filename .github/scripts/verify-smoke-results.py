@@ -58,6 +58,15 @@ REQUIRED = {
         "partiallyVisibleRowKeepsBaselineCropWithoutFurtherOverflow",
         "roundedViewportPreservesItsRealCornerDuringDiagonalDrag",
     },
+    PREFIX + "HeldRowOverflowPortalTest": {
+        "hardwareBufferContainsOnlyTheHeldControlOutsideViewport",
+        "anAlreadyUnclippedViewportDoesNotDrawADuplicateSource",
+        "horizontalOverflowCarriesTheSourceOverlayWithoutDuplicatingInterior",
+        "realSurfaceAndTouchHighlightKeepTheirOriginalPositionThroughPortal",
+        "partiallyVisibleRowAndOtherContentKeepVerticalViewportClipping",
+        "cancelDisposeAndClearRemoveOnlyTheHeldOverflow",
+        "releaseAndRegrabDoNotDuplicateThePortal",
+    },
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
 P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")
