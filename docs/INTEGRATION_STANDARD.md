@@ -831,3 +831,5 @@ root（bindRoot）
 独立四角、双形状融合、局部按压、光源、渐进模糊及细节质量使用`LumenSurfaceEnhancements`，接线、全部参数和回退见[VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。
 来源授权和保护状态由宿主显式声明；禁止/独立Surface不得借助回退采样绕过。固定时钟由宿主推进，参数JSON不包含实时输入事件或像素。
 `LumenFusedSelection`只是背景装饰，保留原选项的业务和无障碍语义；有外扩的直接容器显式关闭clipChildren与clipToPadding并留出空间。
+
+可选 Rive 运行时在 1.2.6 保留 11.14.0：11.14.1 的四 ABI 原生库新增 ELF TLS，需要 API 29 的动态加载器/libc，清单中的 minSdk 21 无法证明它在 API 27 可运行。最低系统仍为 27，未知 ABI 的原有失败隔离继续有效；不得通过跳过最低系统用例或改用另一架构掩盖退化。官方二进制与平台证据见 `DEPENDENCY_REFRESH_2026_10_11.md`。

@@ -12,7 +12,7 @@
 
 ### 依赖
 
-- 更新已有稳定依赖：AGP 9.4.1、Kotlin 2.4.21、AndroidX Core 1.19.1、Rive 11.14.1、Gradle 9.8.1；九模块统一Build Tools 37.0.0，现有Actions升级到已核验版本。
+- 更新已有稳定依赖：AGP 9.4.1、Kotlin 2.4.21、AndroidX Core 1.19.1、Gradle 9.8.1；九模块统一Build Tools 37.0.0，现有Actions升级到已核验版本。Rive 保留最新兼容 API 27 的 11.14.0；11.14.1 的原生 ELF TLS 依赖 API 29，详见依赖核验文档。
 - minSdk27、compile/target37及契约版本1保持；其余已有库已核对为最新稳定。Sample增加独立R8验证，精确处理Lottie所带Okio的可选Nullable注解，并核对新版本许可证。
 
 本地793项JVM、九模块Lint零错误、R8和许可证门禁通过；PMA110/API37同一最终包的P2与新旧拖动26项通过，含硬件窗口像素。远端四档模拟器结果独立验收。详见依赖刷新与裁剪审阅文档。

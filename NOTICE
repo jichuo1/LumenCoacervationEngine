@@ -29,3 +29,7 @@ See third_party/AndroidLiquidGlassView-LICENSE.txt and THIRD_PARTY_NOTICES.md.
 Optional Lottie, PAG and Rive modules use their separately distributed SDKs.
 Demo animation samples retain upstream Tencent/PAG and Rive attribution.
 See THIRD_PARTY_NOTICES.md and the versioned licenses under third_party/.
+
+The optional Rive runtime remains pinned to 11.14.0 to retain Android API 27 support.
+The inspected 11.14.1 binaries introduce ELF TLS requiring API 29 and are not distributed here.
+See docs/DEPENDENCY_REFRESH_2026_10_11.md for the upstream binary and platform evidence.

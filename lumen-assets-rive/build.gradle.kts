@@ -72,7 +72,7 @@ tasks.withType<KotlinJvmCompile>().configureEach {
 
 dependencies {
     api(project(":lumen-assets"))
-    implementation("app.rive:rive-android:11.14.1")
+    implementation("app.rive:rive-android:11.14.0")
     implementation(libs.androidx.core.ktx)
     testImplementation(libs.junit)
 }
