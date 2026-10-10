@@ -48,6 +48,16 @@ REQUIRED = {
         "fusedSelectorKeepsBusinessSelectionAndRestoresOnlyOwnedResources",
     },
     PREFIX + "SurfaceBenchmarkTest": {"compareFixedSceneWithLegacyAndEnhancedPlansAndPreserveRawSamples"},
+    PREFIX + "PanelClipContainmentTest": {
+        "restingPanelMasksOverflowAndTracksContentRelayout",
+        "heldDragPreservesViewportAndRestoresOnlyInnerClipReliefs",
+    },
+    PREFIX + "HeldRowClipBoundsTest": {
+        "matchParentRowStaysInsideRetainedViewportWhileDragging",
+        "paddedViewportIncludesScrollOffsetInItsBounds",
+        "partiallyVisibleRowKeepsBaselineCropWithoutFurtherOverflow",
+        "roundedViewportPreservesItsRealCornerDuringDiagonalDrag",
+    },
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
 P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")

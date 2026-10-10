@@ -57,6 +57,24 @@ class SmokeResultsTest(unittest.TestCase):
     def test_api31_does_not_require_agsl_tests(self):
         self.assertTrue(self.check(api=31))
 
+    def test_missing_held_row_or_original_panel_regression_is_rejected(self):
+        regressions = {
+            "HeldRowClipBoundsTest": {
+                "matchParentRowStaysInsideRetainedViewportWhileDragging",
+                "paddedViewportIncludesScrollOffsetInItsBounds",
+                "partiallyVisibleRowKeepsBaselineCropWithoutFurtherOverflow",
+                "roundedViewportPreservesItsRealCornerDuringDiagonalDrag",
+            },
+            "PanelClipContainmentTest": {
+                "restingPanelMasksOverflowAndTracksContentRelayout",
+                "heldDragPreservesViewportAndRestoresOnlyInnerClipReliefs",
+            },
+        }
+        for owner, methods in regressions.items():
+            for name in methods:
+                with self.subTest(owner=owner, method=name):
+                    self.assertFalse(self.check(api=27, omit=(VERIFIER.PREFIX + owner, name)))
+
     def test_failed_or_skipped_required_test_is_rejected(self):
         for problem in ("failure", "error", "skipped"):
             with self.subTest(problem=problem):
