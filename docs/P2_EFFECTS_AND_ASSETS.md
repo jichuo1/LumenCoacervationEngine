@@ -11,7 +11,7 @@
 | lumen-assets | 资产来源、预算、生命周期、后台解析与播放会话 | 无；依赖motion/core |
 | lumen-assets-lottie | JSON与嵌入位图的Lottie | com.airbnb.android:lottie:6.7.1 |
 | lumen-assets-pag | PAG时间线 | com.tencent.tav:libpag:4.5.98-noffavc |
-| lumen-assets-rive | Rive画板、时间线、状态机与输入 | app.rive:rive-android:11.14.0 |
+| lumen-assets-rive | Rive画板、时间线、状态机与输入 | app.rive:rive-android:11.14.1 |
 
 core/motion不反向依赖这些模块。播放库是各自模块的implementation依赖，公开签名没有供应商类型；选了Rive的宿主会收到其Compose和原生传递依赖。PAG、Rive带原生运行时；本轮核对的PAG AAR含arm64-v8a、armeabi-v7a、armeabi、x86_64，不含x86。Demo同时演示三种格式，因此包含全部依赖；业务应用只选择需要的模块。
 
@@ -71,7 +71,7 @@ session.load(LumenAssetSource { context.assets.open("animation.json") }, LumenLo
 
 Lottie支持JSON时间线、绝对寻帧和有限重播；不自动解析网络图片、字体或dotLottie ZIP。PAG采用自有TextureView、PAGPlayer及PAGSurface，手动时间线提交，关闭明确释放player/surface，禁用磁盘缓存。PAGFile本身无公开release接口，结束后丢弃引用，由供应商GC/finalizer收尾。
 
-Rive11.14.0的类型化View兼容层负责画板、命名时间线、状态机和number/boolean/trigger输入；没有把新版Compose API接进核心。解析时枚举至多1024个输入，metadata.inputs给出名称及类型；提交前验证，错误名称／类型返回false，避免错误请求排进原生渲染线程。只有可见、正在播放且未降低动态的会话才允许提交输入，暂停时返回false，防止输入唤醒后台渲染。它使用私有生命周期owner、默认不加载CDN资产、关闭销毁renderer并释放File。公开metadata明确nativeClock=true、seekable/speedControl/repeatControl/frameRateControl=false；速度1、单次播放，任意寻帧／速度／重复设置给出UNSUPPORTED_OPERATION。framesPerSecond用于可控时间线提交，不约束Rive原生时钟；Rive只注册一次剩余播放时长的截止任务，不安排周期监督tick。暂停／隐藏先结算已播放时间，再停用截止任务，恢复仅补上剩余时长；Android主线程阻塞可能延迟执行截止任务，不宣称实时调度硬截止。状态机无已知时长时由maximumDurationMs停止会话。
+Rive11.14.1的类型化View兼容层负责画板、命名时间线、状态机和number/boolean/trigger输入；没有把新版Compose API接进核心。解析时枚举至多1024个输入，metadata.inputs给出名称及类型；提交前验证，错误名称／类型返回false，避免错误请求排进原生渲染线程。只有可见、正在播放且未降低动态的会话才允许提交输入，暂停时返回false，防止输入唤醒后台渲染。它使用私有生命周期owner、默认不加载CDN资产、关闭销毁renderer并释放File。公开metadata明确nativeClock=true、seekable/speedControl/repeatControl/frameRateControl=false；速度1、单次播放，任意寻帧／速度／重复设置给出UNSUPPORTED_OPERATION。framesPerSecond用于可控时间线提交，不约束Rive原生时钟；Rive只注册一次剩余播放时长的截止任务，不安排周期监督tick。暂停／隐藏先结算已播放时间，再停用截止任务，恢复仅补上剩余时长；Android主线程阻塞可能延迟执行截止任务，不宣称实时调度硬截止。状态机无已知时长时由maximumDurationMs停止会话。
 
 文件字节与已知画布预算是接入门禁，不是供应商内部原生解码内存的硬上限：PAG/Rive的内嵌图像像素数暂不可由适配器提前穷举，decodedImagePixels=0表示未计量。只加载宿主信任的资产；native parser无法强制中断且本轮没有进程隔离。宿主提供的网络InputStream必须自行设置连接／读取超时；有界队列防止请求堆积，不保证不响应中断的供应商解析立即取消。
 

@@ -57,14 +57,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6.4.0
 
       - name: Test emulator installation retry
         run: python3 -m unittest discover -s tools -p 'test_*smoke*.py' -v && python3 -m unittest discover -s tools -p test_prepare_emulator.py -v && python3 -m unittest discover -s tools -p test_install_emulator_libraries.py -v
@@ -72,7 +72,7 @@ jobs:
       - name: Build release APK and test APK
         run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest --console=plain --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.2
         with:
           name: demo-apks
           path: |
@@ -100,14 +100,14 @@ jobs:
           - api-level: 34
             target: google_apis
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v6.4.0
 
       - name: Enable KVM
         run: |
@@ -124,7 +124,7 @@ jobs:
         run: bash .github/scripts/prepare-emulator.sh
 
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
-        uses: reactivecircus/android-emulator-runner@v2
+        uses: reactivecircus/android-emulator-runner@v2.38.0
         env:
           # Keep API34 off the failing Vulkan path without suppressing actual pixel assertions.
           HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload test reports
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: smoke-reports-api${{ matrix.api-level }}-${{ matrix.target }}
           path: |
@@ -164,10 +164,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8.0.2
         with:
           name: demo-apks
           path: apks

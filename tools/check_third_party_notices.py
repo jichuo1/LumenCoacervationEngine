@@ -6,7 +6,7 @@ import re
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
-FILES=("LICENSE","NOTICE","THIRD_PARTY_NOTICES.md","third_party/AndroidLiquidGlassView-LICENSE.txt","third_party/Kyant-AndroidLiquidGlass-LICENSE.txt","third_party/Lottie-6.7.1-LICENSE.txt","third_party/PAG-4.5.98-LICENSE.txt","third_party/Rive-11.14.0-LICENSE.txt")
+FILES=("LICENSE","NOTICE","THIRD_PARTY_NOTICES.md","third_party/AndroidLiquidGlassView-LICENSE.txt","third_party/Kyant-AndroidLiquidGlass-LICENSE.txt","third_party/Lottie-6.7.1-LICENSE.txt","third_party/PAG-4.5.98-LICENSE.txt","third_party/Rive-11.14.0-LICENSE.txt","third_party/Rive-11.14.1-LICENSE.txt")
 
 def canonical(data):
     return data.decode("utf-8").replace("\r\n","\n").strip()

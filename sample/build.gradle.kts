@@ -21,7 +21,9 @@ android {
         // 发布到 Release 页的演示包：不混淆（便于对照源码排查），用调试签名即可直接安装。
         // 签名材料不入库（.gitignore），所以不同构建机产出的包签名不同，覆盖安装前需先卸载旧包。
         release {
-            isMinifyEnabled = false
+            // Explicit verification builds exercise R8; the published Demo
+            // remains readable and keeps the same default packaging contract.
+            isMinifyEnabled = providers.gradleProperty("lumen.verifySampleR8").orNull == "true"
             signingConfig = signingConfigs.getByName("debug")
         }
     }

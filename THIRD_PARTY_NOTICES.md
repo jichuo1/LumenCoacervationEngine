@@ -9,7 +9,8 @@ Lumen's project license remains Apache-2.0. The following adapted source retains
 | AOSP overscroll sampling compensation | See root NOTICE and source comments | Copyright 2010, 2021 The Android Open Source Project; Apache-2.0 | [Project Apache-2.0 license](LICENSE) |
 | Optional Lottie SDK | com.airbnb.android:lottie:6.7.1 | Airbnb; Apache-2.0 | [Lottie license](third_party/Lottie-6.7.1-LICENSE.txt) |
 | Optional PAG SDK and Demo vector fixture | com.tencent.tav:libpag:4.5.98-noffavc; [v4.5.98](https://github.com/Tencent/libpag/tree/fb26af08fd2d097c18d4178b326cf1a832887bf5) | Tencent; Apache-2.0 and bundled third-party notices | [PAG license and notices](third_party/PAG-4.5.98-LICENSE.txt) |
-| Optional Rive SDK and Demo fixture | app.rive:rive-android:11.14.0; [11.14.0](https://github.com/rive-app/rive-android/tree/663c3b05fb444100eb3b4ef09fc7c87b80944eca) | Rive; MIT | [Rive license](third_party/Rive-11.14.0-LICENSE.txt) |
+| Optional Rive SDK | app.rive:rive-android:11.14.1; [11.14.1](https://github.com/rive-app/rive-android/tree/cee3235580fbb32cc16279aa9a7c8478e95ca05c) | Rive; MIT | [Rive SDK license](third_party/Rive-11.14.1-LICENSE.txt) |
+| Rive Demo and test fixtures | [11.14.0](https://github.com/rive-app/rive-android/tree/663c3b05fb444100eb3b4ef09fc7c87b80944eca) | Rive; MIT | [Rive fixture license](third_party/Rive-11.14.0-LICENSE.txt) |
 
 The AndroidLiquidGlassView name and copyright above are taken from the adopted historical release. They are not replaced with the attribution of a later upstream version.
 
