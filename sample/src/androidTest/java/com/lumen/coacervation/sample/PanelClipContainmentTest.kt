@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
+import android.util.TypedValue
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
@@ -69,13 +70,20 @@ class PanelClipContainmentTest {
                 activity.binding.close()
                 panel = FrameLayout(activity).apply { tag = ElasticInteractionController.CONTAINER_TAG }
                 viewport = ScrollView(activity)
-                content = FrameLayout(activity)
+                content = FrameLayout(activity).apply { minimumHeight = 400 }
                 wrapper = FrameLayout(activity).apply { setBackgroundColor(Color.RED) }
-                target = TextView(activity).apply { text = "long control"; isClickable = true }
+                target = TextView(activity).apply {
+                    text = "long control"
+                    setTextSize(TypedValue.COMPLEX_UNIT_PX, 20f)
+                    isClickable = true
+                }
                 wrapper.addView(target, FrameLayout.LayoutParams(280, 80))
                 content.addView(wrapper, FrameLayout.LayoutParams(280, 80))
                 viewport.addView(content, FrameLayout.LayoutParams(300, 400))
-                panel.addView(viewport, FrameLayout.LayoutParams(300, 120))
+                panel.addView(viewport, FrameLayout.LayoutParams(300, 120).apply {
+                    leftMargin = 80
+                    topMargin = 80
+                })
                 activity.setContentView(panel)
                 root = activity.window.decorView
                 controller = ElasticInteractionController(root)

@@ -85,6 +85,13 @@ public class ElasticInteractionController(
     private var gapRight = 0f
     private var gapBottom = 0f
     private val neighborGaps = FloatArray(4)
+    private val retainedClipGaps = FloatArray(4)
+    private val fittedAxis = ElasticVector()
+    private val roundedClipBounds = FloatArray(64 * 5)
+    private var roundedClipCount = 0
+    private var freezeForOutline = false
+    private val retainedOutline = Outline()
+    private val retainedOutlineRect = Rect()
     private var lease: ElasticTransformLeases.Lease<ElasticInteractionController>? = null
     private var highlight: TouchHighlight? = null
     private var highlightAttached = false
@@ -356,6 +363,7 @@ public class ElasticInteractionController(
         groupWidth = group.width
         groupHeight = group.height
         captureGroupGaps(group)
+        captureRetainedClipGaps(group)
         gate.begin(event.eventTime)
         motion = Motion.PRESS
         motionStartedAt = SystemClock.uptimeMillis()
@@ -432,12 +440,30 @@ public class ElasticInteractionController(
         val original = owned.original
         ElasticMotionPolicy.scale(pressAxis.value, xAxis.value, yAxis.value, limit, scale)
         val capPx = ElasticMotionGroupPolicy.STRETCH_CAP_DP * density
-        val tx = original.translationX + xAxis.value
-        val ty = original.translationY + yAxis.value
-        val sx = original.scaleX * ElasticMotionGroupPolicy.cappedScale(
+        var tx = original.translationX + xAxis.value
+        var ty = original.translationY + yAxis.value
+        var sx = original.scaleX * ElasticMotionGroupPolicy.cappedScale(
             ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, capPx)
-        val sy = original.scaleY * ElasticMotionGroupPolicy.cappedScale(
+        var sy = original.scaleY * ElasticMotionGroupPolicy.cappedScale(
             ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, capPx)
+        ElasticClipGeometry.fitAxis(xAxis.value, sx, groupWidth.toFloat(), view.pivotX,
+            retainedClipGaps[0], retainedClipGaps[2], fittedAxis)
+        tx = original.translationX + fittedAxis.x
+        sx = fittedAxis.y
+        ElasticClipGeometry.fitAxis(yAxis.value, sy, groupHeight.toFloat(), view.pivotY,
+            retainedClipGaps[1], retainedClipGaps[3], fittedAxis)
+        ty = original.translationY + fittedAxis.x
+        sy = fittedAxis.y
+        val fraction = if (freezeForOutline) 0f else ElasticClipGeometry.roundedFraction(
+            tx - original.translationX, ty - original.translationY, sx, sy,
+            groupWidth.toFloat(), groupHeight.toFloat(), view.pivotX, view.pivotY,
+            roundedClipBounds, roundedClipCount)
+        if (fraction < 1f) {
+            tx = original.translationX + (tx - original.translationX) * fraction
+            ty = original.translationY + (ty - original.translationY) * fraction
+            sx = 1f + (sx - 1f) * fraction
+            sy = 1f + (sy - 1f) * fraction
+        }
         owned.record(tx, ty, sx, sy)
         view.translationX = tx
         view.translationY = ty
@@ -536,6 +562,79 @@ public class ElasticInteractionController(
         if (currentRootLocation[0] != rootLocation[0] || currentRootLocation[1] != rootLocation[1]) return false
         for (stamp in path) if (!stamp.matches(if (stamp.view.get() === view) owned else null)) return false
         return true
+    }
+
+    /** Capture once per press, in each ancestor's visible (scrolled) coordinates. */
+    private fun captureRetainedClipGaps(group: View) {
+        retainedClipGaps.fill(Float.POSITIVE_INFINITY)
+        roundedClipCount = 0
+        freezeForOutline = false
+        val original = lease?.original ?: return
+        var parent = group.parent as? View ?: return
+        var x = group.left + original.translationX - parent.scrollX
+        var y = group.top + original.translationY - parent.scrollY
+        var borrowing = true
+        var reliefCount = 0
+        var depth = 0
+        while (depth++ < 64) {
+            val action = ElasticClipPolicy.action(parent === root,
+                ElasticClipPolicy.isViewport(parent), parent.tag == CONTAINER_TAG)
+            val container = parent as? ViewGroup
+            // A release regrab can still own the previous clip reliefs.
+            val saved = clipReliefs.firstOrNull { it.view === parent }
+            var children = saved?.clipChildren ?: container?.clipChildren ?: false
+            var padding = saved?.clipToPadding ?: container?.clipToPadding ?: false
+            if (borrowing && action != ElasticClipAction.STOP && reliefCount < 32) {
+                if (children || padding) reliefCount++
+                if (action == ElasticClipAction.RELIEVE) children = false
+                padding = false
+            }
+            fun constrain(left: Float, top: Float, right: Float, bottom: Float) {
+                retainedClipGaps[0] = minOf(retainedClipGaps[0], x - left)
+                retainedClipGaps[1] = minOf(retainedClipGaps[1], y - top)
+                retainedClipGaps[2] = minOf(retainedClipGaps[2], right - x - groupWidth)
+                retainedClipGaps[3] = minOf(retainedClipGaps[3], bottom - y - groupHeight)
+            }
+            if (children || parent === root || parent is ElasticClipBoundary) {
+                constrain(0f, 0f, parent.width.toFloat(), parent.height.toFloat())
+            }
+            if (padding && (parent.paddingLeft != 0 || parent.paddingTop != 0 ||
+                    parent.paddingRight != 0 || parent.paddingBottom != 0)) {
+                constrain(parent.paddingLeft.toFloat(), parent.paddingTop.toFloat(),
+                    (parent.width - parent.paddingRight).toFloat(),
+                    (parent.height - parent.paddingBottom).toFloat())
+            }
+            parent.clipBounds?.let {
+                constrain(it.left.toFloat(), it.top.toFloat(), it.right.toFloat(), it.bottom.toFloat())
+            }
+            if (parent.clipToOutline) {
+                retainedOutline.setEmpty()
+                val read = runCatching {
+                    parent.outlineProvider?.getOutline(parent, retainedOutline)
+                }.isSuccess
+                if (!read) freezeForOutline = true
+                else if (retainedOutline.canClip()) {
+                    if (retainedOutline.getRect(retainedOutlineRect)) {
+                        val rect = retainedOutlineRect
+                        constrain(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat())
+                        if (retainedOutline.radius > 0f && roundedClipCount < 64) {
+                            val offset = roundedClipCount++ * 5
+                            roundedClipBounds[offset] = rect.left - x
+                            roundedClipBounds[offset + 1] = rect.top - y
+                            roundedClipBounds[offset + 2] = rect.right - x
+                            roundedClipBounds[offset + 3] = rect.bottom - y
+                            roundedClipBounds[offset + 4] = retainedOutline.radius
+                        }
+                    } else freezeForOutline = true // path outlines have no public readable geometry
+                }
+            }
+            if (action != ElasticClipAction.RELIEVE || reliefCount >= 32) borrowing = false
+            if (parent === root) break
+            val outer = parent.parent as? View ?: break
+            x += parent.left + parent.translationX - outer.scrollX
+            y += parent.top + parent.translationY - outer.scrollY
+            parent = outer
+        }
     }
 
     private fun scheduleFrame() {
@@ -738,6 +837,8 @@ public class ElasticInteractionController(
         private val scaleX = source.scaleX
         private val scaleY = source.scaleY
         private val alpha = source.alpha
+        private val pivotX = source.pivotX
+        private val pivotY = source.pivotY
 
         fun matches(owned: ElasticTransformLeases.Lease<ElasticInteractionController>?): Boolean {
             val v = view.get() ?: return false
@@ -747,6 +848,7 @@ public class ElasticInteractionController(
                 ElasticEligibilityPolicy.unchangedOpacity(alpha, v.alpha, v.hasTransientState(),
                     v.animation?.hasEnded() == false) &&
                 v.rotation == 0f && v.rotationX == 0f && v.rotationY == 0f &&
+                v.pivotX == pivotX && v.pivotY == pivotY &&
                 v.translationX == (owned?.writtenX ?: x) && v.translationY == (owned?.writtenY ?: y) &&
                 v.scaleX == (owned?.writtenScaleX ?: scaleX) && v.scaleY == (owned?.writtenScaleY ?: scaleY)
         }
