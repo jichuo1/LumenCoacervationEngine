@@ -2,6 +2,21 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
+## [1.3.0] - 2026-10-12
+
+### 修复与性能
+
+- 公共面板统一裁剪内嵌页面与滚动视口，圆角跟随面板，独立背景页面整体裁剪；已有自定义 outline 保持优先，真实尺寸变化后更新边界。
+- 回弹按最近惯性帧估算碰边剩余速度，保留反向、接管、结束与首帧回退；回弹光学状态按窗口隔离，弹窗不再重录背后 Activity 或延长其截图抑制。
+- 限高滚动控件改由引擎提供 typed nested-scroll 路径，公共面板入口一次性安装回弹，保持短内容自然高度、上限、原布局参数及安装幂等；安装失败恢复原生 overscroll。
+
+### 兼容 API
+
+- 新增 `LumenMaxHeightScrollView`、`LumenPanelScroll.prepare` 和 `LiquidStretchWindowRegistry`；原 `GlowEngine.onStretchDistance` 两参数入口保留，新重载带默认转发，契约版本仍为 1。
+- 不增加生产依赖、逐帧层级遍历、位图或离屏层；保留已有长按拖动与裁剪保护。
+
+本地 806 项 JVM 测试、构建与 Lint 通过；PMA110/API37 的新旧 19 项专项通过，两次弹窗强度更新的背后绘制计数保持 6 → 6。样例帧数据不作为实际宿主 FPS 改善结论，四档远端模拟器结果独立验收。
+
 ## [1.2.6] - 2026-10-11
 
 ### 修复
