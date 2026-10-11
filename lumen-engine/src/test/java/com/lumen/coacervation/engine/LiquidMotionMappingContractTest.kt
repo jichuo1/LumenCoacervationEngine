@@ -29,6 +29,7 @@ class LiquidMotionMappingContractTest {
         assertTrue(settle.contains("LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES"))
         val viewport = SourceContract.read("liquid/LiquidStretchViewport.kt")
         assertTrue(viewport.contains("if (nativeStretch) super.draw(canvas)"))
-        assertTrue(stretch.contains("boundRoot?.rootView?.let(::flushSurfaceRefresh)"))
+        assertTrue(stretch.contains("flushSurfaceRefresh(windowRoot)"))
+        assertTrue(stretch.contains("if (windowRoot === boundRoot?.rootView)"))
     }
 }

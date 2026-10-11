@@ -370,6 +370,9 @@ public class LumenModalPresenter @JvmOverloads constructor(
         val coveredParent = if (cover != null) activeDialog?.takeIf { it.isShowing } else null
         if (cover == null) activeDialog?.dismiss()
         styleContent(container)
+        LumenPanelScroll.prepare(container) { target ->
+            lumen.installStretch(target) { dialog.isShowing && !activity.isFinishing && !activity.isDestroyed }
+        }
         val density = density
         val cornerRadiusPx = style.cornerRadiusDp * density
         // 由 dismiss 传进来的一次性收尾回调；为空时用弹窗自己的 onBackDismiss。每次弹窗独立一份，不能提到字段上。

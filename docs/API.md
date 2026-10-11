@@ -111,6 +111,19 @@
 
 `liquid.LiquidStretchEdge { NONE, TOP, BOTTOM }` 是 `GlowEngine.onStretchDistance` 的参数类型。
 
+`widget.LumenMaxHeightScrollView(context,maxHeightPx)` 保持按内容收敛且不超过上限的测量，
+不强制填满空内容。它基于 Core `NestedScrollView`，可把拖动与惯性类型交给引擎。
+`motion.modal.LumenPanelScroll.prepare(root,installStretch)` 在公共面板入口一次性安装视口；
+仅处理 `NestedScrollingChild3`，已有视口保持幂等，失败保留原滚动控件和原生 overscroll。
+标准 `LumenModalPresenter` 已接入；自定义宿主 presenter 在准备正文后调用一次即可。
+
+`GlowEngine.onStretchDistance(distance, edge, scrollHost)` 保留原两参数回调的默认转发。
+引擎安装回弹时传入实际滚动 View，渲染器按 `scrollHost.rootView` 刷新该窗口；弹窗回弹
+不触发主窗口的截图抑制或背后表面刷新。适配渲染器可使用主线程 API
+`LiquidStretchWindowRegistry.update(window,distance,intensity,direction)`、`stateFor(host)`、`clear()`，
+复用按弱窗口键保存的强度、方向和距离量化；返回的 `LiquidStretchWindowState` 只读，未变化时
+`update` 返回 null。不为每帧创建状态对象。
+
 ## 7. 控件（`com.lumen.coacervation.engine.liquid`）
 
 - `class LiquidChoiceDrawable(width, height, density, surface, accent, onAccent, outline, checkbox = false, thumb = false) : Drawable`

@@ -45,6 +45,7 @@ public class IconAnchoredMotionLayer(
         BubbleSkinSurfaceView(context, it, fallbackColor)
     }
     private val contentClip = Path()
+    private val embeddedClip = PanelContentClip()
     val usesPersistentSurface: Boolean get() = persistentSurface != null
 
     private val motionBounds = RectF()
@@ -172,6 +173,7 @@ public class IconAnchoredMotionLayer(
         val surface = persistentSurface ?: return
         if (childCount < 2) return
         val card = getChildAt(1)
+        (card as? android.view.ViewGroup)?.let { embeddedClip.apply(it, surfaceRadiusPx) }
         motionBounds.set(card.left.toFloat(), card.top.toFloat(), card.right.toFloat(), card.bottom.toFloat())
         contentClip.rewind()
         contentClip.addRoundRect(motionBounds, surfaceRadiusPx, surfaceRadiusPx, Path.Direction.CW)

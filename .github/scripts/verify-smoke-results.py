@@ -52,6 +52,12 @@ REQUIRED = {
         "restingPanelMasksOverflowAndTracksContentRelayout",
         "heldDragPreservesViewportAndRestoresOnlyInnerClipReliefs",
     },
+    PREFIX + "PanelEmbeddedViewportTest": {
+        "limitedPanelScrollKeepsNaturalHeightAndWrapsOnce",
+        "inlineScrollMasksAllCornersAndTracksRelayout",
+        "decoratedEmbeddedPageMasksItsBackgroundAndKeepsInnerListSquare",
+        "explicitChildOutlineRemainsAuthoritativeAcrossLayouts",
+    },
     PREFIX + "HeldRowClipBoundsTest": {
         "matchParentRowStaysInsideRetainedViewportWhileDragging",
         "paddedViewportIncludesScrollOffsetInItsBounds",
@@ -69,6 +75,10 @@ REQUIRED = {
     },
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
+PANEL_STRETCH_TESTS = {
+    (PREFIX + "PanelFlingHandoffTest", "fastFlingReboundsAndTouchTakesOwnership"),
+    (PREFIX + "PanelStretchWindowIsolationTest", "dialogReboundDoesNotRerecordTheStationaryActivityBehindIt"),
+}
 P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")
 ENHANCED_GPU_TESTS = {
     (PREFIX + "EnhancedSurfaceIntegrationTest", "fusionPressAndLightCompileAndContinuousFramesDoNotBuildRenderEffects"),
@@ -89,6 +99,7 @@ def verify(directory: Path, api: int, since: float = 0) -> bool:
     required = {(owner, name) for owner, methods in REQUIRED.items() for name in methods}
     if api >= 31:
         required.add(GPU_TEST)
+        required.update(PANEL_STRETCH_TESTS)
     if api >= 33:
         required.update(ENHANCED_GPU_TESTS)
         required.add(P2_GPU_TEST)

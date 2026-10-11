@@ -66,6 +66,10 @@ public interface GlowEngine : AutoCloseable {
     /** 回弹距离，供光学增益使用。 */
     fun onStretchDistance(distance: Float, edge: LiquidStretchEdge) = Unit
 
+    /** Window-aware stretch. Existing implementations retain the two-argument callback. */
+    fun onStretchDistance(distance: Float, edge: LiquidStretchEdge, scrollHost: View) =
+        onStretchDistance(distance, edge)
+
     fun onStart()
     fun onStop()
     fun onTrimMemory(level: Int)
@@ -147,7 +151,7 @@ internal fun GlowEngine.installStretchViewport(
         LiquidStretchViewport.installAround(
             scrollTarget = scrollTarget,
             isStretchAllowed = isStretchAllowed,
-            onStretchDistance = ::onStretchDistance
+            onStretchDistance = { distance, edge -> onStretchDistance(distance, edge, scrollTarget) }
         )
     }.getOrNull()
 }

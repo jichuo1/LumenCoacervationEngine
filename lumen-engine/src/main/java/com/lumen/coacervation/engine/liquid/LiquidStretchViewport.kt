@@ -175,6 +175,7 @@ public class LiquidStretchViewport private constructor(
     private val legacyConsumed = IntArray(2)
     private var pointerX = 0f
     private var lastFlingVelocityY = 0f
+    private val flingHandoff = LiquidFlingHandoff()
     private var nonTouchAbsorbed = false
     private var nonTouchAdjusted = false
 
@@ -218,6 +219,7 @@ public class LiquidStretchViewport private constructor(
         pointerX = event.x
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
             lastFlingVelocityY = 0f
+            flingHandoff.clear()
             catchingStretch = if (isAllowedNow()) {
                 stopEffectsForTouch()
             } else {
@@ -354,6 +356,7 @@ public class LiquidStretchViewport private constructor(
         }
         if (!isTouch) {
             lastFlingVelocityY = 0f
+            flingHandoff.clear()
             nonTouchAbsorbed = false
             nonTouchAdjusted = false
         }
@@ -367,6 +370,7 @@ public class LiquidStretchViewport private constructor(
         type: Int
     ) {
         if (!isAllowedNow() || height <= 0) return
+        if (type == ViewCompat.TYPE_NON_TOUCH) flingHandoff.observe(dy, System.nanoTime())
         val edge = LiquidStretchOverscrollPolicy.releaseEdge(
             dy = dy,
             topDistance = EdgeEffectCompat.getDistance(topEffect),
@@ -438,7 +442,7 @@ public class LiquidStretchViewport private constructor(
 
             LiquidStretchUnconsumedAction.ABSORB_AND_PROPAGATE -> {
                 effect.onAbsorb(
-                    LiquidStretchOverscrollPolicy.absorbVelocity(lastFlingVelocityY)
+                    LiquidStretchOverscrollPolicy.absorbVelocity(flingHandoff.velocity())
                 )
                 lastFlingVelocityY = 0f
                 nonTouchAbsorbed = true
@@ -457,7 +461,10 @@ public class LiquidStretchViewport private constructor(
         velocityY: Float,
         consumed: Boolean
     ): Boolean {
-        if (isAllowedNow() && velocityY != 0f) lastFlingVelocityY = velocityY
+        if (isAllowedNow() && velocityY.isFinite() && velocityY != 0f) {
+            lastFlingVelocityY = velocityY
+            flingHandoff.start(velocityY)
+        }
         return false
     }
 
@@ -528,6 +535,7 @@ public class LiquidStretchViewport private constructor(
         topEffect.finish()
         bottomEffect.finish()
         lastFlingVelocityY = 0f
+        flingHandoff.clear()
         nonTouchAbsorbed = false
         nonTouchAdjusted = false
         // 迟滞基准一并复位：下一轮回弹要按"无状态"重新选边，不能沿用上一轮的主导边。
@@ -602,6 +610,7 @@ public class LiquidStretchViewport private constructor(
             val parent = (scrollTarget.parent as? ViewGroup) ?: return null
             val index = parent.indexOfChild(scrollTarget).takeIf { it >= 0 } ?: return null
             val originalLayoutParams = scrollTarget.layoutParams
+            val originalOverScrollMode = scrollTarget.overScrollMode
             parent.removeViewAt(index)
             return try {
                 val viewport = LiquidStretchViewport(
@@ -613,6 +622,7 @@ public class LiquidStretchViewport private constructor(
                 parent.addView(viewport, index, originalLayoutParams)
                 viewport
             } catch (throwable: Throwable) {
+                scrollTarget.overScrollMode = originalOverScrollMode
                 val temporaryParent = (scrollTarget.parent as? ViewGroup)
                 temporaryParent?.removeView(scrollTarget)
                 if (scrollTarget.parent == null) {

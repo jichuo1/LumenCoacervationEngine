@@ -31,6 +31,13 @@ public class BubblePanelLayer(
     private val tailHeight: Float,
     private val tailHalfWidth: Float
 ) : FrameLayout(context) {
+    private val embeddedClip = PanelContentClip()
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        embeddedClip.apply(content, cornerRadius)
+    }
+
     private class Row(val view: View) {
         val alpha = view.alpha
         val x = view.translationX

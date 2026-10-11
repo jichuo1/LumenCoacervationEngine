@@ -21,6 +21,7 @@ class SmokeResultsTest(unittest.TestCase):
             keys = {(owner, name) for owner, names in VERIFIER.REQUIRED.items() for name in names}
             if api >= 31:
                 keys.add(VERIFIER.GPU_TEST)
+                keys.update(VERIFIER.PANEL_STRETCH_TESTS)
             if api >= 33:
                 keys.update(VERIFIER.ENHANCED_GPU_TESTS)
                 keys.add(VERIFIER.P2_GPU_TEST)
@@ -49,6 +50,18 @@ class SmokeResultsTest(unittest.TestCase):
 
     def test_missing_gpu_assertion_is_rejected(self):
         self.assertFalse(self.check(omit=VERIFIER.GPU_TEST))
+
+    def test_each_embedded_viewport_regression_is_required(self):
+        owner = VERIFIER.PREFIX + "PanelEmbeddedViewportTest"
+        for name in VERIFIER.REQUIRED[owner]:
+            with self.subTest(method=name):
+                self.assertFalse(self.check(api=27, omit=(owner, name)))
+
+    def test_each_native_stretch_regression_is_required_on_supported_apis(self):
+        for key in VERIFIER.PANEL_STRETCH_TESTS:
+            with self.subTest(method=key[1]):
+                self.assertFalse(self.check(api=31, omit=key))
+        self.assertTrue(self.check(api=27))
     def test_missing_new_pixel_test_is_rejected(self):
         self.assertFalse(self.check(omit=next(iter(VERIFIER.ENHANCED_GPU_TESTS))))
     def test_missing_p2_native_format_or_pixels_is_rejected(self):

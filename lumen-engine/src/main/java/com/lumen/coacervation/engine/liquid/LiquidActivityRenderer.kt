@@ -216,7 +216,7 @@ internal class LiquidActivityRenderer(
     private val stretchToBackdrop = Matrix()
     private val stretchTransformValues = FloatArray(9)
     private val stretchSampling = FloatArray(3)
-    private var stretchSamplingDistance = 0f
+    private val stretchWindows = LiquidStretchWindowRegistry()
     /** 窗口底图换代计数，见 [windowBackdropGeneration]。 */
     private var backdropGeneration = 0L
 
@@ -344,12 +344,8 @@ internal class LiquidActivityRenderer(
     private var suppressionFromMorphOnly = false
     private var scrollSettlePending = false
     private val scrollSettleCheck = Runnable { onScrollSettleCheck() }
-    private var stretchOpticalIntensity = 1f
-    /**
-     * 当前回弹方向：-1 = 顶部下拉（表面上边缘发光）、+1 = 底部上拉、0 = 无。
-     * 与 [stretchOpticalIntensity] 一起进 shader——方向只投到对应边缘，不再四边等亮。
-     */
-    private var stretchEdgeDirY = 0f
+    private val stretchOpticalIntensity: Float
+        get() = stretchWindows.stateFor(boundRoot)?.opticalIntensity ?: 1f
     private var activityVisible = false
     private var boundRoot: View? = null
     private var rootDrawable: LiquidRootDrawable? = null
@@ -490,6 +486,9 @@ internal class LiquidActivityRenderer(
         val content = entry.target.recordedCapture() ?: return false
         if (!entry.target.offsetOf(host, chromeOffset)) return false
         val realtime = effectProfile == LiquidEffectProfile.REALTIME_CAPTURE
+        val stretch = stretchWindows.stateFor(host)
+        val stretchOpticalIntensity = stretch?.opticalIntensity ?: 1f
+        val stretchEdgeDirY = stretch?.edgeDirection ?: 0f
         return runCatching {
             (entry.drawer as GlowChromeGlassApi31).draw(
                 canvas = canvas,
@@ -618,12 +617,15 @@ internal class LiquidActivityRenderer(
     override val wantsStretchViewport: Boolean
         get() = !closed && Build.VERSION.SDK_INT >= 31 && hardwareAccelerated
 
-    override fun onStretchDistance(distance: Float, edge: LiquidStretchEdge) =
-        onStretchDistanceChanged(distance, edge)
+    override fun onStretchDistance(distance: Float, edge: LiquidStretchEdge) {
+        boundRoot?.rootView?.let { onStretchDistanceChanged(distance, edge, it) }
+    }
 
-    private fun onStretchDistanceChanged(distance: Float, edge: LiquidStretchEdge) {
+    override fun onStretchDistance(distance: Float, edge: LiquidStretchEdge, scrollHost: View) =
+        onStretchDistanceChanged(distance, edge, scrollHost.rootView)
+
+    private fun onStretchDistanceChanged(distance: Float, edge: LiquidStretchEdge, windowRoot: View) {
         if (closed) return
-        val samplingChanged = abs(distance - stretchSamplingDistance) >= .0005f || distance == 0f && stretchSamplingDistance != 0f
         val next = LiquidRealtimeCapturePolicy.stretchOpticalIntensity(distance)
         val nextDir = when (edge) {
             LiquidStretchEdge.TOP -> -1f
@@ -632,22 +634,21 @@ internal class LiquidActivityRenderer(
         }
         // epsilon 挡住回弹尾段的亚感知步进（全程范围 0.85，0.004 ≈ 0.5%）；
         // 归零那帧 edge 变为 NONE、nextDir 必变，终态永远会发布，不会卡在半亮状态。
-        if (abs(next - stretchOpticalIntensity) < 0.004f && nextDir == stretchEdgeDirY && !samplingChanged) return
-        stretchSamplingDistance = distance
-        stretchOpticalIntensity = next
-        stretchEdgeDirY = nextDir
+        stretchWindows.update(windowRoot, distance, next, nextDir) ?: return
         // EdgeEffect 在 RenderThread 改变整棵前景节点，View 的屏幕原点不会跟着变。
         // 只拉边界、不产生 scroll 回调的手势也必须暂停滞后截图，归零后按原有静默窗口恢复。
-        if (distance > 0f) suppressRealtimeSamplingWhileScrolling()
+        if (windowRoot === boundRoot?.rootView) {
+            if (distance > 0f) suppressRealtimeSamplingWhileScrolling()
+            lastContentShiftNanos = System.nanoTime()
+        }
         // 回弹不切换采样路径：玻璃覆盖区在截屏里本就被抑制遮罩换成稳定底图，过期
         // 像素进不了表面；而切到光学直采会让整圈边缘光在两条路径间乒乓闪烁
         // （2026-09-21 真机实证）。保持折射路径，方向性增益照常点亮回弹侧边缘。
         // 位移时间戳照常更新：若页面滑动已使抑制生效，回弹位移会顺延静默窗口。
-        lastContentShiftNanos = System.nanoTime()
-        invalidateRegisteredSurfaces()
+        refreshWindows[windowRoot]?.batch?.mark(contentChanged = true)
         // EdgeEffect has already advanced, while children have not been drawn yet.
         // Flush this content batch now so every glass records the same native stretch frame.
-        boundRoot?.rootView?.let(::flushSurfaceRefresh)
+        flushSurfaceRefresh(windowRoot)
     }
 
     @MainThread
@@ -711,6 +712,9 @@ internal class LiquidActivityRenderer(
         role: SurfaceRole,
         host: View? = null
     ) {
+        val stretch = stretchWindows.stateFor(host ?: boundRoot)
+        val stretchOpticalIntensity = stretch?.opticalIntensity ?: 1f
+        val stretchEdgeDirY = stretch?.edgeDirection ?: 0f
         val effectiveRadiusPx = radiusPx.coerceIn(
             0f,
             minOf(bounds.width(), bounds.height()).coerceAtLeast(0) * 0.5f
@@ -1524,6 +1528,7 @@ internal class LiquidActivityRenderer(
      */
     private fun isSurfacePotentiallyVisible(view: View): Boolean {
         if (!view.isShown) return false
+        val stretchOpticalIntensity = stretchWindows.stateFor(view)?.opticalIntensity ?: 1f
         view.getLocationOnScreen(movedSurfaceLocation)
         if (stretchOpticalIntensity > 1f) return true
         var ancestor: View? = view
@@ -1962,6 +1967,7 @@ internal class LiquidActivityRenderer(
         }
         resetRealtimeIdle()
         surfaceViews.clear()
+        stretchWindows.clear()
         chromeBackdrops.values.forEach(::closeChromeBackdrop)
         chromeBackdrops.clear()
         refreshWindows.values.forEach(::removeRefreshWindow)

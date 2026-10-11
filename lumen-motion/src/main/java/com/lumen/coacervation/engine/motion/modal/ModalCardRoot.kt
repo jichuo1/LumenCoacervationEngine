@@ -30,12 +30,18 @@ import kotlin.math.roundToInt
  * 且只在形变期间存在。
  */
 public class ModalCardRoot(context: Context) : FrameLayout(context) {
+    private val contentClip = PanelContentClip()
     private val exclusion = Path()
     private val exclusionRect = RectF()
     private val sourceLocation = IntArray(2)
     private val ownLocation = IntArray(2)
     private var hasExclusion = false
     private var coverOpacity = 0f
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        contentClip.applyToHierarchy(this)
+    }
 
     /**
      * 按 [source] 当前的形变矩形与圆角让位；两者可以在不同窗口里，按屏幕坐标换算。
