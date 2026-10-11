@@ -16,6 +16,7 @@ import android.widget.TextView
 import androidx.core.widget.NestedScrollView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lumen.coacervation.engine.LumenEngine
 import com.lumen.coacervation.engine.host.LumenActivityDelegate
@@ -23,7 +24,6 @@ import com.lumen.coacervation.engine.liquid.LiquidStretchViewport
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
 import org.junit.Assert.*
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.Collections
@@ -32,8 +32,9 @@ import java.util.concurrent.atomic.AtomicInteger
 /** Uses the real NestedScrollView scroller, HWUI stretch, glass surfaces and window frame metrics. */
 @RunWith(AndroidJUnit4::class)
 class PanelFlingHandoffTest {
+    @get:org.junit.Rule val hardwareOutput = HardwareOutputRule()
+    @SdkSuppress(minSdkVersion = 31)
     @Test fun fastFlingReboundsAndTouchTakesOwnership() {
-        assumeTrue(Build.VERSION.SDK_INT >= 31)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val oldMaterial = LumenEngine.requestedMaterial(context)

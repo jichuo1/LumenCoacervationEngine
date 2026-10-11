@@ -7,9 +7,11 @@ import android.graphics.Rect
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.os.Build
 import android.view.PixelCopy
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -26,6 +28,7 @@ import java.util.concurrent.TimeUnit
 
 @RunWith(AndroidJUnit4::class)
 class PanelEmbeddedViewportTest {
+    @get:org.junit.Rule val hardwareOutput = HardwareOutputRule()
     @Test fun limitedPanelScrollKeepsNaturalHeightAndWrapsOnce() {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             lateinit var scroll: com.lumen.coacervation.engine.widget.LumenMaxHeightScrollView
@@ -70,7 +73,7 @@ class PanelEmbeddedViewportTest {
             scenario.onActivity { activity ->
                 scroll = ScrollView(activity).apply {
                     setBackgroundColor(Color.RED)
-                    addView(View(activity).apply { setBackgroundColor(Color.RED); minimumHeight = 700 }, FrameLayout.LayoutParams(300, 700))
+                    addView(View(activity).apply { setBackgroundColor(Color.RED); minimumHeight = 700 }, FrameLayout.LayoutParams(192, 700))
                 }
                 installPanel(activity, scroll)
             }
@@ -92,7 +95,7 @@ class PanelEmbeddedViewportTest {
                 list = RecyclerView(activity)
                 page = FrameLayout(activity).apply {
                     setBackgroundColor(Color.RED)
-                    addView(list, FrameLayout.LayoutParams(300, 180))
+                    addView(list, FrameLayout.LayoutParams(192, 180))
                 }
                 installPanel(activity, page)
             }
@@ -116,7 +119,7 @@ class PanelEmbeddedViewportTest {
                 scroll = ScrollView(activity).apply {
                     outlineProvider = provider
                     clipToOutline = true
-                    addView(View(activity), FrameLayout.LayoutParams(300, 700))
+                    addView(View(activity), FrameLayout.LayoutParams(192, 700))
                 }
                 installPanel(activity, scroll)
             }
@@ -134,29 +137,49 @@ class PanelEmbeddedViewportTest {
             tag = ElasticInteractionController.CONTAINER_TAG
             background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = 40f }
             setPadding(24, 24, 24, 24)
-            addView(page, LinearLayout.LayoutParams(300, 180))
+            addView(page, LinearLayout.LayoutParams(192, 180))
         }
         activity.setContentView(ModalCardRoot(activity).apply {
             setBackgroundColor(Color.WHITE)
-            addView(panel, FrameLayout.LayoutParams(348, -2).apply { leftMargin = 80; topMargin = 80 })
+            addView(panel, FrameLayout.LayoutParams(240, -2).apply { leftMargin = 16; topMargin = 80 })
         })
     }
 
     private fun awaitFrame(scenario: ActivityScenario<SurfaceSandboxActivity>) {
         val frame = CountDownLatch(1)
-        scenario.onActivity { activity ->
-            val root = activity.window.decorView
-            root.postOnAnimation { root.postOnAnimation { frame.countDown() } }
-            root.invalidate()
+        val committed = Runnable { frame.countDown() }
+        var root: View? = null
+        var observer: ViewTreeObserver? = null
+        var sawDraw = false
+        val drawn = ViewTreeObserver.OnDrawListener {
+            if (!sawDraw) { sawDraw = true; root?.post(committed) }
         }
-        assertTrue("Two real hardware frames must arrive", frame.await(5, TimeUnit.SECONDS))
+        try {
+            scenario.onActivity { activity ->
+                root = activity.window.decorView
+                assertTrue("The fixture must use the actual hardware window", root!!.isHardwareAccelerated)
+                observer = root!!.viewTreeObserver
+                if (Build.VERSION.SDK_INT >= 29) observer!!.registerFrameCommitCallback(committed)
+                else observer!!.addOnDrawListener(drawn)
+                root!!.postInvalidateOnAnimation()
+            }
+            assertTrue("A committed hardware frame must arrive", frame.await(5, TimeUnit.SECONDS))
+        } finally {
+            scenario.onActivity {
+                root?.removeCallbacks(committed)
+                observer?.takeIf { it.isAlive }?.let {
+                    if (Build.VERSION.SDK_INT >= 29) it.unregisterFrameCommitCallback(committed)
+                    else it.removeOnDrawListener(drawn)
+                }
+            }
+        }
     }
 
     private fun checkCorners(scenario: ActivityScenario<SurfaceSandboxActivity>, name: String, height: Int = 180) {
         repeat(3) { attempt ->
             awaitFrame(scenario)
             val ready = CountDownLatch(1)
-            val bitmap = Bitmap.createBitmap(348, height + 48, Bitmap.Config.ARGB_8888)
+            val bitmap = Bitmap.createBitmap(240, height + 48, Bitmap.Config.ARGB_8888)
             var result = -1
             var abandoned = false
             var inFlight = false
@@ -167,6 +190,10 @@ class PanelEmbeddedViewportTest {
                     val panel = root.getChildAt(0)
                     val origin = IntArray(2)
                     panel.getLocationInWindow(origin)
+                    assertEquals(bitmap.width, panel.width)
+                    assertEquals(bitmap.height, panel.height)
+                    assertTrue("The entire source must fit in the 320px emulator window",
+                        origin[0] >= 0 && origin[0] + panel.width <= activity.window.decorView.width)
                     synchronized(ownership) { inFlight = true }
                     PixelCopy.request(activity.window, Rect(origin[0], origin[1], origin[0] + panel.width, origin[1] + panel.height), bitmap,
                         { code ->
@@ -187,7 +214,7 @@ class PanelEmbeddedViewportTest {
                     }
                 }
                 assertEquals("Embedded interior remains visible", Color.RED, bitmap.getPixel(100, 100))
-                for ((x, y) in arrayOf(25 to 25, 322 to 25, 25 to height + 22, 322 to height + 22)) {
+                for ((x, y) in arrayOf(25 to 25, 214 to 25, 25 to height + 22, 214 to height + 22)) {
                     assertEquals("$name corner $x,$y follows the panel's round outline", Color.WHITE, bitmap.getPixel(x, y))
                 }
                 return

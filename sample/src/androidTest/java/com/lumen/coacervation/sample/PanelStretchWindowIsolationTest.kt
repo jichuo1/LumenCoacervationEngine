@@ -3,7 +3,6 @@ package com.lumen.coacervation.sample
 import android.app.Dialog
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
-import android.os.Build
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -11,6 +10,7 @@ import android.widget.TextView
 import androidx.core.widget.NestedScrollView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lumen.coacervation.engine.LumenEngine
 import com.lumen.coacervation.engine.host.LumenActivityDelegate
@@ -18,7 +18,6 @@ import com.lumen.coacervation.engine.liquid.LiquidStretchEdge
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
 import org.junit.Assert.*
-import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.util.concurrent.CountDownLatch
@@ -27,13 +26,14 @@ import java.util.concurrent.TimeUnit
 /** Measures actual display-list recordings in two real windows owned by the same renderer. */
 @RunWith(AndroidJUnit4::class)
 class PanelStretchWindowIsolationTest {
+    @get:org.junit.Rule val hardwareOutput = HardwareOutputRule()
     private class CountingText(context: android.content.Context) : TextView(context) {
         var draws = 0
         override fun onDraw(canvas: android.graphics.Canvas) { draws++; super.onDraw(canvas) }
     }
 
+    @SdkSuppress(minSdkVersion = 31)
     @Test fun dialogReboundDoesNotRerecordTheStationaryActivityBehindIt() {
-        assumeTrue(Build.VERSION.SDK_INT >= 31)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext
         val previous = LumenEngine.requestedMaterial(context)
