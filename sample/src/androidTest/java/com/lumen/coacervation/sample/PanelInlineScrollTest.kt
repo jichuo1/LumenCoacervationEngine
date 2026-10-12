@@ -182,17 +182,27 @@ class PanelInlineScrollTest {
 
     @Test fun concurrentScrollOwnersStayWindowIsolatedAndDetachedZeroReturnsToItsOwner() {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            lateinit var main: View
+            lateinit var sibling: View
+            lateinit var popup: View
+            lateinit var popupRoot: FrameLayout
+            lateinit var dialog: Dialog
             scenario.onActivity { activity ->
                 activity.session.close()
-                val main = View(activity)
-                val sibling = View(activity)
+                main = View(activity)
+                sibling = View(activity)
                 activity.setContentView(FrameLayout(activity).apply { addView(main); addView(sibling) })
-                val popup = View(activity)
-                val popupRoot = FrameLayout(activity).apply { addView(popup) }
-                val dialog = Dialog(activity)
-                try {
-                    dialog.setContentView(popupRoot)
-                    dialog.show()
+                popup = View(activity)
+                popupRoot = FrameLayout(activity).apply { addView(popup) }
+                dialog = Dialog(activity)
+                dialog.setContentView(popupRoot)
+                dialog.show()
+            }
+            try {
+                frame(scenario, popupRoot)
+                scenario.onActivity {
+                    assertTrue(main.isAttachedToWindow)
+                    assertTrue(popup.isAttachedToWindow)
                     val registry = LiquidStretchWindowRegistry()
                     val mainWindow = main.rootView
                     val popupWindow = popup.rootView
@@ -221,9 +231,9 @@ class PanelInlineScrollTest {
                     assertEquals(.2f, registry.stateFor(main)!!.distance, 0f)
                     registry.clear()
                     assertNull(registry.stateFor(main))
-                } finally {
-                    dialog.dismiss()
                 }
+            } finally {
+                scenario.onActivity { dialog.dismiss() }
             }
         }
     }
