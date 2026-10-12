@@ -432,7 +432,21 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         if (closed) return
         checkMain()
         entries.firstOrNull { it.id == id }?.let { entry ->
-            if (entry.config != value) { entry.config = value; entry.rebuild(); entry.install() }
+            if (entry.config == value) return
+            val next = LumenMaterialRecipe.resolve(value, entry.enhancements.material, palette)
+            val tintOnly = entry.appearance.copy(tintOpacity = next.tintOpacity,
+                fallbackTintOpacity = next.fallbackTintOpacity) == next
+            entry.config = value
+            if (tintOnly) {
+                // Legibility changes only the tint; retain the sampled frame and its backend.
+                entry.appearance = next
+                entry.drawable.configure()
+                if (entry.installsBackground && entry.host.get()?.background !== entry.drawable) entry.install()
+                else entry.invalidateFrame()
+            } else {
+                entry.rebuild()
+                entry.install()
+            }
         }
     }
 

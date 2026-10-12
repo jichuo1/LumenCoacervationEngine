@@ -11,6 +11,7 @@ REQUIRED = {
         "concurrentScrollOwnersStayWindowIsolatedAndDetachedZeroReturnsToItsOwner",
     },
     PREFIX + "NativeSurfaceTargetTest": {
+        "tintOnlyNativeUpdatesPreserveReadyStateAndHostBackground",
         "independentTargetsPreserveTheHostAndClosingOneKeepsTheOtherBound",
         "softwareSamplingUsesEachTargetsPositionAndStopsWhenStatic",
     },
@@ -23,6 +24,7 @@ REQUIRED = {
         "anEarlySlopCrossingCannotBecomeAHoldLaterInTheSameStream",
         "aSurfaceInsideTheBackdropCannotFeedBackIntoItsOwnSource",
     },
+    PREFIX + "SurfaceTintContinuityTest": {"tintUpdatesKeepReadyFramesWhileGeometryChangesStillRebuild"},
     PREFIX + "P2IntegrationTest": {
         "sensorIsOptInAndStopsHiddenPausedOrClosed",
         "fixedParticlesExpireAndDecorationPreservesBusinessView",

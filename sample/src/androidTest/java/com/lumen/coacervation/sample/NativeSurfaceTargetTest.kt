@@ -96,6 +96,43 @@ class NativeSurfaceTargetTest {
         }
     }
 
+    @Test fun tintOnlyNativeUpdatesPreserveReadyStateAndHostBackground() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            ready(scenario)
+            lateinit var session: LumenSurfaceSession
+            lateinit var binding: LumenSurfaceBinding
+            val bitmap = Bitmap.createBitmap(64, 64, Bitmap.Config.ARGB_8888)
+            val canvas = Canvas(bitmap)
+            val options = LumenSurfaceOptions(radiusDp = 0f, color = Color.BLACK,
+                tintOpacity = .05f, edgeEnabled = false,
+                sampling = LumenSurfaceSampling(backend = LumenSurfaceBackend.SOFTWARE,
+                    minIntervalMs = 0, blurEnabled = false, refractionEnabled = false))
+            scenario.onActivity {
+                session = LumenSurfaceSession(it, LumenPalette.neutral(false))
+                binding = session.bindTarget(Target(it.preview, 20f, 20f), options, Source(it.preview))
+            }
+            try {
+                var sampled = false
+                val deadline = SystemClock.uptimeMillis() + 5000
+                while (!sampled && SystemClock.uptimeMillis() < deadline) {
+                    scenario.onActivity { binding.draw(canvas); sampled = binding.diagnostics()?.backend == LumenSurfaceBackend.SOFTWARE }
+                    if (!sampled) SystemClock.sleep(20)
+                }
+                assertTrue("Native tint target did not acquire its input", sampled)
+                scenario.onActivity { activity ->
+                    val original = activity.preview.background
+                    val before = Color.red(bitmap.getPixel(32, 32))
+                    binding.update(options.copy(tintOpacity = .55f, fallbackTintOpacity = .9f))
+                    assertEquals(LumenSurfaceBackend.SOFTWARE, binding.diagnostics()?.backend)
+                    assertSame(original, activity.preview.background)
+                    binding.draw(canvas)
+                    assertTrue("Tint update did not change the actual native pixels",
+                        before - Color.red(bitmap.getPixel(32, 32)) > 60)
+                }
+            } finally { scenario.onActivity { session.close() }; bitmap.recycle() }
+        }
+    }
+
     @Test fun softwareSamplingUsesEachTargetsPositionAndStopsWhenStatic() {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             ready(scenario)
