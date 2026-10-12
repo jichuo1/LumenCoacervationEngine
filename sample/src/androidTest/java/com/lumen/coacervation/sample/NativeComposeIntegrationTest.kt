@@ -84,8 +84,9 @@ class NativeComposeIntegrationTest {
     private fun composeViewCount(view: View): Int = (if (view is ComposeView) 1 else 0) +
         if (view is ViewGroup) (0 until view.childCount).sumOf { composeViewCount(view.getChildAt(it)) } else 0
 
-    private fun pointer(down: Long, action: Int, x: Float, y: Float) {
-        val event = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+    private fun pointer(down: Long, action: Int, x: Float, y: Float,
+        eventTime: Long = SystemClock.uptimeMillis()) {
+        val event = MotionEvent.obtain(down, eventTime, action, x, y, 0)
         try { InstrumentationRegistry.getInstrumentation().sendPointerSync(event) }
         finally { event.recycle() }
     }
@@ -135,9 +136,11 @@ class NativeComposeIntegrationTest {
                 density = a.resources.displayMetrics.density
             }
             val down = SystemClock.uptimeMillis()
-            pointer(down, MotionEvent.ACTION_DOWN, center.x, center.y)
+            pointer(down, MotionEvent.ACTION_DOWN, center.x, center.y, down)
             try {
-                pointer(down, MotionEvent.ACTION_MOVE, center.x + 30 * density, center.y)
+                // Input injection may block longer than the hold threshold on an emulator.
+                // Preserve the gesture's early movement timestamp independently of delivery time.
+                pointer(down, MotionEvent.ACTION_MOVE, center.x + 30 * density, center.y, down + 16L)
                 SystemClock.sleep(220)
                 pointer(down, MotionEvent.ACTION_MOVE, center.x + 60 * density, center.y)
                 SystemClock.sleep(80)
