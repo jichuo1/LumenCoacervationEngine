@@ -10,6 +10,7 @@ import android.graphics.Rect
 import android.graphics.drawable.Drawable
 import android.app.Dialog
 import android.graphics.drawable.ColorDrawable
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
@@ -51,9 +52,11 @@ class PanelSurfaceGeometryTest {
                 lateinit var scroll: NestedScrollView
                 lateinit var viewport: LiquidStretchViewport
                 lateinit var root: View
+                lateinit var activityRoot: View
                 val sampling = FloatArray(3)
                 val resolver = LiquidStretchSampling()
                 scenario.onActivity { activity ->
+                    activityRoot = activity.window.decorView
                     activity.binding.close()
                     activity.session.close()
                     material = LumenActivityDelegate(activity, { LumenPalette.neutral(false) })
@@ -90,28 +93,28 @@ class PanelSurfaceGeometryTest {
                     root = checkNotNull(dialog.window).decorView
                 }
                 try {
-                    frame(scenario, root)
+                    frame(root)
                     for (dy in listOf(-60, 60)) {
-                        scenario.onActivity {
+                        instrumentation.runOnMainSync {
                             viewport.finishStretch()
                             viewport.onNestedScroll(scroll, 0, 0, 0, dy, ViewCompat.TYPE_TOUCH, IntArray(2))
                         }
-                        frame(scenario, root)
-                        scenario.onActivity { activity ->
+                        frame(root)
+                        instrumentation.runOnMainSync {
                             val at = IntArray(2)
                             val backdrop = IntArray(2)
                             viewport.getLocationOnScreen(at)
-                            activity.window.decorView.getLocationOnScreen(backdrop)
+                            activityRoot.getLocationOnScreen(backdrop)
                             assertEquals("Sampling uses the foreign window's viewport origin", (at[1] - backdrop[1]).toFloat(), sampling[0], .01f)
                             assertEquals(viewport.height.toFloat(), sampling[1], .01f)
                             assertTrue("The sign must follow the native edge in this frame", if (dy < 0) sampling[2] > 0f else sampling[2] < 0f)
                         }
                     }
-                    scenario.onActivity { viewport.finishStretch() }
-                    frame(scenario, root)
-                    scenario.onActivity { assertArrayEquals(floatArrayOf(0f, 0f, 0f), sampling, 0f) }
+                    instrumentation.runOnMainSync { viewport.finishStretch() }
+                    frame(root)
+                    instrumentation.runOnMainSync { assertArrayEquals(floatArrayOf(0f, 0f, 0f), sampling, 0f) }
                 } finally {
-                    scenario.onActivity { dialog.dismiss(); material.onDestroy() }
+                    instrumentation.runOnMainSync { dialog.dismiss(); material.onDestroy() }
                 }
             }
         } finally {
@@ -154,7 +157,7 @@ class PanelSurfaceGeometryTest {
                 }
                 activity.setContentView(root)
             }
-            frame(scenario, root)
+            frame(root)
             var initialDraws = 0
             scenario.onActivity {
                 initialDraws = backdrop.draws
@@ -162,7 +165,7 @@ class PanelSurfaceGeometryTest {
                 choice.options.getChildAt(0).translationY = 24f
                 choice.options.getChildAt(0).scaleX = 1.04f
             }
-            frame(scenario, root)
+            frame(root)
             scenario.onActivity {
                 val at = IntArray(2)
                 choice.indicator.getLocationInWindow(at)
@@ -170,7 +173,7 @@ class PanelSurfaceGeometryTest {
                 assertTrue("Translation must rerecord the retained background", backdrop.draws > initialDraws)
                 choice.select(2, animate = false)
             }
-            frame(scenario, root)
+            frame(root)
             var idleDraws = 0
             var idleNotifications = 0
             scenario.onActivity {
@@ -179,7 +182,7 @@ class PanelSurfaceGeometryTest {
                 idleDraws = backdrop.draws
                 idleNotifications = notifications
             }
-            repeat(3) { frame(scenario, root) }
+            repeat(3) { frame(root) }
             scenario.onActivity {
                 assertEquals("Stationary selection must not keep rerecording", idleDraws, backdrop.draws)
                 assertEquals(idleNotifications, notifications)
@@ -215,22 +218,30 @@ class PanelSurfaceGeometryTest {
         }
     }
 
-    private fun frame(scenario: ActivityScenario<SurfaceSandboxActivity>, root: View) {
+    private fun frame(root: View) {
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val deadline = SystemClock.uptimeMillis() + 5000
+        var ready = false
+        while (!ready && SystemClock.uptimeMillis() < deadline) {
+            instrumentation.runOnMainSync { ready = root.isAttachedToWindow && root.isLaidOut }
+            if (!ready) SystemClock.sleep(16)
+        }
+        assertTrue("The native window must attach and lay out before its frame fence", ready)
         val committed = CountDownLatch(1)
         var observer: ViewTreeObserver? = null
         val callback = Runnable { committed.countDown() }
         val drawn = ViewTreeObserver.OnDrawListener { root.post(callback) }
         try {
-            scenario.onActivity {
+            instrumentation.runOnMainSync {
                 observer = root.viewTreeObserver
                 if (android.os.Build.VERSION.SDK_INT >= 29) observer!!.registerFrameCommitCallback(callback)
                 else observer!!.addOnDrawListener(drawn)
                 root.postInvalidateOnAnimation()
             }
-            assertTrue(committed.await(5, TimeUnit.SECONDS))
-            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            // A held EdgeEffect can schedule frames continuously; global idleness is not a frame fence.
+            assertTrue(committed.await((deadline - SystemClock.uptimeMillis()).coerceAtLeast(0), TimeUnit.MILLISECONDS))
         } finally {
-            scenario.onActivity {
+            instrumentation.runOnMainSync {
                 root.removeCallbacks(callback)
                 observer?.takeIf { it.isAlive }?.let {
                     if (android.os.Build.VERSION.SDK_INT >= 29) it.unregisterFrameCommitCallback(callback)
