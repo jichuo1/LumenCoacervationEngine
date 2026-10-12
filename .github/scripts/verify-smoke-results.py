@@ -82,6 +82,10 @@ REQUIRED = {
         "roundedViewportPreservesItsRealCornerDuringDiagonalDrag",
     },
     PREFIX + "HeldRowOverflowPortalTest": {
+        "hardwareFourDirectionsPreserveMaterialForegroundAndHighlightThroughNestedViewports",
+        "hardwareSelectedBackdropAndReadableSourceOutlineFollowAllFourDirections",
+        "baselineCropMovesWithoutRevealingHiddenPixelsAndForeignClipChangesArePreserved",
+        "changingARoundOutlineInsideTheSameProviderEndsThePortalWithoutOpeningNativeClips",
         "managedNestedStretchViewportKeepsHorizontalOverflowAndVerticalContainment",
         "hardwareRoundedNestedViewportCarriesOnlyTheHeldControlIntoPadding",
         "hardwareSelectedBackdropFollowsTheHeldOptionOutsideRoundedViewport",

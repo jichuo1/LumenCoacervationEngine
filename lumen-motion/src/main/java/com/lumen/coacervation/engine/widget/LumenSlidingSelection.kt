@@ -234,11 +234,13 @@ public class LumenSlidingSelection @JvmOverloads constructor(
         notifyPositionChanged()
     }
 
-    internal fun horizontalOverflowBackdrop(row: View): View? =
+    internal fun overflowBackdrop(row: View): View? =
         indicator.takeIf {
             animator?.isRunning != true && options.getChildAt(selectedIndex) === row &&
                 it.width == row.width && it.height == row.height
         }
+
+    internal fun horizontalOverflowBackdrop(row: View): View? = overflowBackdrop(row)
 
     /** 按选中框与各行沿排列方向的重叠比例回调高亮值。零分配。 */
     private fun updateHighlights() {

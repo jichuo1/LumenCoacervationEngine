@@ -92,10 +92,11 @@ public class ElasticInteractionController(
     private var freezeForOutline = false
     private val retainedOutline = Outline()
     private val retainedOutlineRect = Rect()
+    private val visibleCrop = Rect()
     private var lease: ElasticTransformLeases.Lease<ElasticInteractionController>? = null
     private var highlight: TouchHighlight? = null
     private var highlightAttached = false
-    private var overflowPortal: ElasticHorizontalOverflowPortal? = null
+    private var overflowPortal: ElasticOverflowPortal? = null
     private var motion = Motion.NONE
     private var pointerId = MotionEvent.INVALID_POINTER_ID
     private var downX = 0f
@@ -365,8 +366,8 @@ public class ElasticInteractionController(
         groupWidth = group.width
         groupHeight = group.height
         if (!continuing) {
-            var prepared: ElasticHorizontalOverflowPortal? = null
-            prepared = ElasticHorizontalOverflowPortal.prepare(group, root, ::validGeometry) {
+            var prepared: ElasticOverflowPortal? = null
+            prepared = ElasticOverflowPortal.prepare(group, root, ::validGeometry) {
                 if (overflowPortal === prepared) clear()
             }
             overflowPortal = prepared
@@ -455,17 +456,17 @@ public class ElasticInteractionController(
             ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, capPx)
         var sy = original.scaleY * ElasticMotionGroupPolicy.cappedScale(
             ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, capPx)
-        ElasticClipGeometry.fitAxis(xAxis.value, sx, groupWidth.toFloat(), view.pivotX,
+        ElasticClipGeometry.fitAxis(xAxis.value, sx, visibleCrop.width().toFloat(), view.pivotX - visibleCrop.left,
             retainedClipGaps[0], retainedClipGaps[2], fittedAxis)
         tx = original.translationX + fittedAxis.x
         sx = fittedAxis.y
-        ElasticClipGeometry.fitAxis(yAxis.value, sy, groupHeight.toFloat(), view.pivotY,
+        ElasticClipGeometry.fitAxis(yAxis.value, sy, visibleCrop.height().toFloat(), view.pivotY - visibleCrop.top,
             retainedClipGaps[1], retainedClipGaps[3], fittedAxis)
         ty = original.translationY + fittedAxis.x
         sy = fittedAxis.y
         val fraction = if (freezeForOutline) 0f else ElasticClipGeometry.roundedFraction(
             tx - original.translationX, ty - original.translationY, sx, sy,
-            groupWidth.toFloat(), groupHeight.toFloat(), view.pivotX, view.pivotY,
+            visibleCrop.width().toFloat(), visibleCrop.height().toFloat(), view.pivotX - visibleCrop.left, view.pivotY - visibleCrop.top,
             roundedClipBounds, roundedClipCount)
         if (fraction < 1f) {
             tx = original.translationX + (tx - original.translationX) * fraction
@@ -568,6 +569,7 @@ public class ElasticInteractionController(
     private fun validGeometry(): Boolean {        val view = target ?: return false
         val owned = lease ?: return false
         if (disposed || !root.hasWindowFocus() || !leases.owns(view, owned)) return false
+        if (overflowPortal?.ownedClipsValid() == false) return false
         root.getLocationOnScreen(currentRootLocation)
         if (currentRootLocation[0] != rootLocation[0] || currentRootLocation[1] != rootLocation[1]) return false
         for (index in path.indices) {
@@ -579,6 +581,8 @@ public class ElasticInteractionController(
 
     /** Capture once per press, in each ancestor's visible (scrolled) coordinates. */
     private fun captureRetainedClipGaps(group: View) {
+        visibleCrop.set(0, 0, groupWidth, groupHeight)
+        overflowPortal?.copyVisibleBounds(visibleCrop)
         retainedClipGaps.fill(Float.POSITIVE_INFINITY)
         roundedClipCount = 0
         freezeForOutline = false
@@ -602,22 +606,26 @@ public class ElasticInteractionController(
                 if (action == ElasticClipAction.RELIEVE) children = false
                 padding = false
             }
-            fun constrain(left: Float, top: Float, right: Float, bottom: Float, horizontal: Boolean = true) {
-                if (horizontal) retainedClipGaps[0] = minOf(retainedClipGaps[0], x - left)
-                retainedClipGaps[1] = minOf(retainedClipGaps[1], y - top)
-                if (horizontal) retainedClipGaps[2] = minOf(retainedClipGaps[2], right - x - groupWidth)
-                retainedClipGaps[3] = minOf(retainedClipGaps[3], bottom - y - groupHeight)
+            fun constrain(left: Float, top: Float, right: Float, bottom: Float,
+                          horizontal: Boolean = true, vertical: Boolean = true) {
+                if (horizontal) retainedClipGaps[0] = minOf(retainedClipGaps[0], x + visibleCrop.left - left)
+                if (vertical) retainedClipGaps[1] = minOf(retainedClipGaps[1], y + visibleCrop.top - top)
+                if (horizontal) retainedClipGaps[2] = minOf(retainedClipGaps[2], right - x - visibleCrop.right)
+                if (vertical) retainedClipGaps[3] = minOf(retainedClipGaps[3], bottom - y - visibleCrop.bottom)
             }
             if (children || parent === root || parent is ElasticClipBoundary) {
                 constrain(0f, 0f, parent.width.toFloat(), parent.height.toFloat(),
-                    horizontal = overflowPortal?.bridgesHorizontalClip(parent) != true)
+                    horizontal = overflowPortal?.bridgesClip(parent) != true,
+                    vertical = overflowPortal?.bridgesClip(parent) != true)
             }
             if (padding && (parent.paddingLeft != 0 || parent.paddingTop != 0 ||
                     parent.paddingRight != 0 || parent.paddingBottom != 0)) {
                 constrain(parent.paddingLeft.toFloat(), parent.paddingTop.toFloat(),
                     (parent.width - parent.paddingRight).toFloat(),
                     (parent.height - parent.paddingBottom).toFloat(),
-                    horizontal = overflowPortal?.bridgesHorizontalClip(parent) != true &&
+                    horizontal = overflowPortal?.bridgesClip(parent) != true &&
+                        overflowPortal?.bridgesPanelPadding(parent) != true,
+                    vertical = overflowPortal?.bridgesClip(parent) != true &&
                         overflowPortal?.bridgesPanelPadding(parent) != true)
             }
             parent.clipBounds?.let {
@@ -632,16 +640,15 @@ public class ElasticInteractionController(
                 else if (retainedOutline.canClip()) {
                     if (retainedOutline.getRect(retainedOutlineRect)) {
                         val rect = retainedOutlineRect
-                        val bridged = overflowPortal?.bridgesHorizontalClip(parent) == true &&
-                            com.lumen.coacervation.engine.motion.modal.PanelContentClip.ownsOutline(parent)
+                        val bridged = overflowPortal?.bridgesClip(parent) == true
                         constrain(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat(),
-                            horizontal = !bridged)
+                            horizontal = !bridged, vertical = !bridged)
                         if (!bridged && retainedOutline.radius > 0f && roundedClipCount < 64) {
                             val offset = roundedClipCount++ * 5
-                            roundedClipBounds[offset] = rect.left - x
-                            roundedClipBounds[offset + 1] = rect.top - y
-                            roundedClipBounds[offset + 2] = rect.right - x
-                            roundedClipBounds[offset + 3] = rect.bottom - y
+                            roundedClipBounds[offset] = rect.left - x - visibleCrop.left
+                            roundedClipBounds[offset + 1] = rect.top - y - visibleCrop.top
+                            roundedClipBounds[offset + 2] = rect.right - x - visibleCrop.left
+                            roundedClipBounds[offset + 3] = rect.bottom - y - visibleCrop.top
                             roundedClipBounds[offset + 4] = retainedOutline.radius
                         }
                     } else freezeForOutline = true // path outlines have no public readable geometry
@@ -725,6 +732,7 @@ public class ElasticInteractionController(
      * 且展开后自行恢复，不属于"矩形断框"的来源。
      */
     private fun relieveAncestorClipping() {
+        if (overflowPortal != null) return // The portal preserves the exact native clips for all other content.
         val view = target ?: return
         var node = view.parent
         while (node != null && clipReliefs.size < 32) {

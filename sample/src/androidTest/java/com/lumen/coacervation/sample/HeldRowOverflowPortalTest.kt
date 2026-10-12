@@ -13,6 +13,9 @@ import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
+import android.view.ViewOutlineProvider
+import android.graphics.Outline
+import android.graphics.Rect
 import android.widget.FrameLayout
 import android.widget.ScrollView
 import androidx.core.widget.NestedScrollView
@@ -79,6 +82,164 @@ class HeldRowOverflowPortalTest {
 
     @Test fun hardwareSelectedBackdropFollowsTheHeldOptionOutsideRoundedViewport() {
         hardwareHorizontalOverflow(nestedStretch = true, selectedChoice = true)
+    }
+
+    @Test fun hardwareFourDirectionsPreserveMaterialForegroundAndHighlightThroughNestedViewports() {
+        hardwareFourDirections(selectedChoice = false)
+    }
+
+    @Test fun hardwareSelectedBackdropAndReadableSourceOutlineFollowAllFourDirections() {
+        hardwareFourDirections(selectedChoice = true)
+    }
+
+    private fun hardwareFourDirections(selectedChoice: Boolean) {
+        val brightness = IntArray(2)
+        for (pass in 0..1) ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            lateinit var fixture: Fixture
+            lateinit var activity: SurfaceSandboxActivity
+            scenario.onActivity { owner ->
+                activity = owner
+                fixture = Fixture(owner, 0, true, if (pass == 0) 4f else 0f,
+                    nestedStretch = true, selectedChoice = selectedChoice, fourDirections = true, multiNested = true)
+            }
+            awaitReady(scenario, fixture)
+            scenario.onActivity { fixture.start() }
+            SystemClock.sleep(220)
+            try {
+                val sourceBackground = fixture.row.background
+                val foreground = fixture.row.foreground
+                for ((dx, dy) in arrayOf(-100f to 0f, 100f to 0f, 0f to -100f, 0f to 100f)) {
+                    scenario.onActivity {
+                        fixture.drag(dx, dy)
+                        assertTrue("The actual control must travel on the requested axis", if (dx == 0f)
+                            kotlin.math.abs(fixture.row.translationY) > 4f else kotlin.math.abs(fixture.row.translationX) > 4f)
+                        assertSame(sourceBackground, fixture.row.background)
+                        assertSame(foreground, fixture.row.foreground)
+                        assertTrue(fixture.row.clipToOutline)
+                        fixture.assertFlags()
+                    }
+                    copyHardwareWindow(scenario, fixture, activity) { bitmap ->
+                        val x = when { dx < 0f -> 16; dx > 0f -> fixture.rightOverflowPixelX; else -> fixture.panel.width / 2 }
+                        val y = when { dy < 0f -> 16; dy > 0f -> 84; else -> 50 }
+                        assertTrue("The source foreground must be visible beyond the intermediate clip on every axis", Color.green(bitmap.getPixel(x, y)) > 80)
+                        assertEquals("The real outer rounded corner stays masked", Color.MAGENTA, bitmap.getPixel(1, 1))
+                        assertEquals("Other hidden rows stay outside the native viewport", Color.WHITE, bitmap.getPixel(fixture.panel.width / 2, 96))
+                        if (dx < 0f) for (yy in 42..58) for (xx in 14..18) {
+                            val pixel = bitmap.getPixel(xx, yy)
+                            brightness[pass] += Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)
+                        }
+                    }
+                }
+                scenario.onActivity { fixture.controller.clear(); fixture.assertFlags(resting = true) }
+                copyHardwareWindow(scenario, fixture, activity) {
+                    assertEquals(Color.WHITE, it.getPixel(16, 50))
+                    assertEquals(Color.WHITE, it.getPixel(fixture.panel.width / 2, 16))
+                }
+            } finally { scenario.onActivity { fixture.close() } }
+        }
+        assertTrue("The actual touch highlight must affect overflow pixels on top of the real material", brightness[0] - brightness[1] > 17 * 5 * 3)
+    }
+
+    @Test fun baselineCropMovesWithoutRevealingHiddenPixelsAndForeignClipChangesArePreserved() = withCase(scroll = 32) { fixture ->
+        val originalParent = fixture.row.parent
+        val probe = Rect()
+        fixture.drag(0f, -100f)
+        assertTrue(fixture.row.getClipBounds(probe))
+        assertEquals(16, probe.top)
+        fixture.capture {
+            assertTrue("Only the baseline-visible part may move above the viewport", Color.green(it.getPixel(160, 16)) > 80)
+            assertEquals("The hidden top of the source is never copied", Color.WHITE, it.getPixel(160, 5))
+        }
+        fixture.drag(0f, 100f)
+        fixture.capture { assertEquals("Native interior also keeps the baseline crop", Color.WHITE, it.getPixel(160, 24)) }
+        fixture.drag(-100f, 0f)
+        fixture.drag(100f, 0f)
+        assertSame(originalParent, fixture.row.parent)
+        assertTrue(fixture.content.clipChildren)
+        assertTrue(fixture.content.clipToPadding)
+        fixture.controller.clear()
+        assertFalse("Owned crop is removed at clear", fixture.row.getClipBounds(probe))
+        fixture.start()
+        fixture.drag(-100f)
+        val foreign = Rect(0, 24, fixture.row.width, 58)
+        fixture.row.clipBounds = foreign
+        fixture.drag(100f)
+        assertTrue(fixture.row.getClipBounds(probe))
+        assertEquals(foreign, probe)
+        assertEquals("A foreign clip ends our transform ownership", 0f, fixture.row.translationX, 0f)
+        fixture.controller.dispose()
+        assertTrue(fixture.row.getClipBounds(probe))
+        assertEquals(foreign, probe)
+    }
+
+    @Test fun changingARoundOutlineInsideTheSameProviderEndsThePortalWithoutOpeningNativeClips() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            lateinit var fixture: Fixture
+            var radius = 8f
+            val provider = object : ViewOutlineProvider() {
+                override fun getOutline(view: View, outline: Outline) { outline.setRoundRect(0, 0, view.width, view.height, radius) }
+            }
+            scenario.onActivity {
+                fixture = Fixture(it, 0, false, 0f)
+                fixture.viewport.outlineProvider = provider
+                fixture.viewport.clipToOutline = true
+            }
+            awaitReady(scenario, fixture)
+            scenario.onActivity {
+                try {
+                    fixture.start()
+                    fixture.drag(-100f)
+                    assertTrue(fixture.row.translationX < -4f)
+                    radius = 22f
+                    fixture.viewport.invalidateOutline()
+                    fixture.drag(100f)
+                    assertEquals(0f, fixture.row.translationX, 0f)
+                    assertEquals(1f, fixture.row.scaleX, 0f)
+                    assertSame(provider, fixture.viewport.outlineProvider)
+                    fixture.assertFlags(resting = true)
+                    fixture.capture { bitmap -> assertEquals("No stale portal survives the outline change", Color.WHITE, bitmap.getPixel(16, 66)) }
+                } finally { fixture.close() }
+            }
+        }
+    }
+
+    private fun copyHardwareWindow(scenario: ActivityScenario<SurfaceSandboxActivity>, fixture: Fixture,
+                                   activity: SurfaceSandboxActivity, check: (Bitmap) -> Unit) {
+        val deadline = SystemClock.uptimeMillis() + 5_000
+        repeat(4) { attempt ->
+            awaitHardwareFrame(scenario, fixture, deadline)
+            val bitmap = Bitmap.createBitmap(fixture.panel.width, fixture.panel.height, Bitmap.Config.ARGB_8888)
+            val complete = java.util.concurrent.CountDownLatch(1)
+            val ownership = Any()
+            var inFlight = false
+            var abandoned = false
+            var result = -1
+            try {
+                scenario.onActivity {
+                    val origin = IntArray(2)
+                    fixture.panel.getLocationInWindow(origin)
+                    synchronized(ownership) { inFlight = true }
+                    try {
+                        android.view.PixelCopy.request(activity.window,
+                            Rect(origin[0], origin[1], origin[0] + fixture.panel.width, origin[1] + fixture.panel.height), bitmap,
+                            { value ->
+                                synchronized(ownership) { result = value; inFlight = false; if (abandoned) bitmap.recycle() }
+                                complete.countDown()
+                            }, android.os.Handler(android.os.Looper.getMainLooper()))
+                    } catch (failure: Throwable) {
+                        synchronized(ownership) { inFlight = false }
+                        throw failure
+                    }
+                }
+                assertTrue(complete.await((deadline - SystemClock.uptimeMillis()).coerceAtLeast(0), java.util.concurrent.TimeUnit.MILLISECONDS))
+                if (result == android.view.PixelCopy.ERROR_SOURCE_NO_DATA && attempt < 3 && SystemClock.uptimeMillis() < deadline) return@repeat
+                assertEquals(android.view.PixelCopy.SUCCESS, result)
+                check(bitmap)
+                return
+            } finally {
+                synchronized(ownership) { abandoned = true; if (!inFlight && !bitmap.isRecycled) bitmap.recycle() }
+            }
+        }
     }
 
     private fun hardwareHorizontalOverflow(nestedStretch: Boolean, selectedChoice: Boolean = false) {
@@ -294,8 +455,14 @@ class HeldRowOverflowPortalTest {
                 fixture.start()
                 fixture.drag(100f)
                 fixture.overlay.draws = 0
-                fixture.capture { assertEquals(2, fixture.overlay.draws) }
-                fixture.send(MotionEvent.ACTION_UP, 100f)
+                // Reversing from the left rebound brings this row inside its viewport.
+                // Empty overflow must no longer draw the source a second time.
+                fixture.capture { assertEquals(1, fixture.overlay.draws) }
+                fixture.drag(-100f)
+                assertTrue("A regrab still carries real overflow", fixture.row.translationX < -4f)
+                fixture.overlay.draws = 0
+                fixture.capture { assertEquals("Only one overflow copy is attached", 2, fixture.overlay.draws) }
+                fixture.send(MotionEvent.ACTION_UP, -100f)
             }
             SystemClock.sleep(850)
             scenario.onActivity {
@@ -334,7 +501,10 @@ class HeldRowOverflowPortalTest {
         assertTrue("Fixture must finish a real layout before DOWN: ${fixture.diagnostics()}", ready)
     }
 
-    private class Fixture(activity: SurfaceSandboxActivity, scroll: Int, surface: Boolean, glow: Float, sceneWidthLimit: Int = Int.MAX_VALUE, nestedStretch: Boolean = false, selectedChoice: Boolean = false) {
+    private class Fixture(activity: SurfaceSandboxActivity, scroll: Int, surface: Boolean, glow: Float,
+                          sceneWidthLimit: Int = Int.MAX_VALUE, nestedStretch: Boolean = false,
+                          selectedChoice: Boolean = false, fourDirections: Boolean = false,
+                          multiNested: Boolean = false) {
         private val root = activity.window.decorView
         private val windowWidth = root.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
         private val sceneWidth = minOf(windowWidth, sceneWidthLimit)
@@ -349,6 +519,7 @@ class HeldRowOverflowPortalTest {
             clipToOutline = true
         }
         val viewport = if (nestedStretch) NestedScrollView(activity) else ScrollView(activity)
+        val managedAncestors = ArrayList<ViewGroup>()
         val content = FrameLayout(activity).apply { minimumHeight = 400 }
         val row = FrameLayout(activity).apply {
             isClickable = true
@@ -367,32 +538,63 @@ class HeldRowOverflowPortalTest {
 
         init {
             activity.binding.close()
+            val rowTop = if (fourDirections) 0 else 16
+            val viewportHeight = if (fourDirections) 60 else 100
             val rowHost = if (selectedChoice) LumenSlidingSelection(activity, ColorDrawable(Color.BLUE)).apply {
                 row.background = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = 16f }
                 addOption(row, LinearLayout.LayoutParams(contentWidth, 60))
                 addOption(View(activity), LinearLayout.LayoutParams(contentWidth, 60))
             } else row
-            content.addView(rowHost, FrameLayout.LayoutParams(contentWidth, if (selectedChoice) -2 else 60).apply { topMargin = 16 })
+            content.addView(rowHost, FrameLayout.LayoutParams(contentWidth, if (selectedChoice) -2 else 60).apply { topMargin = rowTop })
             content.addView(View(activity).apply { setBackgroundColor(Color.RED) },
                 FrameLayout.LayoutParams(contentWidth, 80).apply { topMargin = 180 })
             viewport.addView(content, FrameLayout.LayoutParams(contentWidth, 400))
-            panel.addView(viewport, FrameLayout.LayoutParams(contentWidth, 100))
+            panel.addView(viewport, FrameLayout.LayoutParams(contentWidth, viewportHeight))
             if (nestedStretch) {
                 assertNotNull(LiquidStretchViewport.installAround(viewport, { true }) { _, _ -> })
             }
+            managedAncestors.add(viewport)
+            (viewport.parent as? LiquidStretchViewport)?.let { managedAncestors.add(it) }
+            if (multiNested) {
+                val inline = panel.getChildAt(0)
+                panel.removeView(inline)
+                val outerContent = FrameLayout(activity).apply {
+                    addView(inline, FrameLayout.LayoutParams(contentWidth, viewportHeight))
+                    minimumHeight = 400
+                }
+                val outer = NestedScrollView(activity).apply { addView(outerContent) }
+                panel.addView(outer, FrameLayout.LayoutParams(contentWidth, viewportHeight))
+                managedAncestors.add(outerContent)
+                managedAncestors.add(outer)
+                LiquidStretchViewport.installAround(outer, { true }) { _, _ -> }?.let { managedAncestors.add(it) }
+            }
+            if (fourDirections) {
+                // Explicit rectangular inline viewports retain the host's intended shape.
+                // The actual panel and the moving control have their own real rounded outlines.
+                val square = object : ViewOutlineProvider() {
+                    override fun getOutline(view: View, outline: Outline) { outline.setRect(0, 0, view.width, view.height) }
+                }
+                for (ancestor in managedAncestors) if (ancestor is ScrollView || ancestor is NestedScrollView || ancestor is LiquidStretchViewport) {
+                    ancestor.outlineProvider = square
+                    ancestor.clipToOutline = true
+                }
+                row.clipToOutline = true
+            }
             val windowBody = if (nestedStretch) ModalCardRoot(activity) else FrameLayout(activity)
+            if (fourDirections) windowBody.setBackgroundColor(Color.MAGENTA)
             activity.setContentView(windowBody.apply {
-                addView(panel, FrameLayout.LayoutParams(panelWidth, 140).apply { leftMargin = panelLeft; topMargin = 80 })
+                addView(panel, FrameLayout.LayoutParams(panelWidth, viewportHeight + 40).apply { leftMargin = panelLeft; topMargin = 80 })
             }, ViewGroup.LayoutParams(sceneWidth, ViewGroup.LayoutParams.MATCH_PARENT))
             if (surface) {
                 material.prepare()
                 assertTrue(material.isPrepared)
                 assertTrue(material.bindRoot(activity.window.decorView))
                 material.onStart()
-                row.background = material.surface(Color.BLACK, 16f, SurfaceRole.FILLED_BUTTON)
+                if (selectedChoice) (rowHost as LumenSlidingSelection).indicator.background = material.surface(Color.BLACK, 16f, SurfaceRole.SELECTED_ITEM)
+                else row.background = material.surface(Color.BLACK, 16f, SurfaceRole.FILLED_BUTTON)
             }
             overlay.setBounds(0, 0, contentWidth, 60)
-            if (!surface) row.overlay.add(overlay)
+            if (fourDirections) row.foreground = overlay else if (!surface) row.overlay.add(overlay)
             controller = ElasticInteractionController(activity.window.decorView, notifyPositionChanged = {
                 positionNotifications++
                 material.notifyPositionChanged()
@@ -414,14 +616,14 @@ class HeldRowOverflowPortalTest {
             send(MotionEvent.ACTION_DOWN, 0f)
         }
 
-        fun drag(dx: Float) {
-            send(MotionEvent.ACTION_MOVE, dx)
+        fun drag(dx: Float, dy: Float = 0f) {
+            send(MotionEvent.ACTION_MOVE, dx, dy)
             assertTrue("The actual held drag must be captured: ${diagnostics()}", cancels > 0)
         }
 
-        fun send(action: Int, dx: Float) {
+        fun send(action: Int, dx: Float, dy: Float = 0f) {
             sent = if (action == MotionEvent.ACTION_DOWN) down else maxOf(sent + 1, maxOf(down + ElasticMotionPolicy.HOLD_MILLIS + 1, SystemClock.uptimeMillis()))
-            val event = MotionEvent.obtain(down, sent, action, location[0] + touchX + dx, location[1] + 50f, 0)
+            val event = MotionEvent.obtain(down, sent, action, location[0] + touchX + dx, location[1] + 50f + dy, 0)
             try {
                 controller.dispatch(event) {
                     if (it.actionMasked == MotionEvent.ACTION_DOWN) row.isPressed = true
@@ -442,6 +644,7 @@ class HeldRowOverflowPortalTest {
             assertTrue(panel.clipChildren)
             assertTrue(panel.clipToPadding)
             assertTrue(panel.clipToOutline)
+            for (ancestor in managedAncestors) { assertTrue(ancestor.clipChildren); assertTrue(ancestor.clipToPadding) }
             assertEquals(1f, viewport.scaleX, 0f)
             assertEquals(1f, row.alpha, 0f)
             if (resting) { assertTrue(content.clipChildren); assertTrue(content.clipToPadding) }

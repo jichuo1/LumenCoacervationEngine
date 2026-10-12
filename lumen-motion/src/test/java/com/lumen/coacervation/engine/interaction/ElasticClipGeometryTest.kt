@@ -61,6 +61,19 @@ class ElasticClipGeometryTest {
         assertEquals(1f, out.y, 0f)
     }
 
+    @Test fun `cropped visible edges fit the panel using the original source pivot`() {
+        for (cropTop in listOf(16f, 48f)) {
+            val sourceHeight = 60f
+            val sourcePivot = 30f
+            val visibleHeight = sourceHeight - cropTop
+            val baselineSourceTop = 20f - cropTop
+            ElasticClipGeometry.fitAxis(-80f, 1.025f, visibleHeight, sourcePivot - cropTop, 20f, 80f, out)
+            val visibleTop = baselineSourceTop + out.x + cropTop * out.y + sourcePivot * (1f - out.y)
+            assertEquals("Only the already visible portion determines the retained exterior edge", 0f, visibleTop, .0001f)
+            assertTrue("Invisible source pixels are left to the owned local crop", baselineSourceTop + out.x < 0f)
+        }
+    }
+
     @Test fun `unbounded ordinary wrappers keep original visual response`() {
         ElasticClipGeometry.fitAxis(18f, 1.03f, 300f, 150f,
             Float.POSITIVE_INFINITY, Float.POSITIVE_INFINITY, out)
