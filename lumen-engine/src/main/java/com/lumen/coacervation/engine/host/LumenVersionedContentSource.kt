@@ -4,6 +4,8 @@ public enum class LumenSourceAvailability { READY, TEMPORARILY_UNAVAILABLE, PROH
 
 /** Optional source contract. Getters are pure main-thread snapshots; identities/dependencies remain stable until epoch changes. */
 public interface LumenVersionedContentSource : LumenContentSource {
+    /** False for an isolated source sharing its View anchor with unrelated drawing targets. */
+    public val observeCoordinateViewInvalidations: Boolean get() = true
     public val sourceEpoch: Long
     public val contentVersion: Long
     public val availability: LumenSourceAvailability

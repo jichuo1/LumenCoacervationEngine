@@ -52,7 +52,7 @@ class LocalScrollPositionContractTest {
         val scopeFilter = scroll.indexOf("if (!sourceMoved && !ScrollSurfaceScope.contains(host, scrollHost)")
         val feedbackCheck = scroll.indexOf("if (failure(host, entry) != LumenSurfaceFailure.NONE)")
         assertTrue(scopeFilter >= 0 && scopeFilter < feedbackCheck)
-        assertTrue(scroll.contains("matrices.sourceToTarget(content, host, scrollSampleMatrix)"))
+        assertTrue(scroll.contains("entry.sourceToTarget(content, scrollSampleMatrix)"))
         assertTrue(scroll.contains("if (entry.scrollGeometry.needsRefresh(scrollMatrixValues))"))
         assertTrue(scroll.contains("entry.invalidateFrame()"))
         assertFalse(scroll.contains("scrollGeometry.record("))

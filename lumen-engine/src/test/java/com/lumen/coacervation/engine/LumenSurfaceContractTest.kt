@@ -40,7 +40,7 @@ class LumenSurfaceContractTest {
         assertTrue(s.contains("host.windowToken != view.windowToken"))
         assertTrue(s.contains("parent === view"))
         assertTrue(s.contains("LumenSurfaceFailure.SELF_FEEDBACK"))
-        assertTrue(s.contains("if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(host); entry.releaseGpu(); continue }"))
+        assertTrue(s.contains("if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(entry.target); entry.releaseGpu(); continue }"))
     }
     @Test fun lateFramesAndMemoryHaveAnExplicitReleasePath() {
         val s=session()

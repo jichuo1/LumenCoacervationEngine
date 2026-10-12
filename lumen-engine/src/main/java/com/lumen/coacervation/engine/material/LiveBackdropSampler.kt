@@ -17,11 +17,15 @@ import androidx.annotation.WorkerThread
 import androidx.core.graphics.createBitmap
 import androidx.core.graphics.withMatrix
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
+import com.lumen.coacervation.engine.host.LumenSurfaceTarget
+import com.lumen.coacervation.engine.host.ViewSurfaceTarget
 import com.lumen.coacervation.engine.host.LumenSurfaceSampling
 import com.lumen.coacervation.engine.host.LumenSurfacePolicy
 import com.lumen.coacervation.engine.host.LumenSurfaceFadeDirection
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import java.util.WeakHashMap
+import java.lang.ref.ReferenceQueue
+import java.lang.ref.WeakReference
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.ceil
@@ -66,7 +70,8 @@ internal class LiveBackdropSampler(
     private val recordContent: ((Canvas) -> Unit)? = null,
     private val sharedBudget: LumenSampleBudget? = null,
     private val counters: LumenGraphicsCounters? = null,
-    private val events: LumenSampleEvents? = null
+    private val events: LumenSampleEvents? = null,
+    private val observeSourceDirty: Boolean = true
 ) {
     private class Entry(val budget: LumenSampleBudget?) {
         var profile: LumenSurfaceSampling? = null
@@ -128,12 +133,69 @@ internal class LiveBackdropSampler(
         }
     }
 
+    /** Weak identity keys keep surfaces distinct even when their window anchor or equals is shared. */
+    private class TargetEntries {
+        private class Key(target: LumenSurfaceTarget, queue: ReferenceQueue<LumenSurfaceTarget>) :
+            WeakReference<LumenSurfaceTarget>(target, queue) {
+            private val identityHash = System.identityHashCode(target)
+            override fun hashCode(): Int = identityHash
+            override fun equals(other: Any?): Boolean = this === other ||
+                get()?.let { it === (other as? Key)?.get() } == true
+        }
+        private class Lookup {
+            var target: LumenSurfaceTarget? = null
+            override fun hashCode(): Int = System.identityHashCode(target)
+            override fun equals(other: Any?): Boolean = target != null && target === (other as? Key)?.get()
+        }
+        private val queue = ReferenceQueue<LumenSurfaceTarget>()
+        private val lookup = Lookup()
+        private val data = HashMap<Any, Entry>()
+
+        private fun drain() {
+            while (true) {
+                val key = queue.poll() ?: return
+                data.remove(key)?.release()
+            }
+        }
+
+        val size: Int get() { drain(); return data.size }
+        val values: Collection<Entry> get() { drain(); return data.values }
+        val entries: MutableSet<MutableMap.MutableEntry<Any, Entry>> get() { drain(); return data.entries }
+        fun isEmpty(): Boolean { drain(); return data.isEmpty() }
+        operator fun get(target: LumenSurfaceTarget): Entry? {
+            drain()
+            lookup.target = target
+            return try { data[lookup] } finally { lookup.target = null }
+        }
+        fun containsKey(target: LumenSurfaceTarget): Boolean = get(target) != null
+        operator fun set(target: LumenSurfaceTarget, entry: Entry) {
+            drain()
+            data[Key(target, queue)] = entry
+        }
+        fun remove(target: LumenSurfaceTarget): Entry? {
+            drain()
+            lookup.target = target
+            return try { data.remove(lookup) } finally { lookup.target = null }
+        }
+        fun target(key: Any): LumenSurfaceTarget? = (key as Key).get()
+        fun anyTarget(predicate: (LumenSurfaceTarget) -> Boolean): Boolean {
+            drain()
+            for (key in data.keys) if (target(key)?.let(predicate) == true) return true
+            return false
+        }
+        fun forEachTarget(action: (LumenSurfaceTarget) -> Unit) {
+            drain()
+            for (key in data.keys) target(key)?.let(action)
+        }
+        fun clear() { data.clear(); drain() }
+    }
+
     /**
      * 一个表面的一次后台透镜作业。主线程录好绘制指令后交出；作业在飞期间主线程不碰
      * 这里的录制、位图与缓冲（[inFlight] 单飞保证），后台也不碰任何 View 或纹理。
      */
     private class LensJob(
-        val view: View,
+        view: LumenSurfaceTarget,
         val entry: Entry,
         val generation: Int,
         val picture: Picture,
@@ -155,10 +217,15 @@ internal class LiveBackdropSampler(
         val weakPixels: IntArray?,val strongPixels: IntArray?,
         val weakRadius: Int,val strongRadius: Int,
         val sourceEpoch: Long,val contentVersion: Long,val started: Long
-    ) { var processingNanos = 0L }
+    ) {
+        private val target = WeakReference(view)
+        val view: LumenSurfaceTarget? get() = target.get()
+        var processingNanos = 0L
+    }
 
     private var source: View? = null
-    private val entries = WeakHashMap<View, Entry>()
+    private val entries = TargetEntries()
+    private val viewTargets = WeakHashMap<View, ViewSurfaceTarget>()
     private val roots = WeakHashMap<View, ViewTreeObserver.OnPreDrawListener>()
     /** 内容层的全局矩阵，每批只取一次，所有表面共用。 */
     private val contentGlobal = FloatArray(9)
@@ -178,8 +245,8 @@ internal class LiveBackdropSampler(
         trailingPosted = false
         if (!isActive) return@Runnable
         // Wake pending surfaces without marking every surface stale again.
-        if (entries.keys.any { isInside(it, source) }) ignoreSelfInflictedDirty = true
-        entries.keys.forEach(View::invalidate)
+        if (entries.anyTarget { isInside(it, source) }) ignoreSelfInflictedDirty = true
+        entries.forEachTarget(LumenSurfaceTarget::invalidate)
     }
 
     /** 同一时刻至多一批作业在后台；在飞期间的新位移只记 dirty，批次回来后续采。 */
@@ -220,11 +287,14 @@ internal class LiveBackdropSampler(
 
     /** 表面 draw 时登记；同窗口首个表面顺带装上 pre-draw 采样钩子。 */
     fun register(view: View, profile: LumenSurfaceSampling? = null) {
-        registerSample(view,profile,null)
+        register(viewTarget(view), profile)
     }
-    fun registerRaw(view: View,profile: LumenSurfaceSampling,raw: LumenRawSampleProfile) = registerSample(view,profile,raw)
-    private fun registerSample(view: View,profile: LumenSurfaceSampling?,raw: LumenRawSampleProfile?) {
-        if (!isActive) return
+    fun registerRaw(view: View,profile: LumenSurfaceSampling,raw: LumenRawSampleProfile) = registerRaw(viewTarget(view),profile,raw)
+    fun register(view: LumenSurfaceTarget, profile: LumenSurfaceSampling? = null) = registerSample(view,profile,null)
+    fun registerRaw(view: LumenSurfaceTarget,profile: LumenSurfaceSampling,raw: LumenRawSampleProfile) = registerSample(view,profile,raw)
+    private fun viewTarget(view: View): ViewSurfaceTarget = viewTargets[view] ?: ViewSurfaceTarget(view,samplingMatrices).also { viewTargets[view] = it }
+    private fun registerSample(view: LumenSurfaceTarget,profile: LumenSurfaceSampling?,raw: LumenRawSampleProfile?) {
+        if (!isActive || !view.isAttachedToWindow) return
         var changed=false
         if (!entries.containsKey(view)) {
             entries[view] = Entry(sharedBudget).apply { this.profile = profile;this.raw=raw }
@@ -239,7 +309,7 @@ internal class LiveBackdropSampler(
             dirty = true
             changed=true
         }
-        val root = view.rootView ?: return
+        val root = view.coordinateView.rootView ?: return
         if (!roots.containsKey(root)) {
             val listener = ViewTreeObserver.OnPreDrawListener { onPreDraw(); true }
             root.viewTreeObserver.addOnPreDrawListener(listener)
@@ -256,6 +326,11 @@ internal class LiveBackdropSampler(
      * 在飞批次回来时按 generation 认领，已摘掉的条目结果直接丢弃。
      */
     fun unregister(view: View) {
+        val target = viewTargets.remove(view) ?: return
+        val entry = entries.remove(target) ?: return
+        entry.release()
+    }
+    fun unregister(view: LumenSurfaceTarget) {
         val entry = entries.remove(view) ?: return
         entry.release()
     }
@@ -275,7 +350,7 @@ internal class LiveBackdropSampler(
         if (!content.isAttachedToWindow || content.width <= 0 || content.height <= 0) return
         val selfInflicted = ignoreSelfInflictedDirty
         ignoreSelfInflictedDirty = false
-        val contentChanged = dirty || !selfInflicted && content.isDirty
+        val contentChanged = dirty || !selfInflicted && content.isDirty && observeSourceDirty
         if (contentChanged) entries.values.forEach { it.cadence.invalidate() }
         dirty = false
         if (!entries.values.any { it.cadence.pending }) return
@@ -310,12 +385,13 @@ internal class LiveBackdropSampler(
         // 5 个表面共用同一个内容层：它到屏幕的矩阵每批只算一次（每次都是十几层的 JNI 链）。
         val contentGlobalValid = samplingMatrices.localToScreen(content, contentGlobal)
         val plans = ArrayList<Entry>(entries.size)
-        val planViews = ArrayList<View>(entries.size)
+        val planViews = ArrayList<LumenSurfaceTarget>(entries.size)
         val iterator = entries.entries.iterator()
         while (iterator.hasNext()) {
-            val (view, entry) = iterator.next()
-            if (!view.isAttachedToWindow) { entry.release(); iterator.remove(); continue }
-            if (!view.isShown || view.rootView !== content.rootView) { entry.valid = false; entry.cadence.discardPending(); continue }
+            val (key, entry) = iterator.next()
+            val view = entries.target(key)
+            if (view == null || !view.isAttachedToWindow) { entry.release(); iterator.remove(); continue }
+            if (!view.isShown || view.coordinateView.rootView !== content.rootView) { entry.valid = false; entry.cadence.discardPending(); continue }
             if (entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) > 0L) continue
             val prepared = runCatching { prepare(view, entry, contentGlobalValid) }
             if (prepared.isFailure) return null
@@ -347,7 +423,7 @@ internal class LiveBackdropSampler(
      * 只投一次（[trailingPosted] 自守），到点把表面设脏拉起一次 traversal 即可。
      */
     private fun scheduleTrailingSample(delayMs: Long) {
-        if (entries.keys.none { it.isAttachedToWindow }) return
+        if (!entries.anyTarget { it.isAttachedToWindow }) return
         val delay = delayMs.coerceAtLeast(1L)
         val deadline = System.nanoTime() + delay * NANOS_PER_MILLISECOND
         if (trailingPosted && deadline - trailingDeadlineNanos >= 0L) return
@@ -358,7 +434,7 @@ internal class LiveBackdropSampler(
     }
 
     /** 主线程：算本表面的采样几何并备好缓冲。返回 false 表示本批跳过它。 */
-    private fun prepare(view: View, entry: Entry, contentGlobalValid: Boolean): Boolean {
+    private fun prepare(view: LumenSurfaceTarget, entry: Entry, contentGlobalValid: Boolean): Boolean {
         val width = view.width
         val height = view.height
         if (width <= 0 || height <= 0) { entry.valid = false; return false }
@@ -437,7 +513,7 @@ internal class LiveBackdropSampler(
      * - 多成员组：按组包围盒在内容坐标下录一次，每个表面回放时各自套上 缩放·外沿平移·源到目标，
      *   再平移回组原点。录制区是每个成员采样区的超集（外扩 [CLUSTER_PAD_PX]），不会少录任何东西。
      */
-    private fun capture(content: View, plans: List<Entry>, views: List<View>): List<LensJob> {
+    private fun capture(content: View, plans: List<Entry>, views: List<LumenSurfaceTarget>): List<LensJob> {
         val groups = LensCaptureGrouping.group(plans.size) { a, b ->
             plans[a].contentBoundsValid && plans[b].contentBoundsValid &&
                 RectF.intersects(plans[a].contentBounds, plans[b].contentBounds)
@@ -504,7 +580,7 @@ internal class LiveBackdropSampler(
         return jobs
     }
 
-    private fun job(view: View, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob = LensJob(
+    private fun job(view: LumenSurfaceTarget, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob = LensJob(
         view = view,
         entry = entry,
         generation = entry.generation,
@@ -535,22 +611,24 @@ internal class LiveBackdropSampler(
     /** 批次回到主线程：把后台结果写进纹理。过期的批次/缓冲一律丢弃。 */
     private fun onBatchDone(token: Int, jobs: List<LensJob>, ok: Boolean) {
         inFlight = false
-        jobs.forEach { counters?.softwareCompleted(it.processingNanos, token != batchToken || !isActive || it.entry.generation != it.generation) }
+        jobs.forEach { counters?.softwareCompleted(it.processingNanos, token != batchToken || !isActive || !canPublish(it)) }
         val finished=System.nanoTime()
         jobs.forEach {events?.onCompleted(it.sourceEpoch,it.contentVersion,it.started,finished,
-            ok&&token==batchToken&&isActive&&it.entry.generation==it.generation)}
+            ok&&token==batchToken&&isActive&&canPublish(it))}
         if (token != batchToken || !isActive) {
             // release/resume may have invalidated a traversal while the old batch was still running.
             if (isActive) schedulePendingSample(System.nanoTime())
             return
         }
         if (!ok) {
-            fail()
+            if (jobs.any(::canPublish)) fail() else schedulePendingSample(System.nanoTime())
             return
         }
         for (job in jobs) {
             val entry = job.entry
             if (entry.generation != job.generation) continue
+            val target = job.view ?: continue
+            if (!target.isAttachedToWindow || entries[target] !== entry) continue
             val texture = entry.texture ?: continue
             if (texture.isRecycled) continue
             val tw=if(job.raw!=null)job.sampleWidth else job.outWidth;val th=if(job.raw!=null)job.sampleHeight else job.outHeight
@@ -558,8 +636,7 @@ internal class LiveBackdropSampler(
             job.weakPixels?.let {entry.weakTexture?.setPixels(it,0,tw,0,0,tw,th)}
             job.strongPixels?.let {entry.strongTexture?.setPixels(it,0,tw,0,0,tw,th)}
             entry.valid = true
-            job.view.background?.invalidateSelf()
-            job.view.invalidate()
+            target.invalidate()
             if (!dirty && isInside(job.view, source)) ignoreSelfInflictedDirty = true
         }
         // 批次在飞期间又有位移：上面的 invalidate 通常已经拉起下一趟 pre-draw；这里兜底，
@@ -567,9 +644,11 @@ internal class LiveBackdropSampler(
         schedulePendingSample(System.nanoTime())
     }
 
-    private fun isInside(view: View, ancestor: View?): Boolean {
-        if (ancestor == null) return false
-        var parent = view.parent
+    private fun isInside(view: LumenSurfaceTarget?, ancestor: View?): Boolean {
+        if (view == null || ancestor == null || !view.isAttachedToWindow) return false
+        val anchor = view.coordinateView
+        if (anchor === ancestor) return true
+        var parent = anchor.parent
         while (parent is View) {
             if (parent === ancestor) return true
             parent = parent.parent
@@ -580,11 +659,20 @@ internal class LiveBackdropSampler(
     private fun fail() {
         failed = true
         releaseAll()
-        entries.keys.forEach(View::invalidate)
+        entries.forEachTarget(LumenSurfaceTarget::invalidate)
+    }
+
+    private fun canPublish(job: LensJob): Boolean {
+        val target = job.view ?: return false
+        return target.isAttachedToWindow && entries[target] === job.entry && job.entry.generation == job.generation
     }
 
     /** 已有有效纹理才画；否则返回 false，表面退回静态磨砂。 */
     fun draw(canvas: Canvas, bounds: RectF, radius: Float, view: View, alpha: Int): Boolean {
+        val target = viewTargets[view] ?: return false
+        return draw(canvas,bounds,radius,target,alpha)
+    }
+    fun draw(canvas: Canvas, bounds: RectF, radius: Float, view: LumenSurfaceTarget, alpha: Int): Boolean {
         if (!isActive) return false
         val entry = entries[view] ?: return false
         if (!entry.valid) return false
@@ -599,22 +687,34 @@ internal class LiveBackdropSampler(
     }
 
     fun rawShader(view: View,level: Int=0): Shader? {
+        val target = viewTargets[view] ?: return null
+        return rawShader(target,level)
+    }
+    fun rawShader(view: LumenSurfaceTarget,level: Int=0): Shader? {
         val entry=entries[view]?:return null
         if(!isActive||!entry.valid||entry.raw==null)return null
         return when(level){1->entry.weakShader?:entry.shader;2->entry.strongShader?:entry.shader;else->entry.shader}?.also {it.setLocalMatrix(null)}
     }
     /** Last allocated/recorded bounds, written into caller-owned buffers without allocating on draw. */
     fun samplingBounds(view: View,recorded: RectF,materialized: RectF): Boolean {
+        val target = viewTargets[view] ?: return false
+        return samplingBounds(target,recorded,materialized)
+    }
+    fun samplingBounds(view: LumenSurfaceTarget,recorded: RectF,materialized: RectF): Boolean {
         val entry=entries[view]?:return false
         if(!entry.valid||entry.sampleWidth==0)return false
         recorded.set(entry.recordedBounds)
         materialized.set(0f,0f,if(entry.raw!=null)entry.sampleWidth.toFloat()else entry.outWidth.toFloat(),if(entry.raw!=null)entry.sampleHeight.toFloat()else entry.outHeight.toFloat())
         return true
     }
-    fun rawScale(view: View): Float = entries[view]?.scale?.toFloat()?:1f
-    fun rawMargin(view: View): Float = entries[view]?.let {(it.margin*it.scale).toFloat()}?:0f
-    fun rawWidth(view: View): Float = entries[view]?.sampleWidth?.toFloat()?:0f
-    fun rawHeight(view: View): Float = entries[view]?.sampleHeight?.toFloat()?:0f
+    fun rawScale(view: View): Float = viewTargets[view]?.let { rawScale(it) }?:1f
+    fun rawMargin(view: View): Float = viewTargets[view]?.let { rawMargin(it) }?:0f
+    fun rawWidth(view: View): Float = viewTargets[view]?.let { rawWidth(it) }?:0f
+    fun rawHeight(view: View): Float = viewTargets[view]?.let { rawHeight(it) }?:0f
+    fun rawScale(view: LumenSurfaceTarget): Float = entries[view]?.scale?.toFloat()?:1f
+    fun rawMargin(view: LumenSurfaceTarget): Float = entries[view]?.let {(it.margin*it.scale).toFloat()}?:0f
+    fun rawWidth(view: LumenSurfaceTarget): Float = entries[view]?.sampleWidth?.toFloat()?:0f
+    fun rawHeight(view: LumenSurfaceTarget): Float = entries[view]?.sampleHeight?.toFloat()?:0f
 
     /** 内存压力/后台：丢掉全部位图，恢复后首帧重采样。在飞的批次回来时按令牌作废。 */
     fun releaseAll() {
@@ -714,6 +814,7 @@ internal class LiveBackdropSampler(
         }
         roots.clear()
         entries.clear()
+        viewTargets.clear()
         source = null
     }
 }

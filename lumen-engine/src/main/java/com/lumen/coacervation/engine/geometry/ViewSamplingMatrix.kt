@@ -3,6 +3,7 @@ package com.lumen.coacervation.engine.geometry
 import android.graphics.Matrix
 import android.view.View
 import androidx.annotation.MainThread
+import com.lumen.coacervation.engine.host.LumenSurfaceTarget
 import java.util.IdentityHashMap
 
 /**
@@ -146,6 +147,18 @@ internal class ViewSamplingMatrix {
      */
     fun sourceToTarget(sourceGlobal: FloatArray, target: View, out: Matrix): Boolean {
         if (!localToScreen(target, targetGlobal) ||
+            !SamplingMatrixMath.bitmapToTarget(sourceGlobal, targetGlobal, 1f, 1f, result, inverse)) return false
+        out.setValues(result)
+        return true
+    }
+
+    fun sourceToTarget(source: View, target: LumenSurfaceTarget, out: Matrix): Boolean {
+        if (!localToScreen(source, sourceGlobal)) return false
+        return sourceToTarget(sourceGlobal, target, out)
+    }
+
+    fun sourceToTarget(sourceGlobal: FloatArray, target: LumenSurfaceTarget, out: Matrix): Boolean {
+        if (!target.localToScreen(targetGlobal) ||
             !SamplingMatrixMath.bitmapToTarget(sourceGlobal, targetGlobal, 1f, 1f, result, inverse)) return false
         out.setValues(result)
         return true

@@ -23,6 +23,7 @@ import android.view.ViewTreeObserver
 import androidx.annotation.MainThread
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
+import com.lumen.coacervation.engine.geometry.SamplingMatrixMath
 import com.lumen.coacervation.engine.geometry.ScrollSamplingGeometry
 import com.lumen.coacervation.engine.geometry.ScrollSurfaceScope
 import com.lumen.coacervation.engine.geometry.CaptureSamplingGeometry
@@ -64,6 +65,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     private var nextSourceId = 1L
     private val retiredGraphics = LumenGraphicsCounters()
     private var closed = false
+    public val isClosed: Boolean get() = closed
     private var paused = false
     private var memoryReleased = false
     private var paletteGeneration = 0L
@@ -111,7 +113,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     public fun bindSource(view: View,surface: LumenSurfaceOptions,source: LumenContentSource?,enhancements: LumenSurfaceEnhancements): LumenSurfaceBinding {
         if (closed) return LumenSurfaceBinding(null, -1L)
         checkMain()
-        entries.firstOrNull { it.host.get() === view }?.let { remove(it) }
+        entries.firstOrNull { it.installsBackground && it.host.get() === view }?.let { remove(it) }
         require(entries.size < options.maxSurfaces) { "Surface count exceeds session budget" }
         val group = source?.let { supplied ->
             groups.firstOrNull { it.source === supplied || it.source.coordinateView === supplied.coordinateView &&
@@ -129,6 +131,49 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         view.addOnAttachStateChangeListener(entry)
         entry.install()
         return LumenSurfaceBinding(this, entry.id)
+    }
+
+    /** A draw target has its own identity and geometry; its coordinate View is only a Window anchor. */
+    @JvmOverloads
+    public fun bindTarget(target: LumenSurfaceTarget, surface: LumenSurfaceOptions = LumenSurfaceOptions(),
+        source: LumenContentSource? = null, enhancements: LumenSurfaceEnhancements = LumenSurfaceEnhancements.DEFAULT
+    ): LumenSurfaceBinding {
+        if (closed) return LumenSurfaceBinding(null, -1L)
+        checkMain()
+        entries.firstOrNull { it.target === target }?.let(::remove)
+        require(entries.size < options.maxSurfaces) { "Surface count exceeds session budget" }
+        val group = source?.let { supplied ->
+            groups.firstOrNull { it.source === supplied } ?: Group(supplied).also(groups::add)
+        }
+        val entry = Entry(nextId++, target.coordinateView, surface, group, target, false)
+        entry.enhancements = enhancements
+        entry.graphics.enabled = enhancements.debug.countersEnabled
+        entry.graphics.timingEnabled = enhancements.debug.timingEnabled
+        entries.add(entry)
+        group?.refreshCounterOptions()
+        entry.rebuild()
+        registerTrim()
+        target.coordinateView.addOnAttachStateChangeListener(entry)
+        return LumenSurfaceBinding(this, entry.id)
+    }
+
+    internal fun draw(id: Long, canvas: Canvas) {
+        if (closed) return
+        checkMain()
+        val entry = entries.firstOrNull { it.id == id } ?: return
+        if (entry.installsBackground) return
+        if (entry.drawable.bounds.width() != entry.target.width || entry.drawable.bounds.height() != entry.target.height)
+            entry.drawable.setBounds(0, 0, entry.target.width, entry.target.height)
+        entry.drawable.draw(canvas)
+    }
+
+    internal fun positionChanged(id: Long) {
+        if (closed) return
+        checkMain()
+        memoryReleased = false
+        val entry = entries.firstOrNull { it.id == id } ?: return
+        entry.group?.sampler?.invalidate()
+        entry.invalidateFrame()
     }
 
     public fun setListener(value: LumenSurfaceListener?) {
@@ -199,10 +244,10 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 val c = entry.appearance
                 if (!c.enabled || !c.sampling.enabled || c.material == LumenSurfaceMaterial.STATIC ||
                     c.sampling.backend == LumenSurfaceBackend.STATIC || c.opacity == 0f ||
-                    !host.isShown || host.alpha <= 0f || host.background !== entry.drawable) continue
+                    !entry.target.isShown || entry.target.alpha <= 0f || entry.installsBackground && host.background !== entry.drawable) continue
                 if (!sourceMoved && !ScrollSurfaceScope.contains(host, scrollHost) { it.parent as? View }) continue
                 if (failure(host, entry) != LumenSurfaceFailure.NONE) continue
-                if (!matrices.sourceToTarget(content, host, scrollSampleMatrix)) continue
+                if (!entry.sourceToTarget(content, scrollSampleMatrix)) continue
                 scrollSampleMatrix.getValues(scrollMatrixValues)
                 if (entry.scrollGeometry.needsRefresh(scrollMatrixValues)) {
                     entry.invalidateFrame()
@@ -296,7 +341,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             it.frame.customShape=false;it.frame.secondShape=false
             if(!it.enhanced()&&!wasNodeCompatible){
                 it.releaseGpu();it.group?.dirty=true
-                it.host.get()?.let {view->it.group?.sampler?.unregister(view)}
+                it.group?.sampler?.unregister(it.target)
             }
             it.resetState();it.invalidateFrame()
         }
@@ -401,9 +446,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         entry.detached = true
         entry.host.get()?.let { view ->
             view.removeOnAttachStateChangeListener(entry)
-            if (options.restoreBackgroundOnDetach && view.background === entry.drawable) replaceBackground(view, entry.original)
-            entry.group?.sampler?.unregister(view)
+            if (entry.installsBackground && options.restoreBackgroundOnDetach && view.background === entry.drawable) replaceBackground(view, entry.original)
         }
+        entry.group?.sampler?.unregister(entry.target)
         main.removeCallbacks(entry.dispatch)
         retiredGraphics.absorb(entry.graphics)
         entry.releaseGpu(); entry.lenses = null; entries.remove(entry)
@@ -491,7 +536,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         private var lastRecording = 0L
         private var autoSuspended = false
         init { source.coordinateView.addOnAttachStateChangeListener(this); observe() }
-        private fun makeSampler() = LiveBackdropSampler(density, ViewSamplingMatrix(), recordContent = { recordSource(source, it) }, sharedBudget = budget, counters = graphics,events=sampleEvents).apply { bindSource(source.coordinateView) }
+        private val observesViewInvalidations = (source as? LumenVersionedContentSource)?.observeCoordinateViewInvalidations != false
+        private fun makeSampler() = LiveBackdropSampler(density, matrices, recordContent = { recordSource(source, it) }, sharedBudget = budget, counters = graphics,events=sampleEvents,
+            observeSourceDirty = observesViewInvalidations).apply { bindSource(source.coordinateView) }
         fun refreshCounterOptions() {
             graphics.enabled=entries.any {it.group===this&&it.enhancements.debug.countersEnabled}
             graphics.timingEnabled=entries.any {it.group===this&&it.enhancements.debug.timingEnabled}
@@ -569,13 +616,13 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 if (entry.group !== this || !entry.config.enabled || !entry.config.sampling.enabled ||
                     entry.config.material == LumenSurfaceMaterial.STATIC || entry.config.opacity == 0f) continue
                 if(entry.enhanced()&&!entry.nodeCompatible())continue
-                if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(host); entry.releaseGpu(); continue }
+                if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(entry.target); entry.releaseGpu(); continue }
                 if (LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, entry.config.sampling.backend, true, entry.gpuFailed)) {
                     wanted = true; interval = minOf(interval, entry.config.sampling.minIntervalMs)
                 }
             }
             if (!wanted) { releaseGpu(); return true }
-            if (!dirty && !content.isDirty) return true
+            if (!dirty && (!observesViewInvalidations || !content.isDirty)) return true
             val now = System.nanoTime()
             if (lastRecording != 0L && (now - lastRecording) / 1_000_000 < interval) {
                 // Reuse one trailing callback, rather than spin while the source is static.
@@ -593,11 +640,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         budgetRejected = false; dirty = false; lastRecording = now; recordings++
                         graphics.contentRecorded(if(measuredStart!=0L)System.nanoTime()-measuredStart else 0L)
                         timeline.completed(timeline.epoch,timeline.contentVersion,now,System.nanoTime())
+                        for (entry in entries) if (entry.group === this && !entry.installsBackground &&
+                            entry.stateBackend == LumenSurfaceBackend.STATIC && entry.stateFailure == LumenSurfaceFailure.FRAME_PENDING)
+                            entry.invalidateFrame()
                         if (captureGeometry.update(content.width, content.height, current.recordedWidth,
                                 current.recordedHeight, current.scaleX, current.scaleY)) {
                             // The proxy baked in inverse recording scale; unchanged content-only records share it.
                             for (entry in entries) if (entry.group === this && entry.gpu != null &&
-                                entry.stateBackend == LumenSurfaceBackend.GPU && entry.host.get()?.background === entry.drawable) {
+                                entry.stateBackend == LumenSurfaceBackend.GPU && (!entry.installsBackground || entry.host.get()?.background === entry.drawable)) {
                                 entry.invalidateFrame()
                             }
                         }
@@ -635,8 +685,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         if(group.graphResult==LumenSourceGraph.Result.CYCLE)return LumenSurfaceFailure.SELF_FEEDBACK
         if(group.graphResult!=LumenSourceGraph.Result.VALID||group.availability!=LumenSourceAvailability.READY)return LumenSurfaceFailure.NO_SOURCE
         val view = source.coordinateView
-        if (!host.isAttachedToWindow || !view.isAttachedToWindow) return LumenSurfaceFailure.DETACHED
-        if (options.autoPauseWhenHidden && (!host.isShown || !view.isShown)) return LumenSurfaceFailure.HIDDEN
+        if (!entry.target.isAttachedToWindow || !view.isAttachedToWindow) return LumenSurfaceFailure.DETACHED
+        if (options.autoPauseWhenHidden && (!entry.target.isShown || !view.isShown)) return LumenSurfaceFailure.HIDDEN
         if (host.windowToken == null || host.windowToken != view.windowToken) return LumenSurfaceFailure.DIFFERENT_WINDOW
         if (!source.excludesSurfaces) {
             for (i in 0 until entries.size) {
@@ -649,13 +699,26 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 }
             }
         }
-        if (host.width <= 0 || host.height <= 0 || view.width <= 0 || view.height <= 0) return LumenSurfaceFailure.INVALID_GEOMETRY
+        if (entry.target.width <= 0 || entry.target.height <= 0 || view.width <= 0 || view.height <= 0) return LumenSurfaceFailure.INVALID_GEOMETRY
         return LumenSurfaceFailure.NONE
     }
 
-    private inner class Entry(val id: Long, view: View, var config: LumenSurfaceOptions, val group: Group?) : View.OnAttachStateChangeListener {
+    private inner class Entry(val id: Long, view: View, var config: LumenSurfaceOptions, val group: Group?,
+        val target: LumenSurfaceTarget = ViewSurfaceTarget(view, matrices), val installsBackground: Boolean = true
+    ) : View.OnAttachStateChangeListener {
         val host = WeakReference(view)
-        var original = view.background
+        var original = if (installsBackground) view.background else null
+        private val sourceGlobal = FloatArray(9)
+        private val targetGlobal = FloatArray(9)
+        private val relative = FloatArray(9)
+        private val inverse = FloatArray(9)
+        fun sourceToTarget(source: View, out: Matrix): Boolean {
+            if (installsBackground) return host.get()?.let { matrices.sourceToTarget(source, it, out) } == true
+            if (!matrices.localToScreen(source, sourceGlobal) || !target.localToScreen(targetGlobal) ||
+                !SamplingMatrixMath.bitmapToTarget(sourceGlobal, targetGlobal, 1f, 1f, relative, inverse)) return false
+            out.setValues(relative)
+            return true
+        }
         var enhancements=LumenSurfaceEnhancements.DEFAULT
         val graphics=LumenGraphicsCounters()
         val frame=LumenSurfaceRenderState()
@@ -676,7 +739,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         }
         var appearance=config
         val drawable = SurfaceDrawable(this)
-        fun invalidateFrame(){drawable.invalidateSelf();host.get()?.invalidate()}
+        fun invalidateFrame(){drawable.invalidateSelf();target.invalidate()}
         var gpu: SurfaceCaptureApi31.Glass? = null
         var lenses: SurfaceCaptureApi31.LensCache? = null
         var detached = false
@@ -684,7 +747,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         val shapeBounds=RectF();val requiredBounds=RectF();val recordedBounds=RectF();val materializedBounds=RectF();val outputBounds=RectF()
         val regionMatrix=Matrix()
         fun updateRegions(view: View) {
-            val w=view.width.toFloat();val h=view.height.toFloat();val f=frame
+            val w=target.width.toFloat();val h=target.height.toFloat();val f=frame
             shapeBounds.set(if(f.customShape)f.shapeA[0]else 0f,if(f.customShape)f.shapeA[1]else 0f,
                 if(f.customShape)f.shapeA[0]+f.shapeA[2]else w,if(f.customShape)f.shapeA[1]+f.shapeA[3]else h)
             if(enhancements.geometry.fusionEnabled&&f.secondShape&&!enhancements.material.reduceMotion){
@@ -698,7 +761,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             requiredBounds.set(-pad,-pad,w+pad,h+pad)
             recordedBounds.setEmpty();materializedBounds.setEmpty()
             val g=group?:return
-            if(g.sampler.samplingBounds(view,recordedBounds,materializedBounds))return
+            if(g.sampler.samplingBounds(target,recordedBounds,materializedBounds))return
             if(Build.VERSION.SDK_INT>=31&&g.capture?.recorded==true&&stateBackend==LumenSurfaceBackend.GPU){
                 val source=g.source.coordinateView;recordedBounds.set(0f,0f,source.width.toFloat(),source.height.toFloat())
                 // Legacy RenderNode is materialized at its outline, leaving the padded recording outside this rectangle.
@@ -721,13 +784,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             }
         }
         fun install() {
+            if (!installsBackground) { resetState(); invalidateFrame(); return }
             val view = host.get() ?: return
             if (config.enabled && options.enabled) {
                 if (view.background !== drawable) original = view.background
                 val left = view.paddingLeft; val top = view.paddingTop; val right = view.paddingRight; val bottom = view.paddingBottom
                 view.background = drawable; view.setPadding(left, top, right, bottom)
             } else if (view.background === drawable) {
-                replaceBackground(view, original); group?.sampler?.unregister(view)
+                replaceBackground(view, original); group?.sampler?.unregister(target)
             }
             resetState()
             view.invalidate()
@@ -760,7 +824,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val keep=if(enhanced()&&appearance.sampling.enabled&&appearance.material!=LumenSurfaceMaterial.STATIC)direct else null
             if(keep!=null)direct=null
             releaseGpu();direct=keep;drawable.configure();resetState();group?.dirty=true
-            host.get()?.let {group?.sampler?.unregister(it)};invalidateFrame()
+            group?.sampler?.unregister(target);invalidateFrame()
         }
         fun resetState(reason: LumenSurfaceFailure = LumenSurfaceFailure.FRAME_PENDING) {
             val dynamic = options.enabled && appearance.enabled && appearance.opacity > 0f && appearance.sampling.enabled &&
@@ -776,7 +840,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             report(LumenSurfaceBackend.STATIC, failure, false)
         }
         fun report(backend: LumenSurfaceBackend, reason: LumenSurfaceFailure, visible: Boolean) {
-            val initial = visible && !first && host.get()?.getGlobalVisibleRect(visibleRegion) == true
+            val initial = visible && !first && target.isShown && target.isAttachedToWindow &&
+                host.get()?.getGlobalVisibleRect(visibleRegion) == true
             if (initial) { first = true; firstDraws++; eventFirst = true }
             val changed = backend != stateBackend || reason != stateFailure || initial
             stateBackend = backend; stateFailure = reason; lastFailure = reason
@@ -851,7 +916,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         override fun draw(canvas: Canvas) {
             val host = entry.host.get() ?: return
             val c = entry.appearance
-            if (recordingDepth > 0 || closed || entry.detached || !options.enabled || !c.enabled || c.opacity == 0f || host.alpha <= 0f || bounds.isEmpty) return
+            if (recordingDepth > 0 || closed || entry.detached || !options.enabled || !c.enabled || c.opacity == 0f || entry.target.alpha <= 0f || bounds.isEmpty) return
             var reason = when { !c.sampling.enabled || c.material == LumenSurfaceMaterial.STATIC || c.sampling.backend == LumenSurfaceBackend.STATIC -> LumenSurfaceFailure.NONE; paused -> LumenSurfaceFailure.PAUSED; memoryReleased -> LumenSurfaceFailure.MEMORY_PRESSURE; else -> failure(host, entry) }
             var backend = LumenSurfaceBackend.STATIC
             val alpha = c.opacity * alphaValue / 255f
@@ -880,26 +945,26 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         if(execution>q.maxExecutionPixels||execution+surfacePixels()-entry.gpuPixels>options.maxGpuSurfacePixels||
                             maxOf(bounds.width(),bounds.height())>options.maxGpuDimension||entry.enhancements.progressiveBlur.enabled&&bounds.height()/density>entry.enhancements.progressiveBlur.maxBandHeightDp)reason=LumenSurfaceFailure.BUDGET_EXCEEDED
                         else if(LumenSurfacePolicy.softwareAllowed(c.sampling)) {
-                            group.sampler.registerRaw(host,entry.rawSampling,entry.rawProfile)
-                            val clear=group.sampler.rawShader(host)
+                            group.sampler.registerRaw(entry.target,entry.rawSampling,entry.rawProfile)
+                            val clear=group.sampler.rawShader(entry.target)
                             if(clear!=null){
                                 if(Build.VERSION.SDK_INT>=33&&canvas.isHardwareAccelerated&&!entry.gpuFailed&&LumenSurfaceEffectFactory.plan(Build.VERSION.SDK_INT,c,true)==LumenSurfaceEffectFactory.Plan.DIRECT_BITMAP){
                                     try {
                                         val program=entry.direct?:LumenSurfaceEffectFactory.direct(entry.graphics).also {entry.direct=it}
-                                        entry.frame.rtl=host.layoutDirection==View.LAYOUT_DIRECTION_RTL
+                                        entry.frame.rtl=entry.target.layoutDirection==View.LAYOUT_DIRECTION_RTL
                                         updateNormalTransform(host)
                                         enhancedPainted=program.draw(canvas,rectangle,c,entry.enhancements,entry.frame,palette,density,clear,
-                                            group.sampler.rawShader(host,1)?:clear,group.sampler.rawShader(host,2)?:clear,
-                                            group.sampler.rawScale(host),group.sampler.rawMargin(host),group.sampler.rawWidth(host),group.sampler.rawHeight(host),alpha,detail)
+                                            group.sampler.rawShader(entry.target,1)?:clear,group.sampler.rawShader(entry.target,2)?:clear,
+                                            group.sampler.rawScale(entry.target),group.sampler.rawMargin(entry.target),group.sampler.rawWidth(entry.target),group.sampler.rawHeight(entry.target),alpha,detail)
                                         if(enhancedPainted){entry.gpuPixels=execution;backend=LumenSurfaceBackend.GPU;gpuDraws++}
                                     }catch(_:Throwable){entry.gpuFailed=true;entry.direct?.close();entry.direct=null;reason=LumenSurfaceFailure.GPU_FAILED}
                                 }
                                 if(!enhancedPainted){
                                     configureEnhancedPath(c,host)
                                     canvas.clipPath(shapeA)
-                                    val source=group.sampler.rawShader(host,2)?:clear
-                                    rawMatrix.setScale(group.sampler.rawScale(host),group.sampler.rawScale(host))
-                                    rawMatrix.postTranslate(-group.sampler.rawMargin(host),-group.sampler.rawMargin(host))
+                                    val source=group.sampler.rawShader(entry.target,2)?:clear
+                                    rawMatrix.setScale(group.sampler.rawScale(entry.target),group.sampler.rawScale(entry.target))
+                                    rawMatrix.postTranslate(-group.sampler.rawMargin(entry.target),-group.sampler.rawMargin(entry.target))
                                     source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*alpha*c.backdropOpacity).roundToInt()
                                     canvas.drawRect(rectangle,rawPaint);backend=LumenSurfaceBackend.SOFTWARE;softwareDraws++
                                 }
@@ -912,7 +977,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         if (canvas.isHardwareAccelerated && LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, c.sampling.backend, true, entry.gpuFailed || group.failed) &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && group.capture?.recorded == true) {
                             try {
-                                if (matrices.sourceToTarget(content, host, sampleMatrix)) {
+                                if (entry.sourceToTarget(content, sampleMatrix)) {
                                     sampleGeometryReady = true
                                     // SurfaceCapture.draw pre-scales sampleMatrix in place; keep the pure relative map.
                                     sampleMatrix.getValues(scrollGeometryValues)
@@ -936,14 +1001,14 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     entry.gpuPixels = pixels
                                     val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics).also { entry.gpu = it }
                                     group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, alpha * c.backdropOpacity)
-                                    backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(host)
+                                    backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(entry.target)
                                     }
                                 } else reason = LumenSurfaceFailure.INVALID_GEOMETRY
                             } catch (_: Throwable) { entry.gpuFailed = true; entry.releaseGpu(); reason = LumenSurfaceFailure.GPU_FAILED }
                         }
                         if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling)) {
-                            group.sampler.register(host, c.sampling)
-                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, host, (255 * alpha * c.backdropOpacity).roundToInt())) {
+                            group.sampler.register(entry.target, c.sampling)
+                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * alpha * c.backdropOpacity).roundToInt())) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
                             } else if (group.sampler.hasFailed) reason = LumenSurfaceFailure.SOFTWARE_FAILED
                             else if (group.sampler.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
@@ -978,19 +1043,19 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 fun drawRegion(rect: RectF,color: Int){boundsPaint.color=color;boundsPaint.alpha=(entry.enhancements.debug.boundsOpacity*255).roundToInt();canvas.drawRect(rect,boundsPaint)}
                 drawRegion(entry.shapeBounds,Color.GREEN);drawRegion(entry.requiredBounds,Color.RED)
                 val g=entry.group
-                if(g!=null&&matrices.sourceToTarget(g.source.coordinateView,host,entry.regionMatrix)){
+                if(g!=null&&entry.sourceToTarget(g.source.coordinateView,entry.regionMatrix)){
                     entry.regionMatrix.mapRect(rectangle,entry.recordedBounds);drawRegion(rectangle,Color.MAGENTA)
                 }
                 rectangle.set(entry.materializedBounds)
-                if(entry.enhanced()&&!entry.nodeCompatible()&&g!=null){val scale=g.sampler.rawScale(host);val margin=g.sampler.rawMargin(host);rectangle.set(rectangle.left*scale-margin,rectangle.top*scale-margin,rectangle.right*scale-margin,rectangle.bottom*scale-margin)}
+                if(entry.enhanced()&&!entry.nodeCompatible()&&g!=null){val scale=g.sampler.rawScale(entry.target);val margin=g.sampler.rawMargin(entry.target);rectangle.set(rectangle.left*scale-margin,rectangle.top*scale-margin,rectangle.right*scale-margin,rectangle.bottom*scale-margin)}
                 else if(entry.stateBackend==LumenSurfaceBackend.GPU){val pad=entry.requiredBounds.left;rectangle.offset(pad,pad)}
                 drawRegion(rectangle,Color.CYAN);drawRegion(entry.outputBounds,Color.BLUE);rectangle.set(bounds)
             }
-            entry.report(backend, reason, (canvas.isHardwareAccelerated || !host.isHardwareAccelerated) && visibleEffect && host.isShown && host.isAttachedToWindow && alpha > 0f)
+            entry.report(backend, reason, (canvas.isHardwareAccelerated || !host.isHardwareAccelerated) && visibleEffect && entry.target.isShown && entry.target.isAttachedToWindow && alpha > 0f)
             if (canvas.isHardwareAccelerated && backend != LumenSurfaceBackend.STATIC && visibleEffect &&
-                host.isShown && host.isAttachedToWindow && alpha > 0f) {
+                entry.target.isShown && entry.target.isAttachedToWindow && alpha > 0f) {
                 val content = entry.group?.source?.coordinateView
-                if (content != null && (sampleGeometryReady || matrices.sourceToTarget(content, host, sampleMatrix))) {
+                if (content != null && (sampleGeometryReady || entry.sourceToTarget(content, sampleMatrix))) {
                     if (!sampleGeometryReady) sampleMatrix.getValues(scrollGeometryValues)
                     entry.scrollGeometry.record(scrollGeometryValues)
                 }
@@ -998,7 +1063,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         }
         private fun configureEnhancedPath(c: LumenSurfaceOptions,host: View) {
             val f=entry.frame;val e=entry.enhancements.geometry
-            val corners=e.corners;val mirror=e.mirrorCornersInRtl&&host.layoutDirection==View.LAYOUT_DIRECTION_RTL
+            val corners=e.corners;val mirror=e.mirrorCornersInRtl&&entry.target.layoutDirection==View.LAYOUT_DIRECTION_RTL
             fun add(path: Path,x: Float,y: Float,w: Float,h: Float) {
                 val tl=if(e.cornersEnabled)if(mirror)corners.topRight else corners.topLeft else c.radiusDp
                 val tr=if(e.cornersEnabled)if(mirror)corners.topLeft else corners.topRight else c.radiusDp
@@ -1015,7 +1080,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         private fun updateNormalTransform(host: View) {
             val values=entry.frame.matrixValues;val normal=entry.frame.normalTransform
             normal[0]=1f;normal[1]=0f;normal[2]=0f;normal[3]=1f
-            if(!matrices.localToScreen(host,values)||kotlin.math.abs(values[6])>1e-5f||kotlin.math.abs(values[7])>1e-5f)return
+            if(!entry.target.localToScreen(values)||kotlin.math.abs(values[6])>1e-5f||kotlin.math.abs(values[7])>1e-5f)return
             val determinant=values[0]*values[4]-values[1]*values[3]
             if(!determinant.isFinite()||kotlin.math.abs(determinant)<1e-5f)return
             val inverse=1f/determinant
@@ -1034,6 +1099,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
 public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSession?, public val id: Long) : AutoCloseable {
     private val session = WeakReference(session)
     public val isBound: Boolean get()=session.get()?.isBound(id)==true
+    /** Draw-only bindings share the View renderer without installing a background. */
+    public fun draw(canvas: Canvas) { session.get()?.draw(id, canvas) }
+    public fun notifyPositionChanged() { session.get()?.positionChanged(id) }
     public fun update(options: LumenSurfaceOptions) { session.get()?.update(id, options) }
     public fun updateEnhancements(options: LumenSurfaceEnhancements) { session.get()?.updateEnhancements(id, options) }
     public fun samplingRegions(): LumenSurfaceSamplingRegions? = session.get()?.regions(id)
