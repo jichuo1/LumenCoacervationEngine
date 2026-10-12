@@ -1,6 +1,6 @@
 # 原生 Compose 接入原型
 
-本实现以引擎 1.4.0 为基线，作为主分支上的试验模块维护，尚未正式发布。它是原生接入的第一阶段：局部材质、独立表面身份、背景采样、Lazy 生命周期和长按弹性。完整 Activity 视效、原生回弹的背景反采样、Modal 形变及预测返回尚未迁移；不能据此宣称整套 View 接入已具备 Compose 等价实现或全部性能相同。
+本实现以引擎 1.4.0 为基线，自 1.4.1 起随引擎提供独立可选的试验模块。它是原生接入的第一阶段：局部材质、独立表面身份、背景采样、Lazy 生命周期和长按弹性。完整 Activity 视效、原生回弹的背景反采样、Modal 形变及预测返回尚未迁移；不能据此宣称整套 View 接入已具备 Compose 等价实现或全部性能相同。
 
 ## 接入
 
@@ -42,6 +42,6 @@ TextField、Slider 和业务长按控件不启用该弹性 modifier，它们的�
 
 `ComposeSandboxActivity` 包含移动卡片、输入框、选择器和稳定 key 列表。`NativeComposeIntegrationTest` 检查真实窗口像素、独立身份、位置采样、旧选中背景恢复、Lazy 释放和重新恢复、直接着色器缓存及手势归属。`NativeSurfaceTargetTest` 检查共享窗口锚点的软件采样和关闭所有权。测试中的 SDK 条件仅表达预期，不表示该 SDK 已实际执行。
 
-正式发布前仍须完成 API 27/31/33/34 的实际运行、原生回弹与复杂背景、Modal/预测返回，以及相同视觉参数和场景的 View/Compose 成对 Release 帧耗时、内存、分配与静止功耗测量。当前的静止录制计数和着色器缓存测试不能替代这些比较。
+完整 Compose 能力验收仍须覆盖 API 27/31/33/34 的实际运行、原生回弹与复杂背景、Modal/预测返回，以及相同视觉参数和场景的 View/Compose 成对 Release 帧耗时、内存、分配与静止功耗测量。当前的静止录制计数和着色器缓存测试不能替代这些比较。
 
 参考：[Compose 自定义 Modifier](https://developer.android.com/develop/ui/compose/custom-modifiers)、[绘图 Modifier](https://developer.android.com/develop/ui/compose/graphics/draw/modifiers)、[指针消费](https://developer.android.com/develop/ui/compose/touch-input/pointer-input/understand-gestures)。依赖版本、最低 SDK 和编译要求另以本轮下载的 Google Maven POM/AAR 实物核验。
