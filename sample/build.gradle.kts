@@ -3,6 +3,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile
 
 plugins {
     alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.compose)
 }
 
 android {
@@ -29,6 +30,7 @@ android {
         }
     }
     // 冒烟测试直接跑发布出去的那个构建类型，而不是另一套 debug 包。
+    buildFeatures { compose = true }
     testBuildType = "release"
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -46,6 +48,7 @@ dependencies {
     implementation(project(":lumen-engine"))
     implementation(project(":lumen-controls"))
     implementation(project(":lumen-motion"))
+    implementation(project(":lumen-compose"))
     implementation(project(":lumen-effects"))
     implementation(project(":lumen-assets"))
     implementation(project(":lumen-assets-lottie"))

@@ -22,6 +22,8 @@ include(":lumen-engine")
 include(":lumen-motion")
 // 可选：把 SwitchCompat / CheckBox / EditText 换装成引擎材质。唯一依赖 AppCompat 的部分。
 include(":lumen-controls")
+// 可选的原生 Compose 绘制与交互接入层，core/motion 不依赖它。
+include(":lumen-compose")
 // 接入示例：按 docs/INTEGRATION_STANDARD.md 的最小接入写法搭的演示应用。
 include(":sample")
 

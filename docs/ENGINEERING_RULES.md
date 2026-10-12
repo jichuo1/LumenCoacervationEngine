@@ -18,6 +18,8 @@
 
 1.2.1的`lumen-effects`和`lumen-assets`只在motion/core之上提供无供应商的契约；播放运行时只存在于三个独立可选`lumen-assets-lottie/pag/rive`模块。核心和motion继续遵守上面的依赖限制，公开签名不泄漏供应商类型；Rive传递Compose依赖不构成核心Compose接入层。
 
+原生 Compose 原型仅位于独立可选 `lumen-compose`；其公开类型允许使用 Compose，core/motion 继续不引用它。当前能力与待验收项见 `NATIVE_COMPOSE.md`，不能以新增模块代替效果和性能等价验证。
+
 ## 2. 高于 minSdk 的平台类型必须隔离
 
 ### 2.1 为什么
