@@ -40,6 +40,8 @@ internal class ElasticOverflowPortal private constructor(
     private var failed = false
     private val clipProbe = Rect()
     private val outlineProbe = Outline()
+    private val nativeRectangle = RectF()
+    private val rectangularNativeClip = nativeClip.isRect(nativeRectangle)
     private val failureReceipt = Runnable(onFailure)
 
     fun bridgesClip(view: View): Boolean = bridged.any { it === view }
@@ -89,6 +91,18 @@ internal class ElasticOverflowPortal private constructor(
     override fun draw(canvas: Canvas) {
         if (!attached || failed) return
         if (!geometryValid()) { fail(); return }
+        if (rectangularNativeClip) {
+            val scaleX = source.scaleX
+            val scaleY = source.scaleY
+            val x = sourceLeft + source.translationX + source.pivotX * (1f - scaleX)
+            val y = sourceTop + source.translationY + source.pivotY * (1f - scaleY)
+            // Older Canvas backends can retain a conservative nonempty clip after DIFFERENCE.
+            // A fully contained source has no overflow to record, irrespective of that result.
+            if (nativeRectangle.contains(x + (baselineCrop?.left ?: 0) * scaleX,
+                    y + (baselineCrop?.top ?: 0) * scaleY,
+                    x + (baselineCrop?.right ?: source.width) * scaleX,
+                    y + (baselineCrop?.bottom ?: source.height) * scaleY)) return
+        }
         val saved = canvas.save()
         try {
             if (!canvas.clipRect(0f, 0f, host.width.toFloat(), host.height.toFloat()) ||
