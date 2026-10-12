@@ -1,8 +1,10 @@
 # JitPack 构建配置（https://jitpack.io/docs/）
-# AGP 9.4 需要 JDK 17；install 把产物装进 JitPack 的本地 Maven 仓，
-# 用 -Plumen.group 覆盖为 JitPack 约定的坐标 com.github.<user>.<repo>
+# AGP 9.4.x 需要 JDK 17；实际安装命令在 tools/jitpack_install.sh：把产物装进 JitPack 的本地
+# Maven 仓（-Plumen.group 覆盖为 JitPack 约定的坐标 com.github.<user>.<repo>），并在容器
+# 连不上 Google Maven 的短抖动时于同一轮内重试。发布后仍以 tools/jitpack_ensure.sh 的验证为准。
+# JitPack 读取的是 tag 自身提交里的本文件与脚本，旧 tag 不受之后对 main 的改动影响。
 jdk:
   - openjdk17
 
 install:
-  - ./gradlew --no-daemon -Plumen.group=com.github.jichuo1.LumenCoacervationEngine publishToMavenLocal
+  - bash tools/jitpack_install.sh

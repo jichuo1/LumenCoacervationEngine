@@ -76,6 +76,13 @@ check(LumenEngine.CONTRACT_VERSION == 1) { "凝光视效引擎契约已变化，
    `git tag x.y.z && git push origin x.y.z`，再 `gh release create x.y.z`。
    - JitPack 按 tag 构建，`com.github.jichuo1.LumenCoacervationEngine:<模块>:x.y.z` 即坐标。
    - **tag 必须等于 `lumen.version`**：不一致时产物会装进 `lumen.version` 的目录，按 tag 拉取会失败。
-   - tag 发布后不可删除或移动，JitPack 构建不可变。
-   - 首次请求该 tag 会触发构建，可先 `curl` 一下 pom 地址预热：
-     `https://jitpack.io/com/github/jichuo1/LumenCoacervationEngine/lumen-engine/x.y.z/`
+   - **tag 推送后不可删除或移动**：移动后的 tag 不会被重新构建（已构建的产物会继续提供）。下文
+     “删除重建”指的是 JitPack 侧的**构建记录**而非 git tag——**失败**的构建记录随时可删除后重试；
+     已**成功**构建的版本不要删除（需要修复时发补丁版本；官方允许 7 天内重建，同样建议走补丁版本）。
+6. 验证 JitPack 构建：`bash tools/jitpack_ensure.sh x.y.z`，输出 “JitPack 构建验证通过” 才算发布完成。
+   JitPack 以请求触发为主（官方另有定期巡检可能提前补建，发布后主动请求一次以确保触发并核验）。
+   构建机解析插件的偶发失败（与代码无关，AGP 等版本在 Google Maven 一直可用）会留下
+   “Build failed” 记录并被缓存，直接重请求只会命中旧记录；脚本会触发构建、命中失败记录时删除并
+   重试（令牌取 `JITPACK_TOKEN`，缺省用 `gh auth token`），最后逐个核对各模块 pom 可下载。
+   重试耗尽时先做别的事、稍后重跑同一命令即可（故障窗口从几分钟到一小时以上不等，2026-10-12
+   实测有 4 轮重试全部撞在故障窗口内）。
