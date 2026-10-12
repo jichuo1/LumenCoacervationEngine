@@ -8,6 +8,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class LiquidMotionMappingContractTest {
+    @Test fun dialogAndActivitySurfacesShareTheNativeStretchCoordinateResolver() {
+        val renderer = SourceContract.read("liquid/LiquidActivityRenderer.kt")
+        val draw = renderer.after("internal fun drawSurface(").before("private fun drawSurfaceLayers(")
+        assertTrue(draw.contains("stretchCoordinates.resolve(host, root, stretchSampling)"))
+        val foreign = draw.after("if (foreignWindow) {").before("} else {")
+        assertTrue(foreign.contains("panelDriver.drawBackdrop("))
+        assertTrue(foreign.contains("stretchSampling = stretchSampling"))
+        assertTrue(foreign.contains("drawOpticalRegion("))
+        assertTrue(foreign.split("stretchSampling = stretchSampling").size == 3)
+    }
+
     @Test fun mappingAndMaskShareTheRecordedFullTransform() {
         val renderer = SourceContract.read("liquid/LiquidActivityRenderer.kt")
         assertTrue(renderer.contains("surfaceCoordinates.sourceToTarget(screenTransform, root, surfaceToBackdrop)"))

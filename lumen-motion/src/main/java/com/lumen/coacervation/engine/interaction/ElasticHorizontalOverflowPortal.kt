@@ -9,6 +9,10 @@ import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ScrollView
+import androidx.core.widget.NestedScrollView
+import com.lumen.coacervation.engine.liquid.LiquidStretchViewport
+import com.lumen.coacervation.engine.motion.modal.PanelContentClip
+import com.lumen.coacervation.engine.widget.LumenSlidingSelection
 
 /**
  * Draw only one held control's horizontal overflow into its panel's padding.
@@ -18,6 +22,7 @@ import android.widget.ScrollView
  */
 internal class ElasticHorizontalOverflowPortal private constructor(
     private val source: View,
+    private val sourceBackdrop: View?,
     private val host: ViewGroup,
     private val bridged: List<View>,
     private val sourceLeft: Float,
@@ -64,6 +69,7 @@ internal class ElasticHorizontalOverflowPortal private constructor(
             canvas.translate(sourceLeft + source.translationX, sourceTop + source.translationY)
             canvas.scale(source.scaleX, source.scaleY, source.pivotX, source.pivotY)
             canvas.clipRect(0f, 0f, source.width.toFloat(), source.height.toFloat())
+            sourceBackdrop?.draw(canvas)
             source.draw(canvas)
         } catch (_: Throwable) {
             failed = true
@@ -84,9 +90,11 @@ internal class ElasticHorizontalOverflowPortal private constructor(
         /** Unknown custom viewports and clipping paths remain hard boundaries. */
         fun prepare(source: View, root: View, geometryValid: () -> Boolean,
                     onFailure: () -> Unit): ElasticHorizontalOverflowPortal? {
+            fun managedViewportOutline(view: View): Boolean = PanelContentClip.ownsOutline(view) &&
+                (view is ScrollView || view is NestedScrollView || view is LiquidStretchViewport)
             fun plain(view: View): Boolean = view.alpha == 1f && view.scaleX == 1f && view.scaleY == 1f &&
                 view.rotation == 0f && view.rotationX == 0f && view.rotationY == 0f &&
-                !view.clipToOutline && view.clipBounds == null && view.elevation == 0f &&
+                (!view.clipToOutline || managedViewportOutline(view)) && view.clipBounds == null && view.elevation == 0f &&
                 view.translationZ == 0f && view.layerType == View.LAYER_TYPE_NONE
             var visited = 0
             fun drawableTree(view: View, depth: Int = 0): Boolean {
@@ -100,9 +108,13 @@ internal class ElasticHorizontalOverflowPortal private constructor(
                 return true
             }
             if (!plain(source) || !drawableTree(source)) return null
+            val selection = (source.parent as? View)?.parent as? LumenSlidingSelection
+            val backdrop = selection?.horizontalOverflowBackdrop(source)
+            if (backdrop != null && (!plain(backdrop) || !drawableTree(backdrop))) return null
             val ancestors = ArrayList<View>()
             var node = source.parent as? View ?: return null
-            var viewport: ScrollView? = null
+            var viewport: ViewGroup? = null
+            var stretchWrapper: LiquidStretchViewport? = null
             var host: ViewGroup? = null
             while (ancestors.size < 32 && node !== root) {
                 if (node.tag == ElasticInteractionController.CONTAINER_TAG) {
@@ -111,8 +123,18 @@ internal class ElasticHorizontalOverflowPortal private constructor(
                 }
                 if (!plain(node)) return null
                 if (ElasticClipPolicy.isViewport(node)) {
-                    if (viewport != null || node !is ScrollView || node is ElasticClipBoundary || node.scrollX != 0) return null
-                    viewport = node
+                    if (node is LiquidStretchViewport) {
+                        val scroll = viewport ?: return null
+                        if (stretchWrapper != null || scroll.parent !== node || node.childCount != 1 ||
+                            node.getChildAt(0) !== scroll || scroll.left != 0 || scroll.top != 0 ||
+                            scroll.width != node.width || scroll.height != node.height ||
+                            node.samplingOverscroll != 0f || node.scrollX != 0 || node.scrollY != 0) return null
+                        stretchWrapper = node
+                    } else {
+                        if (viewport != null || (node !is ScrollView && node !is NestedScrollView) ||
+                            node is ElasticClipBoundary || node.scrollX != 0) return null
+                        viewport = node as ViewGroup
+                    }
                 }
                 ancestors.add(node)
                 node = node.parent as? View ?: return null
@@ -183,8 +205,9 @@ internal class ElasticHorizontalOverflowPortal private constructor(
             }
             if (viewportLeft <= 0f || viewportRight >= panel.width || clipInvalid(top, bottom) ||
                 sourceInViewport < 0f || sourceInViewport + source.width > viewportRight - viewportLeft) return null
-            return ElasticHorizontalOverflowPortal(source, panel, ancestors.subList(viewportIndex, ancestors.size),
-                x, y, viewportLeft, viewportRight, top, bottom, geometryValid, onFailure)
+            return ElasticHorizontalOverflowPortal(source, backdrop, panel, ancestors.subList(viewportIndex, ancestors.size),
+                x, y, viewportLeft, viewportRight, top, bottom,
+                { geometryValid() && selection?.horizontalOverflowBackdrop(source) === backdrop }, onFailure)
         }
 
         private fun clipInvalid(top: Float, bottom: Float): Boolean = !top.isFinite() || !bottom.isFinite() || top >= bottom

@@ -632,8 +632,11 @@ public class ElasticInteractionController(
                 else if (retainedOutline.canClip()) {
                     if (retainedOutline.getRect(retainedOutlineRect)) {
                         val rect = retainedOutlineRect
-                        constrain(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat())
-                        if (retainedOutline.radius > 0f && roundedClipCount < 64) {
+                        val bridged = overflowPortal?.bridgesHorizontalClip(parent) == true &&
+                            com.lumen.coacervation.engine.motion.modal.PanelContentClip.ownsOutline(parent)
+                        constrain(rect.left.toFloat(), rect.top.toFloat(), rect.right.toFloat(), rect.bottom.toFloat(),
+                            horizontal = !bridged)
+                        if (!bridged && retainedOutline.radius > 0f && roundedClipCount < 64) {
                             val offset = roundedClipCount++ * 5
                             roundedClipBounds[offset] = rect.left - x
                             roundedClipBounds[offset + 1] = rect.top - y

@@ -15,6 +15,12 @@ import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.ScrollView
+import androidx.core.widget.NestedScrollView
+import com.lumen.coacervation.engine.liquid.LiquidStretchViewport
+import com.lumen.coacervation.engine.motion.modal.ModalCardRoot
+import com.lumen.coacervation.engine.widget.LumenSlidingSelection
+import android.widget.LinearLayout
+import android.graphics.drawable.ColorDrawable
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
@@ -34,16 +40,60 @@ import org.junit.runner.RunWith
 class HeldRowOverflowPortalTest {
     @get:org.junit.Rule val hardwareOutput = HardwareOutputRule()
 
+    @Test fun managedNestedStretchViewportKeepsHorizontalOverflowAndVerticalContainment() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            lateinit var fixture: Fixture
+            scenario.onActivity { fixture = Fixture(it, 0, false, 0f, 320, nestedStretch = true) }
+            awaitReady(scenario, fixture)
+            scenario.onActivity {
+                try {
+                    assertTrue((fixture.viewport.parent as View).clipToOutline)
+                    fixture.start()
+                    fixture.drag(-100f)
+                    assertTrue("The held row must travel left through the native nested viewport", fixture.row.translationX < -4f)
+                    fixture.capture { bitmap ->
+                        assertTrue("Only the held row is copied into panel padding", Color.green(bitmap.getPixel(16, 66)) > 80)
+                        assertEquals("Other content remains vertically clipped", Color.WHITE, bitmap.getPixel(32, 124))
+                        assertEquals("The panel background retains its rounded corner", Color.TRANSPARENT, bitmap.getPixel(1, 1))
+                    }
+                    fixture.controller.clear()
+                    fixture.capture { assertEquals(Color.WHITE, it.getPixel(16, 66)) }
+                    fixture.start()
+                    fixture.drag(100f)
+                    assertTrue(fixture.row.translationX > 4f)
+                    fixture.capture { bitmap ->
+                        assertTrue(Color.green(bitmap.getPixel(fixture.rightOverflowPixelX, 66)) > 80)
+                    }
+                } finally { fixture.close() }
+            }
+        }
+    }
+
     @Test fun hardwareBufferContainsOnlyTheHeldControlOutsideViewport() {
+        hardwareHorizontalOverflow(nestedStretch = false)
+    }
+
+    @Test fun hardwareRoundedNestedViewportCarriesOnlyTheHeldControlIntoPadding() {
+        hardwareHorizontalOverflow(nestedStretch = true)
+    }
+
+    @Test fun hardwareSelectedBackdropFollowsTheHeldOptionOutsideRoundedViewport() {
+        hardwareHorizontalOverflow(nestedStretch = true, selectedChoice = true)
+    }
+
+    private fun hardwareHorizontalOverflow(nestedStretch: Boolean, selectedChoice: Boolean = false) {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             lateinit var fixture: Fixture
             lateinit var activity: SurfaceSandboxActivity
-            scenario.onActivity { owner -> activity = owner; fixture = Fixture(owner, 0, false, 0f) }
+            scenario.onActivity { owner -> activity = owner; fixture = Fixture(owner, 0, false, 0f, nestedStretch = nestedStretch, selectedChoice = selectedChoice) }
             awaitReady(scenario, fixture)
             try {
                 scenario.onActivity { fixture.start() }
                 SystemClock.sleep(220)
                 scenario.onActivity { fixture.drag(-100f) }
+                if (selectedChoice) scenario.onActivity {
+                    assertTrue("The selected option must be the moving unit", fixture.row.translationX < -4f)
+                }
                 fun copyWindow(check: (Bitmap) -> Unit) {
                     val deadline = SystemClock.uptimeMillis() + 5_000
                     repeat(4) { attempt ->
@@ -284,7 +334,7 @@ class HeldRowOverflowPortalTest {
         assertTrue("Fixture must finish a real layout before DOWN: ${fixture.diagnostics()}", ready)
     }
 
-    private class Fixture(activity: SurfaceSandboxActivity, scroll: Int, surface: Boolean, glow: Float, sceneWidthLimit: Int = Int.MAX_VALUE) {
+    private class Fixture(activity: SurfaceSandboxActivity, scroll: Int, surface: Boolean, glow: Float, sceneWidthLimit: Int = Int.MAX_VALUE, nestedStretch: Boolean = false, selectedChoice: Boolean = false) {
         private val root = activity.window.decorView
         private val windowWidth = root.width.takeIf { it > 0 } ?: activity.resources.displayMetrics.widthPixels
         private val sceneWidth = minOf(windowWidth, sceneWidthLimit)
@@ -298,7 +348,7 @@ class HeldRowOverflowPortalTest {
             background = GradientDrawable().apply { setColor(Color.WHITE); cornerRadius = 16f }
             clipToOutline = true
         }
-        val viewport = ScrollView(activity)
+        val viewport = if (nestedStretch) NestedScrollView(activity) else ScrollView(activity)
         val content = FrameLayout(activity).apply { minimumHeight = 400 }
         val row = FrameLayout(activity).apply {
             isClickable = true
@@ -317,12 +367,21 @@ class HeldRowOverflowPortalTest {
 
         init {
             activity.binding.close()
-            content.addView(row, FrameLayout.LayoutParams(contentWidth, 60).apply { topMargin = 16 })
+            val rowHost = if (selectedChoice) LumenSlidingSelection(activity, ColorDrawable(Color.BLUE)).apply {
+                row.background = GradientDrawable().apply { setColor(Color.TRANSPARENT); cornerRadius = 16f }
+                addOption(row, LinearLayout.LayoutParams(contentWidth, 60))
+                addOption(View(activity), LinearLayout.LayoutParams(contentWidth, 60))
+            } else row
+            content.addView(rowHost, FrameLayout.LayoutParams(contentWidth, if (selectedChoice) -2 else 60).apply { topMargin = 16 })
             content.addView(View(activity).apply { setBackgroundColor(Color.RED) },
                 FrameLayout.LayoutParams(contentWidth, 80).apply { topMargin = 180 })
             viewport.addView(content, FrameLayout.LayoutParams(contentWidth, 400))
             panel.addView(viewport, FrameLayout.LayoutParams(contentWidth, 100))
-            activity.setContentView(FrameLayout(activity).apply {
+            if (nestedStretch) {
+                assertNotNull(LiquidStretchViewport.installAround(viewport, { true }) { _, _ -> })
+            }
+            val windowBody = if (nestedStretch) ModalCardRoot(activity) else FrameLayout(activity)
+            activity.setContentView(windowBody.apply {
                 addView(panel, FrameLayout.LayoutParams(panelWidth, 140).apply { leftMargin = panelLeft; topMargin = 80 })
             }, ViewGroup.LayoutParams(sceneWidth, ViewGroup.LayoutParams.MATCH_PARENT))
             if (surface) {

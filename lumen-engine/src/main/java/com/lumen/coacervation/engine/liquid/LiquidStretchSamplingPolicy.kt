@@ -23,4 +23,19 @@ internal object LiquidStretchSamplingPolicy {
         val mapped = k * k * q / (1f + .3f * amount + .7f * amount * k * q)
         return if (overscroll < 0f) 1f - mapped else mapped
     }
+
+    fun opticalSegment(top: Float, bottom: Float, viewportTop: Float, viewportHeight: Float,
+                       overscroll: Float, out: FloatArray): Boolean {
+        val span = bottom - top
+        if (!span.isFinite() || span <= 0f || !viewportTop.isFinite() ||
+            !viewportHeight.isFinite() || viewportHeight <= 0f || !overscroll.isFinite()) return false
+        val mappedTop = viewportTop + outputPosition((top - viewportTop) / viewportHeight, overscroll) * viewportHeight
+        val mappedBottom = viewportTop + outputPosition((bottom - viewportTop) / viewportHeight, overscroll) * viewportHeight
+        val scale = (mappedBottom - mappedTop) / span
+        val shift = mappedTop - scale * top
+        if (!scale.isFinite() || scale <= 0f || !shift.isFinite()) return false
+        out[0] = scale
+        out[1] = shift
+        return true
+    }
 }

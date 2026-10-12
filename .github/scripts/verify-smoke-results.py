@@ -65,6 +65,9 @@ REQUIRED = {
         "roundedViewportPreservesItsRealCornerDuringDiagonalDrag",
     },
     PREFIX + "HeldRowOverflowPortalTest": {
+        "managedNestedStretchViewportKeepsHorizontalOverflowAndVerticalContainment",
+        "hardwareRoundedNestedViewportCarriesOnlyTheHeldControlIntoPadding",
+        "hardwareSelectedBackdropFollowsTheHeldOptionOutsideRoundedViewport",
         "hardwareBufferContainsOnlyTheHeldControlOutsideViewport",
         "anAlreadyUnclippedViewportDoesNotDrawADuplicateSource",
         "horizontalOverflowCarriesTheSourceOverlayWithoutDuplicatingInterior",
@@ -73,9 +76,14 @@ REQUIRED = {
         "cancelDisposeAndClearRemoveOnlyTheHeldOverflow",
         "releaseAndRegrabDoNotDuplicateThePortal",
     },
+    PREFIX + "PanelSurfaceGeometryTest": {
+        "selectedBackgroundRerecordsDuringRowTransformAndStaysIdleAfterwards",
+        "bitmapSamplingTransformMatchesNativeWarpAtSurfaceEndpoints",
+    },
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
 PANEL_STRETCH_TESTS = {
+    (PREFIX + "PanelSurfaceGeometryTest", "dialogInputReadsCurrentNativeStretchCoordinatesAndClearsAfterRelease"),
     (PREFIX + "PanelFlingHandoffTest", "fastFlingReboundsAndTouchTakesOwnership"),
     (PREFIX + "PanelStretchWindowIsolationTest", "dialogReboundDoesNotRerecordTheStationaryActivityBehindIt"),
 }

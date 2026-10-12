@@ -13,6 +13,9 @@ import com.lumen.coacervation.engine.liquid.LiquidStretchViewport
 
 /** Layout-time clipping for embedded pages. Never walks the hierarchy from draw or touch. */
 internal class PanelContentClip {
+    companion object {
+        internal fun ownsOutline(view: View): Boolean = view.outlineProvider is EmbeddedOutline
+    }
     private val outline = Outline()
 
     fun applyToHierarchy(view: View) {

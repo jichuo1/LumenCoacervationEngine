@@ -348,6 +348,17 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 
 `liquid.LiquidStretchViewport`、`LiquidStretchOverscrollPolicy`、`LiquidStretchEdge`、`LiquidStretchUnconsumedAction`、`LiquidStretchGestureObserver` 位于 **lumen-engine**。`installAround(scrollTarget,isStretchAllowed,onStretchDistance)` 只替换指定滚动容器的直接父槽位，失败恢复原位置；`samplingOverscroll/samplingBeforeContent` 供宿主在同一帧进行反向采样，`finishStretch` 在退场时清零。宿主不同时安装旧的回弹副本。
 
+### 回弹采样与选中框的位置同步
+
+`liquid.LiquidStretchSampling` 供宿主适配器和内置渲染器共享原生回弹坐标。主线程调用
+`resolve(host, backdropRoot, out)`，传入实际绘制表面与稳定底图根；三个输出值分别是视口原点、
+高度和有符号回弹强度；`out` 至少包含三个元素，无活动回弹时清零。主窗口和 Dialog 的 AGSL 绘制均将该数组传给采样后端；
+`opticalTransform` 为不支持 AGSL 的位图后端在当前表面范围构造端点匹配的仿射近似。
+`opticalTransform(bounds, localToBackdrop, rootX, rootY, sampling, out)` 写入调用方的矩阵，
+无回弹时保留原坐标。实例复用矩阵与数组，不持有 View，不分配逐帧对象。
+
+`LumenSlidingSelection` 在选中框边界、行程或长按跟随变换改变后重录自己的背景并通知位置变化，
+静止帧不额外失效。宿主保留行内容、颜色和业务选择回调；无需另外维护选中框动画。
 ### ContainerMorphController 的回调构造
 
 第三个参数可以传 `notifyPositionChanged: () -> Unit`。其他既有参数保持相同含义；可选参数增加：

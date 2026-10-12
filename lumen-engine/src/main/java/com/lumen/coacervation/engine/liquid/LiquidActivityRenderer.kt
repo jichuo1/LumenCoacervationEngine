@@ -213,8 +213,7 @@ internal class LiquidActivityRenderer(
     private val surfaceToBackdrop = Matrix()
     private val refreshSurfaceTransform = FloatArray(9)
     private val refreshRootTransform = FloatArray(9)
-    private val stretchToBackdrop = Matrix()
-    private val stretchTransformValues = FloatArray(9)
+    private val stretchCoordinates = LiquidStretchSampling()
     private val stretchSampling = FloatArray(3)
     private val stretchWindows = LiquidStretchWindowRegistry()
     /** 窗口底图换代计数，见 [windowBackdropGeneration]。 */
@@ -755,22 +754,7 @@ internal class LiquidActivityRenderer(
         val screenTransform = host?.let { surfaceViews[it]?.takeIf { footprint -> footprint.hasTransform }?.screenTransform }
         val samplingMatrix = if (screenTransform != null && root != null &&
             surfaceCoordinates.sourceToTarget(screenTransform, root, surfaceToBackdrop)) surfaceToBackdrop else null
-        stretchSampling.fill(0f)
-        var stretchAncestor = host?.parent as? View
-        while (stretchAncestor != null && stretchAncestor !is LiquidStretchViewport) {
-            stretchAncestor = stretchAncestor.parent as? View
-        }
-        if (root != null && stretchAncestor is LiquidStretchViewport && stretchAncestor.samplingOverscroll != 0f &&
-            surfaceCoordinates.sourceToTarget(stretchAncestor, root, stretchToBackdrop)) {
-            stretchToBackdrop.getValues(stretchTransformValues)
-            // The vertical viewport must stay axis-aligned; unusual host transforms fail open.
-            if (stretchTransformValues[1] == 0f && stretchTransformValues[3] == 0f &&
-                stretchTransformValues[6] == 0f && stretchTransformValues[7] == 0f && stretchTransformValues[4] > 0f) {
-                stretchSampling[0] = stretchTransformValues[5]
-                stretchSampling[1] = stretchAncestor.height * stretchTransformValues[4]
-                stretchSampling[2] = stretchAncestor.samplingOverscroll
-            }
-        }
+        stretchCoordinates.resolve(host, root, stretchSampling)
         var foreignFellBack = false
         val chrome = if (role == SurfaceRole.FLOATING && host != null && !foreignWindow) chromeBackdrops[host] else null
         chrome?.drewByNode = false
@@ -797,7 +781,8 @@ internal class LiquidActivityRenderer(
                             0f,
                             LiquidSurfaceAlphaPolicy.glassContentAlpha(role) * (alpha / 255f),
                             motionLite = false,
-                            localToBackdrop = samplingMatrix
+                            localToBackdrop = samplingMatrix,
+                            stretchSampling = stretchSampling
                         )
                     }.onFailure {
                         backends.markForeignDriverBroken()
@@ -817,7 +802,8 @@ internal class LiquidActivityRenderer(
                             rootOffsetY = (viewY - rootScreenLocation[1]).toFloat(),
                             alpha = (LiquidSurfaceAlphaPolicy.glassContentAlpha(role) * alpha.toFloat())
                                 .roundToInt(),
-                            localToBackdrop = samplingMatrix
+                            localToBackdrop = samplingMatrix,
+                            stretchSampling = stretchSampling
                         )
                     }
                 } else {

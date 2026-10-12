@@ -112,7 +112,7 @@ public class LumenSlidingSelection @JvmOverloads constructor(
     private var observedTree: ViewTreeObserver? = null
 
     private val followSelectedRow = ViewTreeObserver.OnPreDrawListener {
-        syncWithSelectedRowTransform()
+        if (syncWithSelectedRowTransform()) refreshIndicatorPosition()
         true
     }
 
@@ -209,19 +209,36 @@ public class LumenSlidingSelection @JvmOverloads constructor(
         if (selectedIndex >= 0) readTarget(selectedIndex, motion.target)
         motion.frame(animatedFraction, rendered)
         applyIndicator()
-        notifyPositionChanged()
     }
 
     /** 直接摆放选中框：只改它自己的边界，不 requestLayout。 */
     private fun applyIndicator() {
+        val left = rendered[0].roundToInt()
+        val top = rendered[1].roundToInt()
+        val right = rendered[2].roundToInt()
+        val bottom = rendered[3].roundToInt()
+        val boundsChanged = indicator.left != left || indicator.top != top ||
+            indicator.right != right || indicator.bottom != bottom
         indicator.layout(
-            rendered[0].roundToInt(), rendered[1].roundToInt(),
-            rendered[2].roundToInt(), rendered[3].roundToInt()
+            left, top, right, bottom
         )
-        syncWithSelectedRowTransform()
+        val transformChanged = syncWithSelectedRowTransform()
+        if (boundsChanged || transformChanged) refreshIndicatorPosition()
         updateHighlights()
         reportGeometry()
     }
+
+    private fun refreshIndicatorPosition() {
+        // RenderNode position changes alone keep the shader's recorded backdrop origin.
+        indicator.invalidate()
+        notifyPositionChanged()
+    }
+
+    internal fun horizontalOverflowBackdrop(row: View): View? =
+        indicator.takeIf {
+            animator?.isRunning != true && options.getChildAt(selectedIndex) === row &&
+                it.width == row.width && it.height == row.height
+        }
 
     /** 按选中框与各行沿排列方向的重叠比例回调高亮值。零分配。 */
     private fun updateHighlights() {
@@ -259,12 +276,14 @@ public class LumenSlidingSelection @JvmOverloads constructor(
      * 选中行被长按拖动形变（位移、缩放）时，选中框跟着同样变换；静止或滑动途中恢复为单位变换。
      * 只在值确实变化时写属性，避免重绘循环。
      */
-    private fun syncWithSelectedRowTransform() {
+    private fun syncWithSelectedRowTransform(): Boolean {
         val row = if (animator?.isRunning == true) null else options.getChildAt(selectedIndex)
         val tx = row?.translationX ?: 0f
         val ty = row?.translationY ?: 0f
         val sx = row?.scaleX ?: 1f
         val sy = row?.scaleY ?: 1f
+        var changed = indicator.translationX != tx || indicator.translationY != ty ||
+            indicator.scaleX != sx || indicator.scaleY != sy
         if (indicator.translationX != tx) indicator.translationX = tx
         if (indicator.translationY != ty) indicator.translationY = ty
         if (indicator.scaleX != sx) indicator.scaleX = sx
@@ -272,9 +291,11 @@ public class LumenSlidingSelection @JvmOverloads constructor(
         if (row != null) {
             val px = row.pivotX
             val py = row.pivotY
+            changed = changed || indicator.pivotX != px || indicator.pivotY != py
             if (indicator.pivotX != px) indicator.pivotX = px
             if (indicator.pivotY != py) indicator.pivotY = py
         }
+        return changed
     }
 
     private fun stopAnimation() {

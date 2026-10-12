@@ -68,6 +68,8 @@ internal class LiquidBackdropSource private constructor(
     }
     private val opticalRegionMatrix = Matrix()
     private val opticalRootToLocal = Matrix()
+    private val opticalLocalToRoot = Matrix()
+    private val stretchCoordinates = LiquidStretchSampling()
     private val opticalRegionPaint by lazy(LazyThreadSafetyMode.NONE) {
         Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG).apply { shader = opticalRegionShader }
     }
@@ -115,7 +117,8 @@ internal class LiquidBackdropSource private constructor(
         rootOffsetX: Float,
         rootOffsetY: Float,
         alpha: Int,
-        localToBackdrop: Matrix? = null
+        localToBackdrop: Matrix? = null,
+        stretchSampling: FloatArray? = null
     ) {
         check(!closed) { "Liquid backdrop source is closed" }
         if (localBounds.isEmpty || refractionWidth <= 0 || refractionHeight <= 0 ||
@@ -124,7 +127,9 @@ internal class LiquidBackdropSource private constructor(
         val scaleX = fullWidth.toFloat() / refractionWidth.toFloat()
         val scaleY = fullHeight.toFloat() / refractionHeight.toFloat()
         opticalRegionMatrix.setScale(scaleX, scaleY)
-        if (localToBackdrop != null && localToBackdrop.invert(opticalRootToLocal)) {
+        stretchCoordinates.opticalTransform(localBounds, localToBackdrop, rootOffsetX, rootOffsetY,
+            stretchSampling, opticalLocalToRoot)
+        if (opticalLocalToRoot.invert(opticalRootToLocal)) {
             opticalRegionMatrix.postConcat(opticalRootToLocal)
         } else {
             opticalRegionMatrix.postTranslate(-rootOffsetX, -rootOffsetY)
