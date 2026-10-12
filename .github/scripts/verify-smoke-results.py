@@ -6,6 +6,19 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "NativeSurfaceTargetTest": {
+        "independentTargetsPreserveTheHostAndClosingOneKeepsTheOtherBound",
+        "softwareSamplingUsesEachTargetsPositionAndStopsWhenStatic",
+    },
+    PREFIX + "NativeComposeIntegrationTest": {
+        "independentBindingsShareOneComposeRootAndIdleSourceStopsRecording",
+        "movingACardSamplesTheNewPositionWithoutMovingTheBackdrop",
+        "changingSelectionRestoresTheOldBackgroundAndMovesItsOwnSample",
+        "lazyKeyReplacementAndRemovingTheCompositionReleaseEveryBinding",
+        "heldHorizontalDragMovesMaterialAndContentAndReleasesWithoutClicking",
+        "anEarlySlopCrossingCannotBecomeAHoldLaterInTheSameStream",
+        "aSurfaceInsideTheBackdropCannotFeedBackIntoItsOwnSource",
+    },
     PREFIX + "P2IntegrationTest": {
         "sensorIsOptInAndStopsHiddenPausedOrClosed",
         "fixedParticlesExpireAndDecorationPreservesBusinessView",
@@ -89,6 +102,7 @@ PANEL_STRETCH_TESTS = {
 }
 P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")
 ENHANCED_GPU_TESTS = {
+    (PREFIX + "NativeComposeIntegrationTest", "nativeEnhancedPressChangesPixelsAndUniformUpdatesKeepTheShaderCache"),
     (PREFIX + "EnhancedSurfaceIntegrationTest", "fusionPressAndLightCompileAndContinuousFramesDoNotBuildRenderEffects"),
     (PREFIX + "EnhancedSurfaceIntegrationTest", "progressiveBlurProducesAnActualWindowImageAndStaysWithinBudget"),
     *((PREFIX + "SurfacePixelContractTest", name) for name in (

@@ -150,8 +150,13 @@ internal class LiveBackdropSampler(
         private val queue = ReferenceQueue<LumenSurfaceTarget>()
         private val lookup = Lookup()
         private val data = HashMap<Any, Entry>()
+        private var traversalDepth = 0
+
+        fun beginTraversal() { drain(); traversalDepth++ }
+        fun endTraversal() { traversalDepth--; drain() }
 
         private fun drain() {
+            if (traversalDepth > 0) return
             while (true) {
                 val key = queue.poll() ?: return
                 data.remove(key)?.release()
@@ -386,20 +391,23 @@ internal class LiveBackdropSampler(
         val contentGlobalValid = samplingMatrices.localToScreen(content, contentGlobal)
         val plans = ArrayList<Entry>(entries.size)
         val planViews = ArrayList<LumenSurfaceTarget>(entries.size)
-        val iterator = entries.entries.iterator()
-        while (iterator.hasNext()) {
-            val (key, entry) = iterator.next()
-            val view = entries.target(key)
-            if (view == null || !view.isAttachedToWindow) { entry.release(); iterator.remove(); continue }
-            if (!view.isShown || view.coordinateView.rootView !== content.rootView) { entry.valid = false; entry.cadence.discardPending(); continue }
-            if (entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) > 0L) continue
-            val prepared = runCatching { prepare(view, entry, contentGlobalValid) }
-            if (prepared.isFailure) return null
-            if (prepared.getOrDefault(false)) {
-                plans += entry
-                planViews += view
-            } else entry.cadence.discardPending()
-        }
+        entries.beginTraversal()
+        try {
+            val iterator = entries.entries.iterator()
+            while (iterator.hasNext()) {
+                val (key, entry) = iterator.next()
+                val view = entries.target(key)
+                if (view == null || !view.isAttachedToWindow) { entry.release(); iterator.remove(); continue }
+                if (!view.isShown || view.coordinateView.rootView !== content.rootView) { entry.valid = false; entry.cadence.discardPending(); continue }
+                if (entry.cadence.remainingMs(now, entry.profile?.minIntervalMs ?: ModernMaterialPolicy.LIVE_SAMPLE_MIN_INTERVAL_MS) > 0L) continue
+                val prepared = runCatching { prepare(view, entry, contentGlobalValid) }
+                if (prepared.isFailure) return null
+                if (prepared.getOrDefault(false)) {
+                    plans += entry
+                    planViews += view
+                } else entry.cadence.discardPending()
+            }
+        } finally { entries.endTraversal() }
         if (plans.isEmpty()) return emptyList()
         val started=if(counters?.timingEnabled==true)System.nanoTime()else 0L
         val result=runCatching { capture(content, plans, planViews) }.getOrNull()

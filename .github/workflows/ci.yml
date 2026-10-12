@@ -36,7 +36,7 @@ jobs:
       - name: Verify third-party notices in distributions
         run: |
           ./gradlew bundleReleaseAar sourceReleaseJar --console=plain --no-daemon
-          for module in lumen-engine lumen-effects lumen-assets lumen-assets-lottie lumen-assets-pag lumen-assets-rive; do
+          for module in lumen-engine lumen-compose lumen-effects lumen-assets lumen-assets-lottie lumen-assets-pag lumen-assets-rive; do
             python3 tools/check_third_party_notices.py --aar "$module/build/outputs/aar/$module-release.aar" --sources "$module/build/intermediates/source_jar/release/release-sources.jar" || exit 1
           done
 

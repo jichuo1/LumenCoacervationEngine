@@ -45,6 +45,12 @@ class SmokeResultsTest(unittest.TestCase):
     def test_min_sdk_does_not_require_gpu_test(self):
         self.assertTrue(self.check(api=27))
 
+    def test_native_compose_and_canvas_targets_are_required_on_min_sdk(self):
+        for owner in ("NativeComposeIntegrationTest", "NativeSurfaceTargetTest"):
+            for name in VERIFIER.REQUIRED[VERIFIER.PREFIX + owner]:
+                with self.subTest(owner=owner, method=name):
+                    self.assertFalse(self.check(api=27, omit=(VERIFIER.PREFIX + owner, name)))
+
     def test_zero_tests_is_rejected(self):
         self.assertFalse(self.check(empty=True))
 

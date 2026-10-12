@@ -442,7 +442,7 @@ root（bindRoot）
 
 ## 11. 不在本标准范围内
 
-- **Compose**：引擎基于 View 系统。
+- **Compose**：本标准覆盖 View 接入，原生可选试验模块见 [NATIVE_COMPOSE.md](NATIVE_COMPOSE.md)。
   - 纯 Compose 应用**可以**把 `ComposeView` 放进 `bindRoot` 的根里，从而获得根背景和实时取样；但表面 API 返回的是 Drawable，Compose 组件需要通过 `AndroidView` 或 `drawBehind` 自己桥接。
   - 这条路径没有经过验证。
 - **多窗口与画中画**：沿用系统行为，没有做专门适配。

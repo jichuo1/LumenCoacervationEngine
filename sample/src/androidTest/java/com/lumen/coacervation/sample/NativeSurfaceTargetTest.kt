@@ -73,13 +73,18 @@ class NativeSurfaceTargetTest {
                 val background = activity.preview.background
                 val count = activity.preview.childCount
                 LumenSurfaceSession(activity, LumenPalette.neutral(false)).use { session ->
-                    val a = session.bindTarget(Target(activity.preview, 0f, 0f))
+                    val first = Target(activity.preview, 0f, 0f)
+                    val a = session.bindTarget(first)
                     val b = session.bindTarget(Target(activity.preview, 100f, 0f))
                     assertNotEquals(a.id, b.id)
                     assertEquals(2, session.diagnostics().attachedSurfaces)
                     assertSame(background, activity.preview.background)
                     assertEquals(count, activity.preview.childCount)
+                    val beforeClose = first.invalidations
                     a.close()
+                    assertEquals("Closing a draw target must remove its cached frame", beforeClose + 1, first.invalidations)
+                    a.close()
+                    assertEquals("Repeated close must not keep invalidating", beforeClose + 1, first.invalidations)
                     assertFalse(a.isBound)
                     assertTrue(b.isBound)
                     assertEquals(1, session.diagnostics().attachedSurfaces)
@@ -137,8 +142,8 @@ class NativeSurfaceTargetTest {
                 SystemClock.sleep(300)
                 scenario.onActivity { assertEquals("Idle targets kept sampling", recordings, session.diagnostics().contentRecordings) }
                 scenario.onActivity {
-                    val invalidations = left.invalidations
                     a.close(); left.attached = false
+                    val invalidations = left.invalidations
                     session.notifyContentChanged()
                     b.draw(secondCanvas)
                     assertEquals(invalidations, left.invalidations)

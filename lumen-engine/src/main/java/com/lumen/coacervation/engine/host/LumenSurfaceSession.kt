@@ -460,6 +460,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 group.close(); groups.remove(group)
             } else group.refreshCounterOptions()
         }
+        if (!entry.installsBackground) entry.target.invalidate()
     }
 
     private fun replaceBackground(view: View, background: Drawable?) {
