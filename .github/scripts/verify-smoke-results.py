@@ -6,6 +6,10 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "PanelInlineScrollTest": {
+        "preparationVisitsInlineScrollsInsideInstalledAndExistingViewports",
+        "concurrentScrollOwnersStayWindowIsolatedAndDetachedZeroReturnsToItsOwner",
+    },
     PREFIX + "NativeSurfaceTargetTest": {
         "independentTargetsPreserveTheHostAndClosingOneKeepsTheOtherBound",
         "softwareSamplingUsesEachTargetsPositionAndStopsWhenStatic",
@@ -96,6 +100,8 @@ REQUIRED = {
 }
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
 PANEL_STRETCH_TESTS = {
+    (PREFIX + "PanelInlineScrollTest", "platformFlingReboundsInTheNearestViewportWithoutMovingTheOuterScroll"),
+    (PREFIX + "PanelInlineScrollTest", "idleAndFinishingInlineViewportsPreserveAnActiveOuterRebound"),
     (PREFIX + "PanelSurfaceGeometryTest", "dialogInputReadsCurrentNativeStretchCoordinatesAndClearsAfterRelease"),
     (PREFIX + "PanelFlingHandoffTest", "fastFlingReboundsAndTouchTakesOwnership"),
     (PREFIX + "PanelStretchWindowIsolationTest", "dialogReboundDoesNotRerecordTheStationaryActivityBehindIt"),

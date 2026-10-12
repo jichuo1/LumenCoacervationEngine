@@ -18,7 +18,9 @@ public class LiquidStretchSampling {
         require(out.size >= 3)
         out.fill(0f)
         var ancestor = host?.parent as? View
-        while (ancestor != null && ancestor !is LiquidStretchViewport) ancestor = ancestor.parent as? View
+        while (ancestor != null && (ancestor !is LiquidStretchViewport || ancestor.samplingOverscroll == 0f)) {
+            ancestor = ancestor.parent as? View
+        }
         if (backdropRoot == null || ancestor !is LiquidStretchViewport || ancestor.samplingOverscroll == 0f ||
             !coordinates.sourceToTarget(ancestor, backdropRoot, viewportToBackdrop)) return
         viewportToBackdrop.getValues(values)

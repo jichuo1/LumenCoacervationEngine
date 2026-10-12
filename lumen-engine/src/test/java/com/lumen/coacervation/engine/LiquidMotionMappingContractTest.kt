@@ -34,7 +34,8 @@ class LiquidMotionMappingContractTest {
     @Test fun edgePullWithoutScrollSuppressesCaptureUntilTheExistingQuietRelease() {
         val renderer = SourceContract.read("liquid/LiquidActivityRenderer.kt")
         val stretch = renderer.after("private fun onStretchDistanceChanged(").before("override fun onTrimMemory(")
-        assertTrue(stretch.contains("if (distance > 0f) suppressRealtimeSamplingWhileScrolling()"))
+        assertTrue(stretch.contains("stretchWindows.updateForScrollHost(scrollHost, distance, next, nextDir)"))
+        assertTrue(stretch.contains("if (state.distance > 0f) suppressRealtimeSamplingWhileScrolling()"))
         val settle = renderer.after("private fun onScrollSettleCheck(").before("private fun clearScrollSuppression(")
         assertTrue(settle.contains("stretchOpticalIntensity > 1f"))
         assertTrue(settle.contains("LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES"))

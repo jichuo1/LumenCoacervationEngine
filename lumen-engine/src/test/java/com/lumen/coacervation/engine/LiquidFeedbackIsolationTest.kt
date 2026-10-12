@@ -234,7 +234,8 @@ class LiquidFeedbackIsolationTest {
             .substringBefore("@MainThread", "MISSING")
         assertNotEquals("MISSING", handler)
         // 保留同一折射 shader 和边缘光；只拉边界而不滚动时也暂停滞后截图。
-        assertTrue(handler.contains("if (distance > 0f) suppressRealtimeSamplingWhileScrolling()"))
+        assertTrue(handler.contains("stretchWindows.updateForScrollHost(scrollHost, distance, next, nextDir)"))
+        assertTrue(handler.contains("if (state.distance > 0f) suppressRealtimeSamplingWhileScrolling()"))
         assertFalse(handler.contains("drawOpticalRegion("))
 
         val settle = renderer.after("private fun onScrollSettleCheck()")

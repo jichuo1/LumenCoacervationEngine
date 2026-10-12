@@ -9,12 +9,14 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.EdgeEffect
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import androidx.core.graphics.withRotation
 import androidx.core.view.NestedScrollingParent3
 import androidx.core.view.NestedScrollingParentHelper
 import androidx.core.view.ViewCompat
 import androidx.core.widget.EdgeEffectCompat
 import com.lumen.coacervation.engine.interaction.ElasticGestureClaim
+import java.lang.ref.WeakReference
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -178,6 +180,12 @@ public class LiquidStretchViewport private constructor(
     private val flingHandoff = LiquidFlingHandoff()
     private var nonTouchAbsorbed = false
     private var nonTouchAdjusted = false
+    private val platformFling = (scrollTarget as? ScrollView)?.let {
+        LiquidPlatformFling(it, ::isAllowedNow, ::absorbPlatformFling)
+    }
+    private val nestedViewports = ArrayList<WeakReference<LiquidStretchViewport>>()
+    private val nestedReference = WeakReference(this)
+    private var ancestorViewport: WeakReference<LiquidStretchViewport>? = null
 
     init {
         // 无背景的 ViewGroup 默认会绕过 draw() 直接 dispatchDraw()；必须关闭该快路径，
@@ -187,6 +195,7 @@ public class LiquidStretchViewport private constructor(
         isFocusable = false
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
         scrollTarget.overScrollMode = View.OVER_SCROLL_NEVER
+        if (scrollTarget is ScrollView) scrollTarget.isNestedScrollingEnabled = true
         addView(
             scrollTarget,
             LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT)
@@ -218,6 +227,7 @@ public class LiquidStretchViewport private constructor(
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         pointerX = event.x
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            platformFling?.stop()
             lastFlingVelocityY = 0f
             flingHandoff.clear()
             catchingStretch = if (isAllowedNow()) {
@@ -257,6 +267,7 @@ public class LiquidStretchViewport private constructor(
 
     /** 上一次发布的主导边；迟滞判定要拿它当基准，否则两条回弹会反复夺权。 */
     private var publishedEdge = LiquidStretchEdge.NONE
+    private var publishedDistance = 0f
     var samplingOverscroll = 0f
         private set
     private var samplingBeforeContent = false
@@ -268,6 +279,8 @@ public class LiquidStretchViewport private constructor(
     private fun publishStretch(topDistance: Float, bottomDistance: Float) {
         val edge = LiquidStretchOverscrollPolicy.dominantEdge(topDistance, bottomDistance, publishedEdge)
         publishedEdge = edge
+        val startsNativeStretch = samplingBeforeContent && samplingOverscroll == 0f &&
+            maxOf(topDistance, bottomDistance) > 0f
         if (samplingBeforeContent) {
             samplingOverscroll = when (edge) {
                 LiquidStretchEdge.TOP -> LiquidStretchSamplingPolicy.intensity(topDistance)
@@ -275,13 +288,21 @@ public class LiquidStretchViewport private constructor(
                 LiquidStretchEdge.NONE -> 0f
             }
         }
-        onStretchDistance(maxOf(topDistance, bottomDistance), edge)
+        val distance = maxOf(topDistance, bottomDistance)
+        if (distance != publishedDistance || edge != notifiedEdge) {
+            publishedDistance = distance
+            notifiedEdge = edge
+            onStretchDistance(distance, edge)
+        }
+        if (startsNativeStretch) finishNestedStretches()
     }
+
+    private var notifiedEdge = LiquidStretchEdge.NONE
 
     override fun draw(canvas: Canvas) {
         if (!isAllowedNow()) {
-            super.draw(canvas)
             finishStretch()
+            super.draw(canvas)
             return
         }
         var topDistance = EdgeEffectCompat.getDistance(topEffect)
@@ -337,6 +358,7 @@ public class LiquidStretchViewport private constructor(
         type: Int
     ) {
         nestedParentHelper.onNestedScrollAccepted(child, target, axes, type)
+        if (type == ViewCompat.TYPE_TOUCH) parent?.requestDisallowInterceptTouchEvent(true)
         if (type == ViewCompat.TYPE_NON_TOUCH) {
             nonTouchAbsorbed = false
             nonTouchAdjusted = false
@@ -462,8 +484,10 @@ public class LiquidStretchViewport private constructor(
         consumed: Boolean
     ): Boolean {
         if (isAllowedNow() && velocityY.isFinite() && velocityY != 0f) {
-            lastFlingVelocityY = velocityY
-            flingHandoff.start(velocityY)
+            if (platformFling != null) platformFling.start(velocityY) else {
+                lastFlingVelocityY = velocityY
+                flingHandoff.start(velocityY)
+            }
         }
         return false
     }
@@ -531,6 +555,8 @@ public class LiquidStretchViewport private constructor(
     }
 
     fun finishStretch() {
+        platformFling?.stop()
+        finishNestedStretches()
         val hadEffect = !topEffect.isFinished || !bottomEffect.isFinished
         topEffect.finish()
         bottomEffect.finish()
@@ -541,13 +567,43 @@ public class LiquidStretchViewport private constructor(
         // 迟滞基准一并复位：下一轮回弹要按"无状态"重新选边，不能沿用上一轮的主导边。
         publishedEdge = LiquidStretchEdge.NONE
         samplingOverscroll = 0f
-        onStretchDistance(0f, LiquidStretchEdge.NONE)
+        if (publishedDistance != 0f || notifiedEdge != LiquidStretchEdge.NONE) {
+            publishedDistance = 0f
+            notifiedEdge = LiquidStretchEdge.NONE
+            onStretchDistance(0f, LiquidStretchEdge.NONE)
+        }
         if (hadEffect) invalidate()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        var ancestor = parent as? View
+        while (ancestor != null) {
+            if (ancestor is LiquidStretchViewport) {
+                ancestorViewport = WeakReference(ancestor)
+                ancestor.nestedViewports.add(nestedReference)
+                break
+            }
+            ancestor = ancestor.parent as? View
+        }
     }
 
     override fun onDetachedFromWindow() {
         finishStretch()
+        ancestorViewport?.get()?.nestedViewports?.remove(nestedReference)
+        ancestorViewport = null
         super.onDetachedFromWindow()
+    }
+
+    private fun finishNestedStretches() {
+        var index = 0
+        while (index < nestedViewports.size) {
+            val viewport = nestedViewports[index].get()
+            if (viewport == null) nestedViewports.removeAt(index) else {
+                viewport.finishStretch()
+                index++
+            }
+        }
     }
 
     private fun releaseEffects() {
@@ -561,6 +617,16 @@ public class LiquidStretchViewport private constructor(
             released = true
         }
         if (released) postInvalidateOnAnimation()
+    }
+
+    private fun absorbPlatformFling(velocity: Float, edge: LiquidStretchEdge) {
+        val effect = when (edge) {
+            LiquidStretchEdge.TOP -> { bottomEffect.onRelease(); topEffect }
+            LiquidStretchEdge.BOTTOM -> { topEffect.onRelease(); bottomEffect }
+            LiquidStretchEdge.NONE -> return
+        }
+        effect.onAbsorb(LiquidStretchOverscrollPolicy.absorbVelocity(velocity))
+        postInvalidateOnAnimation()
     }
 
     /**
@@ -598,8 +664,17 @@ public class LiquidStretchViewport private constructor(
         return stopped
     }
 
-    private fun isAllowedNow(): Boolean =
-        runCatching(isStretchAllowed).getOrDefault(false)
+    private fun isAllowedNow(): Boolean {
+        if (!runCatching(isStretchAllowed).getOrDefault(false)) return false
+        // Sampling expresses one native warp. A new outer stretch ends inner decoration,
+        // while independent sibling viewports may continue contributing to window optics.
+        var ancestor = parent as? View
+        while (ancestor != null) {
+            if (ancestor is LiquidStretchViewport && ancestor.samplingOverscroll != 0f) return false
+            ancestor = ancestor.parent as? View
+        }
+        return true
+    }
 
     companion object {
         fun installAround(
@@ -611,6 +686,7 @@ public class LiquidStretchViewport private constructor(
             val index = parent.indexOfChild(scrollTarget).takeIf { it >= 0 } ?: return null
             val originalLayoutParams = scrollTarget.layoutParams
             val originalOverScrollMode = scrollTarget.overScrollMode
+            val originalNestedScrolling = scrollTarget.isNestedScrollingEnabled
             parent.removeViewAt(index)
             return try {
                 val viewport = LiquidStretchViewport(
@@ -623,6 +699,7 @@ public class LiquidStretchViewport private constructor(
                 viewport
             } catch (throwable: Throwable) {
                 scrollTarget.overScrollMode = originalOverScrollMode
+                scrollTarget.isNestedScrollingEnabled = originalNestedScrolling
                 val temporaryParent = (scrollTarget.parent as? ViewGroup)
                 temporaryParent?.removeView(scrollTarget)
                 if (scrollTarget.parent == null) {

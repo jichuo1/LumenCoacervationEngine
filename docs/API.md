@@ -114,7 +114,8 @@
 `widget.LumenMaxHeightScrollView(context,maxHeightPx)` 保持按内容收敛且不超过上限的测量，
 不强制填满空内容。它基于 Core `NestedScrollView`，可把拖动与惯性类型交给引擎。
 `motion.modal.LumenPanelScroll.prepare(root,installStretch)` 在公共面板入口一次性安装视口；
-仅处理 `NestedScrollingChild3`，已有视口保持幂等，失败保留原滚动控件和原生 overscroll。
+处理 `NestedScrollingChild3` 与平台竖向 `ScrollView`，继续识别它们内部的内联滚动区域；
+已有视口保持幂等，失败保留原滚动控件、嵌套滚动开关和原生 overscroll。
 标准 `LumenModalPresenter` 已接入；自定义宿主 presenter 在准备正文后调用一次即可。
 
 `GlowEngine.onStretchDistance(distance, edge, scrollHost)` 保留原两参数回调的默认转发。
@@ -123,6 +124,15 @@
 `LiquidStretchWindowRegistry.update(window,distance,intensity,direction)`、`stateFor(host)`、`clear()`，
 复用按弱窗口键保存的强度、方向和距离量化；返回的 `LiquidStretchWindowState` 只读，未变化时
 `update` 返回 null。不为每帧创建状态对象。
+
+同一窗口有多个回弹视口时，三参数回调必须改用
+`updateForScrollHost(scrollHost,distance,intensity,direction): LiquidStretchWindowUpdate?`。
+它按弱滚动 View 保存独立贡献，聚合最大距离和光学强度，并对边缘方向保留迟滞；
+某个视口归零不清除其他活动视口。只有聚合值变化才返回对象，该对象按窗口复用。
+`LiquidStretchWindowUpdate.window: View?` 是真实所属窗口的弱引用，`state` 是该窗口只读状态；
+刷新窗口和判断是否仍需抑制截图均使用返回的窗口及 `state.distance`。
+滚动 View 摘除后的通知仍回到其原窗口，并强制按零值清理；迟到的非零距离不会恢复旧状态。
+宿主在滚动目标结束或摘除时仍应发布终态，`clear()` 一并释放滚动归属和窗口状态。
 
 ## 7. 控件（`com.lumen.coacervation.engine.liquid`）
 

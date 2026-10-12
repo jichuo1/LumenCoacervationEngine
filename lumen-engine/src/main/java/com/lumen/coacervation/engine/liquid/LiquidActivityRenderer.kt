@@ -621,9 +621,9 @@ internal class LiquidActivityRenderer(
     }
 
     override fun onStretchDistance(distance: Float, edge: LiquidStretchEdge, scrollHost: View) =
-        onStretchDistanceChanged(distance, edge, scrollHost.rootView)
+        onStretchDistanceChanged(distance, edge, scrollHost.rootView, scrollHost)
 
-    private fun onStretchDistanceChanged(distance: Float, edge: LiquidStretchEdge, windowRoot: View) {
+    private fun onStretchDistanceChanged(distance: Float, edge: LiquidStretchEdge, currentWindow: View, scrollHost: View? = null) {
         if (closed) return
         val next = LiquidRealtimeCapturePolicy.stretchOpticalIntensity(distance)
         val nextDir = when (edge) {
@@ -633,11 +633,20 @@ internal class LiquidActivityRenderer(
         }
         // epsilon 挡住回弹尾段的亚感知步进（全程范围 0.85，0.004 ≈ 0.5%）；
         // 归零那帧 edge 变为 NONE、nextDir 必变，终态永远会发布，不会卡在半亮状态。
-        stretchWindows.update(windowRoot, distance, next, nextDir) ?: return
+        val windowRoot: View
+        val state: LiquidStretchWindowState
+        if (scrollHost != null) {
+            val update = stretchWindows.updateForScrollHost(scrollHost, distance, next, nextDir) ?: return
+            windowRoot = update.window ?: return
+            state = update.state
+        } else {
+            windowRoot = currentWindow
+            state = stretchWindows.update(windowRoot, distance, next, nextDir) ?: return
+        }
         // EdgeEffect 在 RenderThread 改变整棵前景节点，View 的屏幕原点不会跟着变。
         // 只拉边界、不产生 scroll 回调的手势也必须暂停滞后截图，归零后按原有静默窗口恢复。
         if (windowRoot === boundRoot?.rootView) {
-            if (distance > 0f) suppressRealtimeSamplingWhileScrolling()
+            if (state.distance > 0f) suppressRealtimeSamplingWhileScrolling()
             lastContentShiftNanos = System.nanoTime()
         }
         // 回弹不切换采样路径：玻璃覆盖区在截屏里本就被抑制遮罩换成稳定底图，过期
