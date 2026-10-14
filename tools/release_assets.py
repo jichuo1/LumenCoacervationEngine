@@ -138,9 +138,9 @@ def check_source(tag, source):
 
 def preflight(tag, source):
     commit = check_source(tag, source)
-    release = release_for(tag, True)
-    require(release["target_commitish"] == commit, "Draft target must be the full source commit")
-    return {"version": tag, "source_commit": commit, "release_id": release["id"],
+    # The build job's contents:read token cannot see private draft releases.
+    # Bind the existing draft only in the separate contents:write publish job.
+    return {"version": tag, "source_commit": commit,
             "ci": successful_run("ci.yml", commit, "push", "main", ("gate",)),
             "demo_push": successful_run("demo.yml", commit, "push", "main", ("build", *SMOKE))}
 
@@ -232,11 +232,14 @@ def publish(tag, output):
         require(record["assets"][name]["sha256"] == sha(output / name), "Prepared attachment checksum differs")
     verify_manifest(output, expected - {"SHA256SUMS.txt"})
     release = release_for(tag, True)
-    require(release["id"] == record["release_id"] and release["target_commitish"] == commit,
+    require(record.get("release_id", release["id"]) == release["id"] and release["target_commitish"] == commit,
             "Draft release identity/target changed")
     require(set(asset_inventory(release)) <= expected, "Draft contains unrelated attachments")
     successful_run("ci.yml", commit, "push", "main", ("gate",))
     successful_run("demo.yml", commit, "push", "main", ("build", *SMOKE))
+    record["release_id"] = release["id"]
+    write_json(output / verification, record)
+    checksums(output)
     upload(tag, [output / name for name in sorted(expected)])
     uploaded = asset_inventory(release_for(tag, True))
     require(set(uploaded) == expected, "Draft attachment inventory incomplete")
