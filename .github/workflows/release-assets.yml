@@ -1,0 +1,122 @@
+name: Release attachments
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing immutable release tag
+        required: true
+        default: '1.4.2'
+        type: string
+      mode:
+        description: Publish libraries, or finalize after the Demo and JitPack
+        required: true
+        default: publish
+        type: choice
+        options: [publish, finalize]
+
+concurrency:
+  group: release-attachments-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  RELEASE_TAG: ${{ inputs.tag }}
+  GH_HOST: github.com
+
+jobs:
+  prepare:
+    if: inputs.mode == 'publish' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ inputs.tag }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6.4.0
+      - name: Verify the tag and exact source gates
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 automation/tools/release_assets.py check --source source --output preflight.json
+      - name: Build the tagged publications without upload credentials
+        working-directory: source
+        run: ./gradlew publishAllPublicationsToProjectLocalRepository bundleReleaseAar sourceReleaseJar --console=plain --no-daemon
+      - name: Verify distribution notices
+        working-directory: source
+        run: |
+          for module in lumen-engine lumen-compose lumen-effects lumen-assets lumen-assets-lottie lumen-assets-pag lumen-assets-rive; do
+            python3 tools/check_third_party_notices.py --aar "$module/build/outputs/aar/$module-release.aar" --sources "$module/build/intermediates/source_jar/release/release-sources.jar"
+          done
+      - name: Package only the verified versioned publications
+        run: python3 automation/tools/release_assets.py package --source source --plan preflight.json --output delivery
+      - uses: actions/upload-artifact@v7.0.2
+        with:
+          name: release-library-attachments
+          path: delivery/
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          name: release-library-attachments
+          path: delivery
+      - name: Upload all attachments before publishing the existing draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 automation/tools/release_assets.py publish --output delivery
+      # GITHUB_TOKEN publication does not trigger another release workflow.
+      # Dispatch the existing Demo workflow explicitly with ref=tag and inputs.tag=tag.
+
+  finalize:
+    if: inputs.mode == 'finalize' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - name: Verify the published Demo and anonymous JitPack artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 automation/tools/release_assets.py finalize --output finalized
+      - name: Preserve the previous metadata pair if finalization fails
+        if: failure()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: previous-release-metadata
+          path: finalized/.restore/
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 7
