@@ -22,6 +22,7 @@ import android.view.View
 import android.view.ViewTreeObserver
 import androidx.annotation.MainThread
 import androidx.core.graphics.ColorUtils
+import com.lumen.coacervation.engine.glow.FilteredLayerRefresh
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.geometry.SamplingMatrixMath
 import com.lumen.coacervation.engine.geometry.ScrollSamplingGeometry
@@ -695,6 +696,16 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                 entry.stateBackend == LumenSurfaceBackend.GPU && (!entry.installsBackground || entry.host.get()?.background === entry.drawable)) {
                                 entry.invalidateFrame()
                             }
+                        } else if (FilteredLayerRefresh.required()) {
+                            // API 31 composites the glass from a cached filtered image until the glass is re-recorded.
+                            // A target inside the source (a source that excludes its surfaces) already redraws whenever
+                            // it dirties the source; redrawing it from here would dirty the source on every record.
+                            for (i in 0 until entries.size) {
+                                val entry = entries[i]
+                                if (entry.group === this && entry.gpu != null && entry.stateBackend == LumenSurfaceBackend.GPU &&
+                                    (!entry.installsBackground || entry.host.get()?.background === entry.drawable) &&
+                                    !isWithin(entry.host.get(), content)) entry.invalidateFrame()
+                            }
                         }
                     }
                     else { budgetRejected = true; lastFailure = LumenSurfaceFailure.BUDGET_EXCEEDED }
@@ -721,6 +732,15 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             source.coordinateView.removeOnAttachStateChangeListener(this)
             releaseGpu(); sampler.close()
         }
+    }
+
+    private fun isWithin(view: View?, ancestor: View): Boolean {
+        var current = view
+        while (current != null) {
+            if (current === ancestor) return true
+            current = current.parent as? View
+        }
+        return false
     }
 
     private fun failure(host: View, entry: Entry): LumenSurfaceFailure {

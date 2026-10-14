@@ -10,6 +10,7 @@ import android.graphics.RenderEffect
 import android.graphics.RenderNode
 import android.graphics.Shader
 import androidx.annotation.RequiresApi
+import com.lumen.coacervation.engine.glow.FilteredLayerRefresh
 import com.lumen.coacervation.engine.model.LiquidRenderBackend
 
 /** API 31+ 独立 backdrop 模糊；RenderEffect 只作用于共享背景 RenderNode。 */
@@ -26,6 +27,10 @@ internal class LiquidBlurBackendApi31(
     private val clipPath = Path()
     private var renderNode: RenderNode? = null
     private var blurEffect: RenderEffect? = null
+    /** 仅 API 31：与 [blurEffect] 像素等价的另一个滤镜对象（[FilteredLayerRefresh]）。 */
+    private var aliasEffect: RenderEffect? = null
+    private var aliasActive = false
+    private var drawnSinceSwap = false
     private var backdropScaleX = 1f
     private var backdropScaleY = 1f
     private var sampledBlurRadius = Float.NaN
@@ -58,6 +63,18 @@ internal class LiquidBlurBackendApi31(
             node.setRenderEffect(effect)
             blurEffect = effect
             sampledBlurRadius = nextBlurRadius
+            // 整数零偏移是直通：输出与 effect 逐像素相同，只是另一个滤镜对象。
+            aliasEffect = if (FilteredLayerRefresh.required()) RenderEffect.createOffsetEffect(0f, 0f, effect) else null
+            aliasActive = false
+            drawnSinceSwap = false
+        } else if (drawnSinceSwap) {
+            // API 31 继续合成旧底图的模糊结果，换一个它没缓存过的滤镜；上次切换后还没画过就不必再切。
+            val next = if (aliasActive) blurEffect else aliasEffect
+            if (next != null) {
+                aliasActive = !aliasActive
+                drawnSinceSwap = false
+                node.setRenderEffect(next)
+            }
         }
         renderNode = node
     }
@@ -76,6 +93,7 @@ internal class LiquidBlurBackendApi31(
         stretchSampling: FloatArray?
     ) {
         val node = checkNotNull(renderNode) { "Liquid blur backdrop is not bound" }
+        drawnSinceSwap = true
         // 模糊后端没有边缘光学项，方向不参与；contentAlpha 直接让真实下层内容透入。
         node.alpha = contentAlpha.coerceIn(0f, 1f)
         clipBounds.set(bounds)
@@ -101,6 +119,7 @@ internal class LiquidBlurBackendApi31(
         renderNode?.discardDisplayList()
         renderNode = null
         blurEffect = null
+        aliasEffect = null
         sampledBlurRadius = Float.NaN
     }
 }

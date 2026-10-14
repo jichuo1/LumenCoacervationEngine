@@ -56,6 +56,10 @@ internal class GlowChromeGlassApi31(
     private var effectRadius = Float.NaN
     private var effectIntensity = Float.NaN
     private var effectDirection = Float.NaN
+    /** 仅 API 31：当前效果与一个像素等价的另一个滤镜对象（[FilteredLayerRefresh]）。 */
+    private var effect: RenderEffect? = null
+    private var alias: RenderEffect? = null
+    private var aliasActive = false
     private var closed = false
 
     /**
@@ -115,7 +119,8 @@ internal class GlowChromeGlassApi31(
             node.endRecording()
         }
         counters?.proxyRecorded()
-        updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY)
+        // 每次重录都可能换了内容（新的内容节点、新的取样矩阵），API 31 必须换一个没缓存过的滤镜。
+        if (!updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY)) swapEquivalentEffect()
         outline.setRoundRect(pad, pad, pad + width, pad + height, radiusPx)
         node.setOutline(outline)
         node.setClipToOutline(true)
@@ -125,21 +130,35 @@ internal class GlowChromeGlassApi31(
 
     /**
      * RenderEffect 在创建时快照 shader uniform，参数变了只能换新对象。回弹强度按
-     * [INTENSITY_STEP] 量化后比对，回弹拖动中不会逐帧新建。
+     * [INTENSITY_STEP] 量化后比对，回弹拖动中不会逐帧新建。返回是否换了新对象。
      */
-    private fun updateEffect(width: Int, height: Int, radiusPx: Float, opticalIntensity: Float, stretchDirY: Float) {
+    private fun updateEffect(width: Int, height: Int, radiusPx: Float, opticalIntensity: Float, stretchDirY: Float): Boolean {
         val intensity = (opticalIntensity / INTENSITY_STEP).roundToInt() * INTENSITY_STEP
         val direction = stretchDirY.coerceIn(-1f, 1f)
         if (width == effectWidth && height == effectHeight && radiusPx == effectRadius &&
             abs(intensity - effectIntensity) < 1e-4f && direction == effectDirection
-        ) return
+        ) return false
         effectWidth = width
         effectHeight = height
         effectRadius = radiusPx
         effectIntensity = intensity
         effectDirection = direction
-        node.setRenderEffect(effects.create(width, height, paddingPx, radiusPx, intensity, direction))
+        val built = effects.create(width, height, paddingPx, radiusPx, intensity, direction)
+        val refresh = FilteredLayerRefresh.required()
+        effect = if (refresh) built else null
+        // 整数零偏移是直通：输出与 built 逐像素相同，只是另一个滤镜对象。
+        alias = if (refresh) RenderEffect.createOffsetEffect(0f, 0f, built) else null
+        aliasActive = false
+        node.setRenderEffect(built)
         counters?.effectBuilt()
+        return true
+    }
+
+    /** API 31 以外 [alias] 为 null，什么也不做。切换不计入效果构建次数。 */
+    private fun swapEquivalentEffect() {
+        val next = (if (aliasActive) effect else alias) ?: return
+        aliasActive = !aliasActive
+        node.setRenderEffect(next)
     }
 
     /** 内存压力：丢掉 display list（下次绘制重录），效果对象留着——它们只是参数快照。 */
@@ -151,6 +170,8 @@ internal class GlowChromeGlassApi31(
         if (closed) return
         closed = true
         node.setRenderEffect(null)
+        effect = null
+        alias = null
         node.discardDisplayList()
     }
 

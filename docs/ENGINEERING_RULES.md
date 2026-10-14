@@ -172,3 +172,11 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
   - 原因：`View.draw()` 假定画布已按该 View 自身的滚动偏移平移，平台只在父级录制显示列表时施加这一步；而采样矩阵（`ViewSamplingMatrix.localToScreen`）使用的是 View 的局部坐标。直接 `draw()` 一个已滚动的容器，录到的是滚动位置 0 的内容。
   - 来源：1.4.3 真机复核（`ScrollView` 直接作为局部表面来源时，模糊背景不随滚动更新）；`LocalViewDrawingContractTest` 守住写法，sample 的 `ScrollSourceSamplingTest` 在 GPU 与软件两条路径上做像素验证。
 
+## 13. 带 RenderEffect 的节点（API 31）
+
+- 给 `RenderNode` 设置 `RenderEffect` 的类，如果节点内容会变而效果对象不变，**必须**在 API 31 上让内容变化后的合成拿到一个 HWUI 没缓存过的滤镜对象：
+  - 判断一律用 `glow/FilteredLayerRefresh.required()`，只对 API 31 生效；其他版本上新增分支不生效，行为不变。
+  - 换用的是建效果时一并预建的像素等价别名（`RenderEffect.createOffsetEffect(0f, 0f, effect)`，整数零偏移为直通），在两者之间切换；**不得**为此逐帧新建 `RenderEffect`（§5）。
+  - 只换内容、不重录玻璃的路径（共享内容节点重录、子 View 失效）必须让玻璃所在的 View 重录，切换发生在玻璃重录时。
+  - 原因：Android 12 的 `RenderNode::updateSnapshotIfRequired` 只在滤镜对象或局部裁剪变化时重算滤镜结果，层内容变了也继续合成第一次的结果；12L（API 32）起加入了层的 generation 判断。只含零偏移的效果不受影响，模糊与颜色滤镜受影响。
+  - 来源：1.4.4 CI 的 API 31 模拟器（SE1A.220826.008）：滚动容器来源的 GPU 玻璃滚动后仍显示滚动位置 0。现有实现：`GlowChromeGlassApi31`（局部视效会话、悬浮栏）、`LiquidBlurBackendApi31`；`FilteredLayerRefreshContractTest` 守住写法，sample 的 `ScrollSourceSamplingTest` 在 API 31 上做像素验证。

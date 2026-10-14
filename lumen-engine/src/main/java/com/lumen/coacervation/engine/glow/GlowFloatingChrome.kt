@@ -78,6 +78,15 @@ public class GlowFloatingChrome(
         checkEngine()
         true
     }
+    /** API 31：栏下内容变了就让栏重录，栏的玻璃才会换滤镜（[FilteredLayerRefresh]）。 */
+    private val contentInvalidated = Runnable {
+        // 每帧可能被调用多次：按下标遍历，不分配迭代器。
+        for (i in 0 until surfaces.size) {
+            val surface = surfaces[i]
+            surface.host.invalidate()
+            for (j in 0 until surface.companions.size) surface.companions[j].invalidate()
+        }
+    }
     private val hostLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
         if (!disposed) updateGeometry()
     }
@@ -149,6 +158,7 @@ public class GlowFloatingChrome(
             surface.companions.forEach { companion -> glow?.setSurfaceBackdrop(companion, null) }
         }
         if (lastEngine !== glow) clearBackdrops(lastEngine)
+        target.onContentInvalidated = null
         target.contentCaptureEnabled = false
         for (view in edgeViews.values) {
             if (view.parent === target) target.removeView(view)
@@ -253,6 +263,7 @@ public class GlowFloatingChrome(
         backdropsDirty = false
         if (enabled) {
             target.contentCaptureEnabled = true
+            target.onContentInvalidated = contentInvalidated.takeIf { FilteredLayerRefresh.required() }
             for (surface in surfaces) glow?.setSurfaceBackdrop(surface.host, target)
             val companionTarget = target.takeIf { glow?.supportsDescendantSurfaceBackdrop == true }
             for (surface in surfaces) for (companion in surface.companions) {
@@ -263,6 +274,7 @@ public class GlowFloatingChrome(
             for (surface in surfaces) for (companion in surface.companions) {
                 glow?.setSurfaceBackdrop(companion, null)
             }
+            target.onContentInvalidated = null
             target.contentCaptureEnabled = false
         }
     }

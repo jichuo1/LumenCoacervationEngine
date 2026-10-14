@@ -155,7 +155,7 @@ onDestroy → session.close()：注销内存压力监听、关闭两个渲染器
 1. **滚动边缘溶解**：在 `GlowBackdropTarget` 里加两层 `GlowScrollEdgeView`，按覆盖度把滚进栏下方的内容渐隐进窗口底图。这一步只需要一次带着色器的底图绘制，不需要离屏层。溶解高度取同一条边上所有栏的并集；`edge = null` 的表面（侧栏、悬浮按钮）不参与溶解，只做后三项。
 2. **内容探针**：`GlowContentProbe` 的频率不超过 8Hz。主线程把栏下方的内容录进 `Picture`，由后台线程 `Lumen-GlowProbe` 光栅化，统计亮度与细节两个标量。
 3. **可读性补偿**：`GlowLegibilityPolicy` 以 WCAG 对比度 4.5 为目标，算出表面加厚量与边缘清晰度。经过迟滞和 240ms 过渡后，分别交给引擎（表面着色）和宿主（前景色）。
-4. **内容节点玻璃**（API 31+）：`GlowBackdropTarget` 把子 View 录进一个 RenderNode，悬浮栏的玻璃在自己的显示列表里引用同一个节点实时取样。屏幕上仍然只画一次。
+4. **内容节点玻璃**（API 31+）：`GlowBackdropTarget` 把子 View 录进一个 RenderNode，悬浮栏的玻璃在自己的显示列表里引用同一个节点实时取样。屏幕上仍然只画一次。API 31 上内容变化会让栏重录，以避开平台对滤镜结果的缓存（`ENGINEERING_RULES.md` §13）。
 
 溶解、探针、节点玻璃这三项都依赖同一条层级约束：栏是内容容器的兄弟（`INTEGRATION_STANDARD.md` §6.0）。
 

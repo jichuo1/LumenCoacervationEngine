@@ -2,7 +2,7 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
-## [1.4.4] - 2026-10-14
+## [1.4.4] - 2026-10-15
 
 ### 修复
 
@@ -10,11 +10,13 @@
 - 同一处理也用于整页柔光透镜的内容录制与悬浮栏可读性探针，避免内容容器自身滚动时取样错位。
 - 新增 `ScrollSourceSamplingTest`（GPU 与强制软件两条路径的像素回归）与 `LocalViewDrawingContractTest`；Fluent 沙盒恢复直接以滚动容器为来源。
 - 长按弹性：文字超出自身高度的可点击 `TextView` / 按钮（大字号、高密度屏）被误判为可滚动控件，不显示按压形变与高光。现在只有能通过触摸滚动的控件保留原生拖动；带 `movementMethod`、可选中文本和输入框的排除不变。
+- Android 12（API 31）上，带模糊或颜色滤镜的玻璃节点在内容变化后继续显示第一次的结果：局部视效会话（含 Fluent 亚克力）的 GPU 路径、悬浮栏内容节点玻璃和 Liquid 的 BLUR 后端都受影响。原因是该版本 HWUI 只在滤镜对象或裁剪变化时重算滤镜结果，12L 起才加入层内容的判断。现在只在 API 31 上，内容可能变化时在两个像素等价的预建滤镜之间切换，并让只换了内容的玻璃随之重录；其他版本上新增分支不生效，行为不变。新增 `FilteredLayerRefreshContractTest`，`ScrollSourceSamplingTest` 新增只由内容变化驱动的 GPU 用例。
+- `ScrollSourceSamplingTest` 改用既有的 `HardwareOutputRule`，在 ATD 镜像（API 33）上也能用 PixelCopy 读取真实像素。
 
 ### 文档
 
 - 新增 `docs/README.md` 文档索引：区分现行规范、功能说明、参考与历史快照，并写明维护规则；发布检查清单引用它。
-- `ENGINEERING_RULES.md` 补齐隔离类表（新增 `SurfaceCaptureApi31`、`DirectSurfaceProgramApi33`、`AnimatorDurationScaleApi33`、`ProceduralProgramApi33`）并给出核对命令，新增 §12“录制 View 内容”。
+- `ENGINEERING_RULES.md` 补齐隔离类表（新增 `SurfaceCaptureApi31`、`DirectSurfaceProgramApi33`、`AnimatorDurationScaleApi33`、`ProceduralProgramApi33`）并给出核对命令，新增 §12“录制 View 内容”与 §13“带 RenderEffect 的节点（API 31）”。
 - `API.md` 修正重复与跳号的节号并去掉过时的版本标题；`ARCHITECTURE.md` 去掉会过时的文件数并更新包职责；功能文档标题改为“自 x.y 起”的说明。
 - `FLUENT_MATERIAL.md` 写明会话默认的失焦暂停会让亚克力按背景不可用回退，以及保持亚克力的配置方式。
 

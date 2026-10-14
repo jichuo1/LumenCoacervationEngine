@@ -27,6 +27,12 @@ public class GlowBackdropTarget(context: Context) : FrameLayout(context) {
     private var capture: GlowContentCaptureApi31? = null
     private val samplingMatrices = ViewSamplingMatrix()
 
+    /**
+     * 仅 API 31 由 [GlowFloatingChrome] 设置：栏下内容可能变了。该版本的玻璃只在重录时换滤镜
+     * （[FilteredLayerRefresh]），内容变化必须让栏重录，否则栏继续显示旧内容的模糊结果。
+     */
+    internal var onContentInvalidated: Runnable? = null
+
     var contentCaptureEnabled: Boolean = false
         set(value) {
             if (field == value) return
@@ -79,6 +85,11 @@ public class GlowBackdropTarget(context: Context) : FrameLayout(context) {
         return false
     }
 
+    override fun onDescendantInvalidated(child: View, target: View) {
+        super.onDescendantInvalidated(child, target)
+        onContentInvalidated?.run()
+    }
+
     override fun dispatchDraw(canvas: Canvas) {
         if (!contentCaptureEnabled || Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
             !canvas.isHardwareAccelerated || width <= 0 || height <= 0
@@ -94,6 +105,8 @@ public class GlowBackdropTarget(context: Context) : FrameLayout(context) {
             active.end()
         }
         active.drawInto(canvas)
+        // 栏通常是本容器之后绘制的兄弟，本帧就按失效重录；否则在下一帧重录。
+        onContentInvalidated?.run()
     }
 }
 
