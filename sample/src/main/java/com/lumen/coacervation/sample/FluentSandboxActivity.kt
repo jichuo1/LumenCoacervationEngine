@@ -45,9 +45,7 @@ class FluentSandboxActivity : Activity() {
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(236, 239, 245)) }
         val stage = FrameLayout(this).apply { clipChildren = false }
         val scene = ScrollView(this).apply { addView(sceneContent()) }
-        // Sample the scroll view's parent: a source is recorded with View.draw(), which omits the source's own scroll.
-        val backdrop = FrameLayout(this).apply { addView(scene, FrameLayout.LayoutParams(-1, -1)) }
-        stage.addView(backdrop, FrameLayout.LayoutParams(-1, -1))
+        stage.addView(scene, FrameLayout.LayoutParams(-1, -1))
         val overlay = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(24), dp(24), dp(24)); clipChildren = false; clipToPadding = false }
         panel = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(8), dp(12), dp(8)) }
         for (label in listOf("剪切", "复制", "粘贴", "重命名")) panel.addView(TextView(this).apply {
@@ -79,7 +77,7 @@ class FluentSandboxActivity : Activity() {
         }
 
         session = LumenSurfaceSession(this, palette())
-        flyout = LumenFluentControl(panel, palette(), flyoutOptions, session, backdrop)
+        flyout = LumenFluentControl(panel, palette(), flyoutOptions, session, scene)
         controls.forEach { buttons += LumenFluentControl(it, palette(), buttonOptions) }
         scene.setOnScrollChangeListener { v, _, _, _, _ -> session.notifyScrollPositionChanged(v) }
         buildOptions(options)

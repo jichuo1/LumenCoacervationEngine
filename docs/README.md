@@ -1,0 +1,47 @@
+# 文档索引
+
+文档分三类。**现行**文档描述当前版本，随代码一起更新；**历史**文档是某次改动或发布时的快照，保留原貌、不再改写，读它时以对应版本为准。
+
+## 现行：规范
+
+| 文档 | 内容 | 何时更新 |
+|---|---|---|
+| [INTEGRATION_STANDARD.md](INTEGRATION_STANDARD.md) | 宿主接入的必须/应当/可以条款；代码和测试按节号引用 | 接入方式或条款变化时；节号只增不改（`VERSIONING.md` §4） |
+| [API.md](API.md) | 受兼容承诺保护的全部公开声明 | 新增或改变公开声明时 |
+| [ENGINEERING_RULES.md](ENGINEERING_RULES.md) | 引擎内部写法规则（隔离类、零分配、线程、失败隔离、测试） | 新的真机教训落成规则时；隔离类表随类增删同步 |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、包职责、管线与扩展点 | 新增包、管线或跨模块协作时 |
+| [VERSIONING.md](VERSIONING.md) | 版本规则、持久化协议、发布检查清单 | 每次发布（编号例外记录在这里） |
+
+## 现行：功能说明
+
+| 文档 | 内容 |
+|---|---|
+| [SURFACE_SESSIONS.md](SURFACE_SESSIONS.md) | 局部视效会话：来源、采样、位置与滚动通知 |
+| [VISUAL_EFFECTS.md](VISUAL_EFFECTS.md) | 局部增强：轮廓、按压、光源、渐进模糊、质量与平台回退 |
+| [P2_EFFECTS_AND_ASSETS.md](P2_EFFECTS_AND_ASSETS.md) | 传感器光源、程序化效果与粒子、Lottie / PAG / Rive 资产 |
+| [NATIVE_COMPOSE.md](NATIVE_COMPOSE.md) | 原生 Compose 接入原型与待验收项 |
+| [FLUENT_MATERIAL.md](FLUENT_MATERIAL.md) | Fluent 亚克力与层级：配方来源、回退规则、接入与验证 |
+
+## 参考
+
+| 文档 | 内容 |
+|---|---|
+| [BETTERANDROID_INITIATIVE.md](BETTERANDROID_INITIATIVE.md) | 写法倡议（非标准）；唯一强制项已写入 `ENGINEERING_RULES.md` |
+| [../CHANGELOG.md](../CHANGELOG.md) | 各版本变化 |
+
+## 历史快照（不再改写）
+
+| 文档 | 快照对象 |
+|---|---|
+| [PORTABILITY_AUDIT.md](PORTABILITY_AUDIT.md) | 1.0.0 从来源工程抽离时的可移植性审查 |
+| [VISUAL_ENHANCEMENT_PLAN.md](VISUAL_ENHANCEMENT_PLAN.md)、[VISUAL_EFFECTS_REVIEW.md](VISUAL_EFFECTS_REVIEW.md) | 1.2.0 视效增强的执行记录与候选阶段 Review |
+| [P2_ENHANCEMENT_PLAN.md](P2_ENHANCEMENT_PLAN.md)、[P2_REVIEW.md](P2_REVIEW.md) | 1.2.1 传感器、效果与资产的计划与 Review |
+| [ELASTIC_CLIP_FIX_REVIEW.md](ELASTIC_CLIP_FIX_REVIEW.md) | 1.2.4 之后的长按形变截断修复 |
+| [DEPENDENCY_REFRESH_2026_10_11.md](DEPENDENCY_REFRESH_2026_10_11.md) | 2026-10-11 的依赖稳定版核验 |
+| `RELEASE_x.y.z_REVIEW.md` | 各版本发布审阅；随 Release 附为 `REVIEW_x.y.z.md`，内容与 tag 一致，发布后不得修改 |
+
+## 维护规则
+
+- 行为或公开声明变化时，同一提交里更新对应的现行文档；不要在历史快照里追加新结论，新结论写进现行文档或新的发布审阅。
+- 现行文档不写会过时的统计数字（文件数、测试数等）；需要时给出核对方法。版本号只出现在“自 x.y 起”这类说明里。
+- 发布时按 `VERSIONING.md` §5 检查本索引：新增的文档归入上面某一类，失效的现行文档改为历史快照并注明对象。

@@ -38,22 +38,22 @@ GlowEngine（契约 / SPI）─────────────── glow/
 
 ## 2. 包与职责
 
-`lumen-engine` 共有 74 个源码文件，分布如下：
+`lumen-engine` 按包划分如下（文件数随版本变化，以源码为准；公开声明以 `API.md` 为准）：
 
-| 包 | 文件 | 职责 | 可见性 |
-|---|---|---|---|
-| （根） | 1 | `LumenEngine`：进程级入口与配置 | 公开 |
-| `host` | 2 | `LumenActivityDelegate`、`LumenActivity`：宿主接入层 | 公开 |
-| `runtime` | 10 | 会话、材质状态机、偏好编解码、内存压力、令牌解析 | 仅 `SkinSessionDiagnostics` 公开 |
-| `glow` | 9 | `GlowEngine` 契约、悬浮栏可读性、内容探针、内容节点玻璃 | 契约与悬浮栏组件公开 |
-| `liquid` | 30 | 高级材质：渲染器、后端、实时取样、反馈抑制、刷新率/热/ADPF、回弹视口、控件样式 | 少数宿主可实现的接口公开 |
-| `material` | 7 | 柔光：渲染器、环境磨砂策略、软件透镜 | 内部 |
-| `background` | 4 | 环境底图场景、自定义背景的导入/存储/解码 | 存储入口公开 |
-| `geometry` | 2 | 视图之间的采样矩阵 | 内部 |
-| `model` | 6 | `SkinId`、`SurfaceRole`、`LumenPalette`、令牌与参数 | 前三个公开 |
-| `touch` | 2 | 触摸光晕：纯几何状态机 + 绘制器 | 公开 |
-| `interaction` | 1 | `ElasticGestureClaim`：手势归属声明 | 公开 |
-| `fluent` | 5 | Fluent 亚克力配方、层级描边与状态令牌、共享噪点、API 29 混合隔离类、控件 Drawable（入口 `host.LumenFluentControl`） | 内部 |
+| 包 | 职责 | 可见性 |
+|---|---|---|
+| （根） | `LumenEngine`：进程级入口与配置 | 公开 |
+| `host` | 宿主接入层（`LumenActivityDelegate`、`LumenActivity`）；局部视效会话 `LumenSurfaceSession` 及其选项、增强、预设与诊断；Fluent 控件入口 `LumenFluentControl` | 入口与选项公开 |
+| `runtime` | 会话、材质状态机、偏好编解码、内存压力、令牌解析、来源图与时间线、图形计数 | 仅 `SkinSessionDiagnostics` 公开 |
+| `glow` | `GlowEngine` 契约、悬浮栏可读性、内容探针、内容节点玻璃 | 契约与悬浮栏组件公开 |
+| `liquid` | 高级材质：渲染器、后端、实时取样、反馈抑制、刷新率/热/ADPF、回弹视口、控件样式 | 少数宿主可实现的接口公开 |
+| `material` | 柔光：渲染器、环境磨砂策略、软件透镜 | 内部 |
+| `background` | 环境底图场景、自定义背景的导入/存储/解码 | 存储入口公开 |
+| `geometry` | 视图之间的采样矩阵、滚动采样几何、按局部坐标录制 View（`LocalViewDrawing`） | 内部 |
+| `model` | `SkinId`、`SurfaceRole`、`LumenPalette`、`LumenEffectTuning`、令牌与参数 | 前四个公开 |
+| `touch` | 触摸光晕：纯几何状态机 + 绘制器 | 公开 |
+| `interaction` | `ElasticGestureClaim`：手势归属声明 | 公开 |
+| `fluent` | Fluent 亚克力配方、层级描边与状态令牌、共享噪点、API 29 混合隔离类、控件 Drawable（入口 `host.LumenFluentControl`） | 内部 |
 
 ## 3. 分层规则
 
@@ -183,7 +183,7 @@ onDestroy → session.close()：注销内存压力监听、关闭两个渲染器
 
 ## 11. 交互与动效层（`lumen-motion`）
 
-`lumen-motion` 依赖 `lumen-engine`，共 47 个源码文件。它不依赖 AppCompat 和 RecyclerView，也不使用反射。
+`lumen-motion` 只依赖 `lumen-engine`，不依赖 AppCompat 和 RecyclerView，也不使用反射。
 
 ```
 宿主 Activity

@@ -33,6 +33,8 @@
 
 1.4.3 新增可选的 Fluent 亚克力与层级控件效果（`LumenFluentControl` 及其选项类型）。新增公开 API 通常属于次版本，本次按用户明确指定发布为 1.4.3，作为编号例外；既有公开入口未改动，`LumenSurfaceSession` 只增加内部成员，`GlowEngine` 与持久化协议没有变化，契约版本仍为 1。
 
+1.4.4 为修订版本：修正以滚动容器为来源时的采样偏移、文字溢出控件的长按弹性资格，并整理文档；没有新增或改变公开 API，契约版本仍为 1。
+
 - 兼容承诺**只**覆盖 `API.md` 列出的声明，以及 `INTEGRATION_STANDARD.md` 的条款。
 - `internal` 声明、未列入 `API.md` 的公开辅助成员、源码契约测试，都不在承诺范围内。
 - 视觉调参（颜色、模糊半径、光学强度）属于修订：同一宿主在修订版本之间的画面允许有细微差异，但不得出现结构性变化，例如表面缺失、层级错乱。
@@ -73,7 +75,7 @@ check(LumenEngine.CONTRACT_VERSION == 1) { "凝光视效引擎契约已变化，
 ## 5. 发布检查
 
 1. 更新 `gradle.properties` 的 `lumen.version` 和 `CHANGELOG.md`。
-2. 如有 API 变化，同步 `API.md`；如有标准变化，同步 `INTEGRATION_STANDARD.md`。
+2. 如有 API 变化，同步 `API.md`；如有标准变化，同步 `INTEGRATION_STANDARD.md`。按 `docs/README.md` 的维护规则核对现行文档，新增文档归类，历史快照不改写。
 3. 跑构建门禁（`ENGINEERING_RULES.md` §11）和 DEX 审计（§2.4）。
 4. `./gradlew publishAllPublicationsToProjectLocalRepository --no-daemon`，产物在 `build/repo`。
 5. 提交并推送，然后**打与 `lumen.version` 同名的 tag**：

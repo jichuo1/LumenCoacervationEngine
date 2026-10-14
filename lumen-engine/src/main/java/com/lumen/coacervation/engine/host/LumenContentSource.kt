@@ -3,6 +3,7 @@ package com.lumen.coacervation.engine.host
 import android.graphics.Canvas
 import android.view.View
 import androidx.annotation.MainThread
+import com.lumen.coacervation.engine.geometry.LocalViewDrawing
 
 /**
  * Existing content in its coordinate View's local space. Recording never reparents or hides Views.
@@ -15,5 +16,5 @@ public interface LumenContentSource {
 }
 
 internal class ViewContentSource(override val coordinateView: View) : LumenContentSource {
-    override fun drawContent(canvas: Canvas) = coordinateView.draw(canvas)
+    override fun drawContent(canvas: Canvas) = LocalViewDrawing.draw(coordinateView, canvas)
 }

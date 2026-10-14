@@ -46,13 +46,14 @@ Mica 的默认色调参数没有公开源码，本轮不实现 Mica。Mica 面�
 | `REDUCE_TRANSPARENCY` | 宿主传入 `reduceTransparency = true`（Android 没有公开的系统开关） | 是 |
 | `LOW_RAM_DEVICE` | `ActivityManager.isLowRamDevice()`，可用 `fallbackOnLowRamDevice` 关闭 | 是 |
 | `POWER_SAVE` | `PowerManager.isPowerSaveMode()`，在挂载、窗口焦点变化、`update()` 时重读 | 是 |
-| `WINDOW_INACTIVE` | 仅 `fallbackWhenWindowInactive = true`（背景亚克力语义）；应用内亚克力默认不回退 | 否（焦点频繁切换，不反复重建） |
+| `WINDOW_INACTIVE` | 仅 `fallbackWhenWindowInactive = true`（背景亚克力语义） | 否（焦点频繁切换，不反复重建） |
 | `NO_BACKDROP` | 没有会话 / 来源、会话已关闭，或会话表面数超出预算 | — |
 | `BACKDROP_UNAVAILABLE` | 绑定连续 120ms 没有采到帧（预算超限、首帧未到、会话暂停等） | 否（继续探测，恢复后淡入） |
 
 - 回退与恢复都走 167ms 交叉淡化；`reduceMotion` 或系统关闭动画时立即切换。
 - 获得采样帧立即恢复，丢失需要 120ms 连续无帧，避免单帧节流造成闪烁；静止页面也会用一次定时重绘确认丢失。
 - 这些都是**修饰性失败**：只影响本控件，不上报材质失败，不改变页面（`ENGINEERING_RULES.md` §6）。
+- 窗口失焦时是否保留亚克力，还取决于宿主会话：`LumenSurfaceSessionOptions.pauseWhenWindowUnfocused` 默认开启，失焦时会话暂停采样，控件因此按 `BACKDROP_UNAVAILABLE` 回退，重新获焦后淡回。需要弹窗盖住时仍显示应用内亚克力，请把会话的该选项关闭。
 
 ## 4. 层级
 
@@ -93,7 +94,7 @@ flyout.close(); button.close(); session.close()
 - 全部入口只能在主线程调用；`close()` 之后的迟到调用为空操作。
 - `close()` 只恢复仍由自己持有的东西：背景仍是自己的才换回原背景（保留内边距），`elevation` 与阴影颜色未被宿主改过才还原。
 - 来源规则与 `LumenSurfaceSession.bind` 相同：**来源不得包含控件本身**。多个控件采样同一来源 View 时共用一次录制。
-- 背景会滚动时，来源取**滚动容器的父容器**，并在滚动回调里调用 `session.notifyScrollPositionChanged(scrollView)`。会话以 `View.draw()` 录制来源，这不包含来源自身的滚动偏移；直接把 `ScrollView` 当来源时，模糊背景会停在滚动前的位置（1.4.3 真机复核发现，属于会话录制的既有行为）。
+- 背景会滚动时，在滚动回调里调用 `session.notifyScrollPositionChanged(scrollView)`。来源可以是滚动容器本身，也可以是它的父容器；1.4.3 及更早版本直接以滚动容器为来源时，模糊背景会停在滚动前的位置，升级前请改用父容器作为来源。
 - 文字颜色由宿主负责。Fluent 不建议在亚克力上放强调色文字或超链接；`reduceTransparency` 时控件为不透明回退色。
 - 焦点双环只在非触摸模式（键盘、方向键）下显示，画在控件边界内侧；输入框等自带焦点样式的控件可关闭 `focusVisualEnabled`。
 

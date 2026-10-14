@@ -835,8 +835,10 @@ public class ElasticInteractionController(
         }
         if (role == ElasticNodeRole.TARGET) {
             // Interactive scrolling widgets retain their drag even after a stationary hold.
-            if (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1) ||
-                view.canScrollVertically(-1) || view.canScrollVertically(1)
+            // A TextView here has no movement method and no selection (rejected above), so it cannot scroll by
+            // touch; canScroll* still reports overflowing text (large font scale, dense screens) as scrollable.
+            if (view !is TextView && (view.canScrollHorizontally(-1) || view.canScrollHorizontally(1) ||
+                view.canScrollVertically(-1) || view.canScrollVertically(1))
             ) return Hit(null)
             return Hit(view, x, y)
         }

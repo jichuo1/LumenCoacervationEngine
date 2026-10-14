@@ -1,4 +1,6 @@
-# 公开 API 清单（1.2.2，含1.2.0/1.2.1兼容面）
+# 公开 API 清单
+
+> 覆盖当前版本全部受兼容承诺保护的公开声明；各节标题注明引入版本。新增或改变公开声明时同步本文。
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。
 >
@@ -256,7 +258,7 @@
 | `LumenReorderCallback.directionsFor(layoutManager)`、`liftScale(longSidePx, density)`、`dropSettleDurationMs(px)` | 自动方向、按尺寸封顶的拾起放大、按距离的落位时长 | §14.5 |
 
 
-## 12. 局部视效会话（host，自1.1.0）
+## 13. 局部视效会话（host，自1.1.0）
 
 规范与完整参数范围见 [SURFACE_SESSIONS.md](SURFACE_SESSIONS.md)。入口均为主线程。
 
@@ -273,7 +275,7 @@
 - LumenSurfaceListener.onSurfaceState(id, backend, failure, firstVisibleDraw)：异步合并、异常隔离。
 - LumenSurfacePresets.floating / fadingBand / staticPanel：可继续copy调节的配置。
 
-## 13. 局部增强（自1.2.0）
+## 14. 局部增强（自1.2.0）
 
 完整默认值、有效范围、优先级与平台回退见 [VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。以下配置为不可变data class，构造/copy均校验范围；值类型与JSON编解码不依赖渲染线程，其余渲染/交互入口为主线程。
 
@@ -307,7 +309,7 @@
 新类型的包名除明确标注motion/interaction/widget外均为`com.lumen.coacervation.engine.host`。
 
 
-## 16. 可选传感器光源（1.2.1，lumen-motion）
+## 15. 可选传感器光源（自1.2.1，lumen-motion）
 
 包`com.lumen.coacervation.engine.sensor`。参数全部字段、默认及范围见[P2配置](P2_EFFECTS_AND_ASSETS.md)。
 
@@ -315,7 +317,7 @@
 - `LumenLightVectorListener.onLight(x,y,z)`；`LumenGravityListener.onGravity(x,y,z,timestampNanos)`；`LumenGravityInput.sensorType/start(rateHz,allowAccelerometerFallback,listener)/stop()`。可注入输入须在主线程回调。
 - `LumenSensorLightController(view,listener,options=LumenSensorLightOptions(),input=null)`：`start/stop/update/diagnostics/close`。回调只输出向量，宿主选择接入的binding。
 
-## 17. 独立生成器及粒子（1.2.1，lumen-effects）
+## 16. 独立生成器及粒子（自1.2.1，lumen-effects）
 
 包`com.lumen.coacervation.engine.effects`。`LumenEffectOptions`、`LumenProceduralOptions`、`LumenFilmOptions`、`LumenPaperOptions`、`LumenEnergyOptions`、`LumenParticleOptions`全部构造字段受兼容承诺；参数清单与范围见[P2配置](P2_EFFECTS_AND_ASSETS.md)。
 
@@ -323,7 +325,7 @@
 - `LumenEffectLayer(view,options=LumenEffectOptions(),clock=system)`：`update(value)`、`emitBurst(x,y):Int`、`triggerEnergy()`、`pause/resume/clear/advanceFrame/diagnostics/close`。x/y为宿主View内像素，关闭后调用为空操作。
 - `LumenEffectPreset(options=LumenEffectOptions())`：`toJson():String`、`fromJson(text):LumenEffectPreset`，schema固定为1。导出只含参数，不含任意执行代码。
 
-## 18. 统一动画资产（1.2.1，lumen-assets）
+## 17. 统一动画资产（自1.2.1，lumen-assets）
 
 包`com.lumen.coacervation.engine.assets`。所有选项／预算见[P2配置](P2_EFFECTS_AND_ASSETS.md)。
 
@@ -337,7 +339,7 @@
 
 Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存及中断边界属于[P2配置](P2_EFFECTS_AND_ASSETS.md)明确约束，不能把帧率或字节门禁解释为原生运行时的硬实时／内存保证。
 
-## 19. 宿主 motion 原语（1.2.3，lumen-motion）
+## 18. 宿主 motion 原语（自1.2.3，lumen-motion）
 
 既有高层 presenter/delegate 继续可用。下面的可选入口供已经拥有皮肤、窗口包装和业务页面的宿主接入；UI 类及动画入口在主线程调用，纯策略允许 JVM 调用。包名以 `com.lumen.coacervation.engine` 为根。
 
@@ -382,7 +384,7 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 
 `start/beginPredictiveBack/progressPredictiveBack/cancelPredictiveBack/commitBack/onDestroy` 的调用顺序沿用原入口。`showExpanded()` 用于替换内部业务页前结束形变；`isExpanded/isSettledExpanded/isClosingOrFinished` 为只读状态。`onDestroy` 后这些入口为空操作，原 delegate 重载仍把位置刷新接到 `lumen.notifyPositionChanged()`。
 
-## 20. Fluent 亚克力与层级（host，1.4.3）
+## 19. Fluent 亚克力与层级（host，自1.4.3）
 
 包 `com.lumen.coacervation.engine.host`，位于 **lumen-engine**。配方、回退规则与数值来源见 [FLUENT_MATERIAL.md](FLUENT_MATERIAL.md)。全部入口只能在主线程调用，关闭后为空操作。
 

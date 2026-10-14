@@ -55,8 +55,14 @@ ART 执行 `check-cast` 和 `instance-of` 时，**先解析类型、再判断 nu
 |---|---|
 | 28 | `LiquidImageDecoderApi28` |
 | 29 | `LiquidThermalMonitorApi29`、`AcrylicBlendApi29`（Fluent 亚克力的 `BlendMode.LUMINOSITY` / `COLOR`） |
-| 31 | `GlowContentCaptureApi31`、`GlowChromeGlassApi31`、`GlowChromeBlurApi31`、`LiquidBlurBackendApi31`、`LiquidChromeBackdropApi31`、`LiquidPerformanceHintApi31`、`FrostedChromeGlassApi31` |
-| 33 | `LiquidRefractionBackendApi33`、`LiquidChromeLensApi33`、`FrostedChromeLensApi33`；`PredictiveBackApi33`（lumen-motion，承载 `android.window.*` 返回回调，对外签名一律用 `Any`） |
+| 31 | `GlowContentCaptureApi31`、`GlowChromeGlassApi31`、`GlowChromeBlurApi31`、`LiquidBlurBackendApi31`、`LiquidChromeBackdropApi31`、`LiquidPerformanceHintApi31`、`FrostedChromeGlassApi31`、`SurfaceCaptureApi31`（局部视效会话的节点采样） |
+| 33 | `LiquidRefractionBackendApi33`、`LiquidChromeLensApi33`、`FrostedChromeLensApi33`、`DirectSurfaceProgramApi33`（局部增强的直接着色）；lumen-motion：`PredictiveBackApi33`（承载 `android.window.*` 返回回调，对外签名一律用 `Any`）、`AnimatorDurationScaleApi33`；lumen-effects：`ProceduralProgramApi33` |
+
+新增或删除隔离类时同步本表。核对命令（列出各模块源码中声明的全部隔离类）：
+
+```bash
+grep -rhoE "(class|object) [A-Za-z0-9]+Api[0-9]+\b" lumen-*/src/main | sort -u
+```
 
 ### 2.4 审计
 
@@ -159,3 +165,10 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
 - 四个任务都必须通过，Lint 必须 0 错误。Demo 使用 release 测试变体，宿主接入契约通过 `:sample:testReleaseUnitTest` 验证。
 - 在 Windows 上一律加 `--no-daemon`：常驻的 daemon 可能产出陈旧的 APK，而安装命令照样返回成功。
 - 涉及平台类型的改动，再加跑 §2.4 的审计。
+
+## 12. 录制 View 内容
+
+- 引擎为采样、探针或透镜录制宿主 View 时，一律调用 `geometry/LocalViewDrawing.draw(view, canvas)`，**不得**直接调用 `view.draw(canvas)`。
+  - 原因：`View.draw()` 假定画布已按该 View 自身的滚动偏移平移，平台只在父级录制显示列表时施加这一步；而采样矩阵（`ViewSamplingMatrix.localToScreen`）使用的是 View 的局部坐标。直接 `draw()` 一个已滚动的容器，录到的是滚动位置 0 的内容。
+  - 来源：1.4.3 真机复核（`ScrollView` 直接作为局部表面来源时，模糊背景不随滚动更新）；`LocalViewDrawingContractTest` 守住写法，sample 的 `ScrollSourceSamplingTest` 在 GPU 与软件两条路径上做像素验证。
+

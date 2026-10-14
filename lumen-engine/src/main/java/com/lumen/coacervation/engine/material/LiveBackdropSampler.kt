@@ -31,6 +31,7 @@ import java.util.concurrent.Executors
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
+import com.lumen.coacervation.engine.geometry.LocalViewDrawing
 
 /** Raw padded input for direct shader stages. Filtered siblings share one capture. */
 internal data class LumenRawSampleProfile(val haloDp: Float,val weakBlurDp: Float=0f,val strongBlurDp: Float=0f)
@@ -541,7 +542,7 @@ internal class LiveBackdropSampler(
                     recording.scale(1f / scale, 1f / scale)
                     recording.translate((margin * scale).toFloat(), (margin * scale).toFloat())
                     recording.concat(entry.sourceToTarget)
-                    if (recordContent == null) content.draw(recording) else recordContent.invoke(recording)
+                    if (recordContent == null) LocalViewDrawing.draw(content, recording) else recordContent.invoke(recording)
                     recordings++
                     counters?.contentRecorded()
                 } finally {
@@ -567,7 +568,7 @@ internal class LiveBackdropSampler(
             val recording = picture.beginRecording(recordWidth, recordHeight)
             try {
                 recording.translate(-originX.toFloat(), -originY.toFloat())
-                if (recordContent == null) content.draw(recording) else recordContent.invoke(recording)
+                if (recordContent == null) LocalViewDrawing.draw(content, recording) else recordContent.invoke(recording)
                 recordings++
                 counters?.contentRecorded()
             } finally {

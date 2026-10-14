@@ -15,6 +15,7 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import kotlin.math.abs
 import kotlin.math.ceil
+import com.lumen.coacervation.engine.geometry.LocalViewDrawing
 
 /**
  * 悬浮表面下方内容的亮度/细节探针。
@@ -73,7 +74,7 @@ internal class GlowContentProbe(
                 // 软件绘制对 clipChildren 的子 View 做 quickReject：区域外的卡片整棵跳过。
                 recording.clipRect(region)
                 background(recording, region)
-                content.draw(recording)
+                LocalViewDrawing.draw(content, recording)
             } finally {
                 slot.picture.endRecording()
             }
