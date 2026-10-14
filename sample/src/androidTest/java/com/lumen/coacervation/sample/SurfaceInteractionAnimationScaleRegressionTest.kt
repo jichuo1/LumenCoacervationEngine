@@ -46,15 +46,51 @@ class SurfaceInteractionAnimationScaleRegressionTest {
         fail(message)
     }
 
-    private fun awaitScale(expected: Float) = await("Animator scale did not propagate to the application") {
+    private fun awaitScale(expected: Float) {
         var actual = -1f
-        InstrumentationRegistry.getInstrumentation().runOnMainSync { actual = ValueAnimator.getDurationScale() }
-        actual == expected
+        try {
+            await("Animator scale did not propagate to the application") {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { actual = ValueAnimator.getDurationScale() }
+                actual == expected
+            }
+        } catch (error: AssertionError) {
+            val setting = runCatching { shell("settings get global animator_duration_scale") }
+                .getOrElse { "unavailable (${it.javaClass.simpleName})" }
+            throw AssertionError("Animator scale did not propagate: expected=$expected, process=$actual, setting=$setting", error)
+        }
     }
 
     private fun setScale(value: Float) {
         shell("settings put global animator_duration_scale $value")
+        assertEquals("Animator setting write failed", value.toString(),
+            shell("settings get global animator_duration_scale"))
         awaitScale(value)
+    }
+
+    private fun restoreScaleSetting(saved: String) {
+        if (saved == "null") shell("settings delete global animator_duration_scale")
+        // executeShellCommand uses Runtime.exec, so quoting would become part of this numeric value.
+        else shell("settings put global animator_duration_scale $saved")
+        assertEquals("Original animator setting was not restored", saved,
+            shell("settings get global animator_duration_scale"))
+    }
+
+    private fun withCleanup(block: () -> Unit, cleanup: () -> Unit) {
+        var failure: Throwable? = null
+        try {
+            block()
+        } catch (error: Throwable) {
+            failure = error
+            throw error
+        } finally {
+            try {
+                cleanup()
+            } catch (error: Throwable) {
+                val original = failure
+                if (original == null) throw error
+                if (original !== error) original.addSuppressed(error)
+            }
+        }
     }
 
     private class Fixture(val view: View, val frame: Any, val input: LumenSurfaceInteraction,
@@ -70,40 +106,59 @@ class SurfaceInteractionAnimationScaleRegressionTest {
     private fun withFixture(test: (ActivityScenario<SurfaceSandboxActivity>, Fixture) -> Unit) {
         val saved = shell("settings get global animator_duration_scale")
         require(saved == "null" || saved.toFloatOrNull()?.let { it.isFinite() && it >= 0f } == true)
-        try {
-            setScale(1f)
+        var restored = false
+        var savedEffectiveScale: Float? = null
+        withCleanup({
             ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
-                lateinit var view: View
-                lateinit var binding: LumenSurfaceBinding
-                scenario.onActivity { activity ->
-                    view = View(activity)
-                    activity.preview.addView(view, FrameLayout.LayoutParams(120, 120))
-                    binding = activity.session.bind(view, LumenSurfaceOptions(
-                        sampling = LumenSurfaceSampling(backend = LumenSurfaceBackend.STATIC)))
-                    binding.updateEnhancements(LumenSurfaceEnhancements(press = press, light = light))
-                }
-                await("The fixture must remain attached, visible and focused") {
-                    var ready = false
-                    scenario.onActivity { ready = view.width > 0 && view.isAttachedToWindow && view.isShown && view.hasWindowFocus() }
-                    ready
-                }
-                lateinit var fixture: Fixture
-                scenario.onActivity { activity ->
-                    val entries = read(activity.session, "entries") as List<*>
-                    val entry = entries.filterNotNull().single { read(it, "id") == binding.id }
-                    val clock = LumenFixedFrameClock()
-                    fixture = Fixture(view, requireNotNull(read(entry, "frame")),
-                        LumenSurfaceInteraction(view, binding, press, light, clock), clock)
-                }
-                try { test(scenario, fixture) } finally {
-                    scenario.onActivity { fixture.input.close(); binding.close(); it.preview.removeView(view) }
-                }
+                withCleanup({
+                    lateinit var view: View
+                    lateinit var binding: LumenSurfaceBinding
+                    scenario.onActivity { activity ->
+                        view = View(activity)
+                        activity.preview.addView(view, FrameLayout.LayoutParams(120, 120))
+                        binding = activity.session.bind(view, LumenSurfaceOptions(
+                            sampling = LumenSurfaceSampling(backend = LumenSurfaceBackend.STATIC)))
+                        binding.updateEnhancements(LumenSurfaceEnhancements(press = press, light = light))
+                    }
+                    await("The fixture must remain attached, visible and focused") {
+                        var ready = false
+                        scenario.onActivity { ready = view.width > 0 && view.isAttachedToWindow && view.isShown && view.hasWindowFocus() }
+                        ready
+                    }
+                    // Start observing the requested scale after the test window is ready.
+                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                        savedEffectiveScale = ValueAnimator.getDurationScale()
+                    }
+                    setScale(1f)
+                    lateinit var fixture: Fixture
+                    scenario.onActivity { activity ->
+                        val entries = read(activity.session, "entries") as List<*>
+                        val entry = entries.filterNotNull().single { read(it, "id") == binding.id }
+                        val clock = LumenFixedFrameClock()
+                        fixture = Fixture(view, requireNotNull(read(entry, "frame")),
+                            LumenSurfaceInteraction(view, binding, press, light, clock), clock)
+                    }
+                    withCleanup({ test(scenario, fixture) }, {
+                        scenario.onActivity { fixture.input.close(); binding.close(); it.preview.removeView(view) }
+                    })
+                }, {
+                    // Restore and observe the scale before ActivityScenario closes the test window.
+                    val original = savedEffectiveScale
+                    if (saved == "null" && original != null) {
+                        // WMS uses its cached scale when the key is absent. Delete alone does not
+                        // reset that cache to 1: let WMS observe the original effective value first.
+                        setScale(original)
+                    }
+                    restoreScaleSetting(saved)
+                    if (saved != "null") awaitScale(saved.toFloat())
+                    else if (original != null) awaitScale(original)
+                    restored = true
+                })
             }
-        } finally {
-            if (saved == "null") shell("settings delete global animator_duration_scale")
-            else shell("settings put global animator_duration_scale '" + saved.replace("'", "'\\''") + "'")
-            awaitScale(if (saved == "null") 1f else saved.toFloat())
-        }
+        }, {
+            // Also restore after failed launch/setup; no process notification is required here.
+            if (!restored) restoreScaleSetting(saved)
+        })
     }
 
     private fun assertStatic(frame: Any) {
