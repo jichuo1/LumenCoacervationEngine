@@ -181,7 +181,7 @@
 |---|---|
 | `DiagnosticsLateCallbackTest`（整文件，3 个） | 诊断页的数据回调，属业务 |
 | `SettingsPagePositionRefreshTest` 的 4 个引擎用例 | 已在 `lumen-engine` 的 `PositionRefreshTest` |
-| `ElasticCaptureGateTest.newUpdateBadgeDoesNotStealTheIconGesture` | 适配标准 §12.1（角标打 `EXCLUDED_TAG`） |
+| `ElasticCaptureGateTest.newUpdateBadgeDoesNotStealTheIconGesture` | 适配标准 §12.1（纯装饰角标不消费触摸，共同包装/表面归属；自管手势控件才设 `EXCLUDED_TAG`） |
 | `SectionExpansionWiringTest.sectionToggleDelegatesToTheProgressDrivenController` | 适配标准 §13.7 |
 | `BubbleDrawableGeometryTest` 的 2 个（更新角标、自由复制调用方） | 业务调用方 |
 | `ModalAnchorRegressionTest.scannedAndUnscannedPanels…` | 适配标准 §13.1（来源是可点的那一行） |

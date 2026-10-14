@@ -539,6 +539,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 if(published&&!closed)timeline.completed(epoch,version,started,finished)
             }
         }
+        // The first software sampler must see the same observation policy as later replacements.
+        private val observesViewInvalidations = (source as? LumenVersionedContentSource)?.observeCoordinateViewInvalidations != false
         var sampler = makeSampler()
         var capture: SurfaceCaptureApi31? = null
         private val captureGeometry = CaptureSamplingGeometry()
@@ -551,7 +553,6 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         private var lastRecording = 0L
         private var autoSuspended = false
         init { source.coordinateView.addOnAttachStateChangeListener(this); observe() }
-        private val observesViewInvalidations = (source as? LumenVersionedContentSource)?.observeCoordinateViewInvalidations != false
         private fun makeSampler() = LiveBackdropSampler(density, matrices, recordContent = { recordSource(source, it) }, sharedBudget = budget, counters = graphics,events=sampleEvents,
             observeSourceDirty = observesViewInvalidations).apply { bindSource(source.coordinateView) }
         fun refreshCounterOptions() {

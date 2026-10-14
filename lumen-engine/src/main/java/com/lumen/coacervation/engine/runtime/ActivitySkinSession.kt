@@ -52,7 +52,8 @@ internal class ActivitySkinSession private constructor(
     private val liquidOwner: LiquidRenderSessionOwner?,
     private val liquidRenderer: LiquidActivityRenderer?,
     private val materialRenderer: FrostedMaterialRenderer,
-    private val initialLiquidFailure: Boolean
+    private val initialLiquidFailure: Boolean,
+    initialLiquidFailureResult: SkinStateMutationResult?
 ) : AutoCloseable, LumenMemoryPressureListener {
 
     var effectiveSkin: SkinId = effectiveSkin
@@ -96,6 +97,8 @@ internal class ActivitySkinSession private constructor(
 
     private var healthConfirmed = false
     private var rendererFailureHandled = initialLiquidFailure
+    private var failureFallbackPersisted =
+        LiquidFailureNotificationPolicy.canNotify(initialLiquidFailureResult)
     private var failureNotified = false
     private var failureNotificationPosted = false
     private var onFailure: (() -> Unit)? = null
@@ -227,16 +230,15 @@ internal class ActivitySkinSession private constructor(
         }
         rendererFailureHandled = true
         val owner = liquidOwner
-        var staleOwner = false
         if (owner != null) {
             val result = SkinRepository.reportLiquidValidationFailure(activity, owner)
-            staleOwner = result.reason == SkinRecoveryReason.STALE_VALIDATION_FAILURE_IGNORED
+            failureFallbackPersisted = LiquidFailureNotificationPolicy.canNotify(result)
             SkinRepository.releaseLiquidRenderSession(owner)
         }
         effectiveSkin = SkinId.MATERIAL_YOU
         liquidRenderer?.close()
         failureRoot?.let(materialRenderer::bindRoot)
-        if (!staleOwner) scheduleFailureNotification()
+        scheduleFailureNotification()
     }
 
     private fun retireStaleSession() {
@@ -249,7 +251,8 @@ internal class ActivitySkinSession private constructor(
 
     /** 失败提示/重建始终越过当前 onCreate/draw 调用栈，不同步回调界面。 */
     private fun scheduleFailureNotification() {
-        if (failureNotified || failureNotificationPosted) return
+        // 存储失败时本会话仍可用柔光接管，但不得让宿主按旧的 Liquid 状态反复重建。
+        if (!failureFallbackPersisted || failureNotified || failureNotificationPosted) return
         val root = failureRoot ?: return
         failureNotificationPosted = true
         root.post {
@@ -288,10 +291,11 @@ internal class ActivitySkinSession private constructor(
                 runCatching { LiquidActivityRenderer(activity, materialPalette, effectTuning) }.getOrNull()
             } else null
             val initializationFailed = requestedSkin == SkinId.LIQUID && renderer == null
-            if (initializationFailed && owner != null) {
-                SkinRepository.reportLiquidValidationFailure(activity, owner)
-                SkinRepository.releaseLiquidRenderSession(owner)
-            }
+            val initialFailureResult = if (initializationFailed && owner != null) {
+                SkinRepository.reportLiquidValidationFailure(activity, owner).also {
+                    SkinRepository.releaseLiquidRenderSession(owner)
+                }
+            } else null
             return ActivitySkinSession(
                 requestedSkin = requestedSkin,
                 effectiveSkin = if (renderer != null) SkinId.LIQUID else SkinId.MATERIAL_YOU,
@@ -303,7 +307,8 @@ internal class ActivitySkinSession private constructor(
                 liquidRenderer = renderer,
                 materialRenderer = FrostedMaterialRenderer(materialPalette, activity.resources.displayMetrics.density,
                     effectTuning, backgroundContext = activity.applicationContext),
-                initialLiquidFailure = initializationFailed
+                initialLiquidFailure = initializationFailed,
+                initialLiquidFailureResult = initialFailureResult
             ).also(LumenMemoryPressureHub::addListener)
         }
     }

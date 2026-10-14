@@ -19,6 +19,8 @@ import com.lumen.coacervation.engine.motion.InterruptibleMotionContinuation
 import com.lumen.coacervation.engine.motion.InterruptibleMotionPhase as MotionState
 import com.lumen.coacervation.engine.motion.InterruptibleMotionPolicy
 import com.lumen.coacervation.engine.motion.InterruptibleMotionSession
+import com.lumen.coacervation.engine.motion.AnimatorDurationScale
+import com.lumen.coacervation.engine.motion.MotionTimeDomain
 import com.lumen.coacervation.engine.motion.MorphCornerPolicy
 import com.lumen.coacervation.engine.motion.MotionRect
 import kotlin.math.abs
@@ -365,8 +367,10 @@ public class ContainerMorphController @JvmOverloads constructor(
         val actualDuration = if (retarget && targetExpansion == 1f)
             InterruptibleMotionPolicy.remainingDuration(durationMs, startExpansion, targetExpansion) else durationMs
         val now = SystemClock.uptimeMillis()
-        val continuation = if (retarget) InterruptibleMotionContinuation(startExpansion, targetExpansion,
-            motionSession.velocity(now), actualDuration) else null
+        val continuation = if (retarget) {
+            val wallDuration = MotionTimeDomain.wallDurationMs(actualDuration, AnimatorDurationScale.current(activity))
+            InterruptibleMotionContinuation(startExpansion, targetExpansion, motionSession.velocity(now), wallDuration)
+        } else null
         motionSession.reset(startExpansion, now)
         val token = motionSession.generation
         val animator = ValueAnimator.ofFloat(startExpansion, targetExpansion)

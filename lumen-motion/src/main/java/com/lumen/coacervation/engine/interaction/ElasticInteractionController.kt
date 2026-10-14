@@ -125,7 +125,9 @@ public class ElasticInteractionController(
     }
     private val targetAttachListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) = Unit
-        override fun onViewDetachedFromWindow(view: View) { clear() }
+        override fun onViewDetachedFromWindow(view: View) {
+            if (view === highlightHost) clear()
+        }
     }
     private val rootAttachListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(view: View) { observeFocus() }
@@ -331,6 +333,14 @@ public class ElasticInteractionController(
         if (continuing) {
             stopFrames()
             path.clear()
+            if (highlightHost !== view) {
+                // The group keeps its transform lease, springs and overflow portal. Only the
+                // hit child's local highlight and detach listener move to the new child.
+                val nextHighlight = highlight?.forView(view)
+                releaseHighlight()
+                highlight = nextHighlight
+                view.addOnAttachStateChangeListener(targetAttachListener)
+            }
         } else {
             // 先取调参：宿主 lambda 抛异常时还没有动过任何视觉与租约。
             val tuning = effectTuning()
@@ -434,10 +444,6 @@ public class ElasticInteractionController(
         }
         if (rest || expired) {
             pressAxis.reset(pressed)
-            if (motion == Motion.RELEASE) {
-                xAxis.reset()
-                yAxis.reset()
-            }
         }
         applyVisual()
         if (!rest && !expired) scheduleFrame() else lastFrameNanos = 0L
@@ -686,12 +692,8 @@ public class ElasticInteractionController(
         lease = null
         path.clear()
         restoreAncestorClipping()
+        releaseHighlight()
         if (view != null) {
-            highlightHost?.removeOnAttachStateChangeListener(targetAttachListener)
-            if (highlightAttached) {
-                val host = highlightHost ?: view
-                highlight?.let { host.overlay.remove(it) }
-            }
             if (owned != null && leases.owns(view, owned)) {
                 if (restore) {
                     // An external animator can take a property while pressed. Never overwrite it.
@@ -704,6 +706,12 @@ public class ElasticInteractionController(
                 if (restore) notifyPositionChanged(view)
             }
         }
+    }
+
+    private fun releaseHighlight() {
+        val host = highlightHost
+        host?.removeOnAttachStateChangeListener(targetAttachListener)
+        if (highlightAttached) highlight?.let { host?.overlay?.remove(it) }
         highlight = null
         highlightHost = null
         highlightAttached = false
@@ -893,10 +901,10 @@ public class ElasticInteractionController(
      */
     private class TouchHighlight(
         private val view: View,
-        density: Float,
-        color: Int,
-        glowIntensity: Float,
-        glowRadiusScale: Float
+        private val density: Float,
+        private val color: Int,
+        private val glowIntensity: Float,
+        private val glowRadiusScale: Float
     ) : Drawable() {
         private val width = view.width.toFloat()
         private val height = view.height.toFloat()
@@ -951,6 +959,9 @@ public class ElasticInteractionController(
             clip.addRoundRect(0f, 0f, width, height, corner, corner, Path.Direction.CW)
             setBounds(0, 0, view.width, view.height)
         }
+
+        fun forView(next: View): TouchHighlight =
+            TouchHighlight(next, density, color, glowIntensity, glowRadiusScale)
 
         /** 只记录触点（glow 中心，不钳制——越界量由策略层换成贴边堆积）；每帧形状由 [update] 统一计算。 */
         fun moveTo(x: Float, y: Float) {

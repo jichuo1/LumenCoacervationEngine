@@ -288,6 +288,61 @@ class SettingsPageMotionPolicyTest {
         }
     }
 
+    @Test fun longNavigationRetargetUsesItsFullDurationForIncomingVelocity() {
+        assertEquals(509L, PageMotionPolicy.navigationDuration(.2f, 3f))
+        for (duration in listOf(509L, PageMotionPolicy.NAVIGATION_MAX_MS)) {
+            for ((start, target, velocity) in listOf(Triple(.2f, 3, 5f), Triple(2.8f, 0, -5f))) {
+                val curve = PageMotionContinuation(start, target, velocity, duration, 4, navigation = true)
+                val dt = .0001f
+                val speed = (curve.value(dt) - curve.value(0f)) / (dt * duration / 1000f)
+                assertEquals(velocity, speed, .03f)
+                assertEquals(start, curve.value(0f), 0f)
+                assertEquals(target.toFloat(), curve.value(1f), .00001f)
+                repeat(1001) {
+                    val value = curve.value(it / 1000f)
+                    assertTrue(value in minOf(start, target.toFloat())..maxOf(start, target.toFloat()))
+                }
+            }
+        }
+    }
+
+    @Test fun longNavigationStillBoundsRealIncomingVelocityToEightPagesPerSecond() {
+        for ((start, target, velocity) in listOf(Triple(.2f, 3, 100f), Triple(2.8f, 0, -100f))) {
+            val curve = PageMotionContinuation(start, target, velocity, 560L, 4, navigation = true)
+            val dt = .0001f
+            val speed = (curve.value(dt) - curve.value(0f)) / (dt * .56f)
+            assertEquals(if (velocity > 0f) 8f else -8f, speed, .03f)
+        }
+    }
+
+    @Test fun longNavigationKeepsReversalTangentsWithinTheRemainingPageBoundary() {
+        for ((start, target, velocity) in listOf(Triple(.2f, 3, -100f), Triple(2.8f, 0, 100f))) {
+            val curve = PageMotionContinuation(start, target, velocity, 560L, 4, navigation = true)
+            val dt = .0001f
+            val speed = (curve.value(dt) - curve.value(0f)) / (dt * .56f)
+            // Three times the .38-page room to the outer edge, spread over the full .56 seconds.
+            assertEquals(if (velocity > 0f) 1.14f / .56f else -1.14f / .56f, speed, .03f)
+            assertEquals(target.toFloat(), curve.value(1f), .00001f)
+            repeat(1001) { assertTrue(curve.value(it / 1000f) in -.18f..3.18f) }
+        }
+    }
+
+    @Test fun excessiveNavigationDurationStillUsesTheNavigationTimingLimit() {
+        val limit = PageMotionContinuation(.2f, 3, 5f, PageMotionPolicy.NAVIGATION_MAX_MS, 4, true)
+        val excessive = PageMotionContinuation(.2f, 3, 5f, Long.MAX_VALUE, 4, true)
+        repeat(1001) { assertEquals(limit.value(it / 1000f), excessive.value(it / 1000f), 0f) }
+    }
+
+    @Test fun longDragRequestsKeepTheOriginalFourHundredTwentyMillisecondTangentLimit() {
+        for (velocity in listOf(-100f, -5f, 0f, 5f, 100f)) {
+            val limit = PageMotionContinuation(.2f, 3, velocity, 420L, 4)
+            for (duration in listOf(509L, 560L, Long.MAX_VALUE)) {
+                val excessive = PageMotionContinuation(.2f, 3, velocity, duration, 4)
+                repeat(1001) { assertEquals(limit.value(it / 1000f), excessive.value(it / 1000f), 0f) }
+            }
+        }
+    }
+
     /** 中途再点、同向高速接续：导航曲线不越过目标。 */
     @Test fun navigationRetargetNeverOvershootsEvenWithFastSameDirectionVelocity() {
         for (target in 1..3) for (velocity in listOf(.5f, 2f, 4f, 8f)) for (start in listOf(0f, .4f, .9f)) {

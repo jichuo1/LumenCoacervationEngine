@@ -50,10 +50,12 @@ public class LumenEffectLayer @JvmOverloads constructor(view:View,options:LumenE
     private fun runningAllowed():Boolean{val v=host.get()?:return false;return !closed&&!paused&&visible&&v.width.toLong()*v.height<=options.maximumRenderPixels}
     private fun refresh(){if(closed)return;val v=host.get();val shown=v!=null&&v.isAttachedToWindow&&v.isShown&&(!options.pauseWhenUnfocused||v.hasWindowFocus())
         if(!shown||paused){if(visible){suspendedAt=clock.nowNanos();if(options.clearOnPause)clear()};visible=false;stopTick();drawable.setVisible(false,false);state=if(paused)LumenEffectState.PAUSED else LumenEffectState.HIDDEN;return}
-        if(!visible&&suspendedAt!=Long.MIN_VALUE){val now=clock.nowNanos();val delta=now-suspendedAt
+        val becameVisible=!visible
+        if(becameVisible&&suspendedAt!=Long.MIN_VALUE){val now=clock.nowNanos();val delta=now-suspendedAt
             if(delta<0)clear()else if(!options.clearOnPause){drawable.particles.shiftTime(delta);if(energyBorn!=Long.MIN_VALUE)energyBorn+=delta};suspendedAt=Long.MIN_VALUE;last=now}
         visible=true;drawable.setVisible(options.procedural.enabled||options.particles.enabled,false)
         state=when{v!!.width.toLong()*v.height>options.maximumRenderPixels->LumenEffectState.BUDGET;!options.procedural.enabled&&!options.particles.enabled->LumenEffectState.DISABLED;active()->LumenEffectState.ACTIVE;else->LumenEffectState.IDLE}
+        if(becameVisible)schedule()
     }
     private fun schedule(){if(closed||scheduled||clock is LumenFixedFrameClock||!runningAllowed()||!active())return;scheduled=true;main.postDelayed(tick,(1000L/options.framesPerSecond).coerceAtLeast(16))}
     private fun stopTick(){main.removeCallbacks(tick);scheduled=false}

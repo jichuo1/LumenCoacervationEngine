@@ -45,9 +45,24 @@ public class LumenReveal @JvmOverloads constructor(
     private var highlightDrawable: GradientDrawable? = null
     private var highlightAnimator: ValueAnimator? = null
     private var highlightRunnable: Runnable? = null
+    private var horizontalScrollMotionStopper: ((ViewGroup) -> Boolean)? = null
 
     /** 是否有进行中的定位。 */
     public val isActive: Boolean get() = request.isActive
+
+    /**
+     * Stops a third-party horizontal host's existing fling/smooth scroll before this request
+     * takes ownership. Return true when handled; false leaves the host's scrollBy support intact.
+     * Platform [HorizontalScrollView] is handled internally. With lumen-controls, pass
+     * `LumenControls::stopScroll` for RecyclerView. This hook only applies to the nearest
+     * horizontal host between the target and the outer vertical container.
+     *
+     * Each request captures the hook once. null restores the default; a thrown failure cancels
+     * only that request. The hook must not synthesize touch events or change focus.
+     */
+    public fun setHorizontalScrollMotionStopper(stopper: ((ViewGroup) -> Boolean)?) {
+        horizontalScrollMotionStopper = stopper
+    }
 
     /**
      * @param scrollView 目标所在的竖向滚动容器（`NestedScrollView` / `ScrollView`），它的第一个子 View 是内容。
@@ -67,7 +82,8 @@ public class LumenReveal @JvmOverloads constructor(
     ) {
         cancel()
         if (!target.isSameOrDescendantOf(scrollView)) return
-        val horizontal = startHorizontalReveal(scrollView, target)
+        val stopHorizontalMotion = horizontalScrollMotionStopper
+        var horizontal: HorizontalScrollMotion? = null
         // ScrollView / NestedScrollView：单个内容子 View、支持绝对位置，沿用来源工程的定位；其他容器走相对滚动。
         val absolute = scrollView is android.widget.ScrollView || scrollView is NestedScrollView
         var relative: RelativeScroll? = null
@@ -79,21 +95,68 @@ public class LumenReveal @JvmOverloads constructor(
             setPosition = { y -> scrollView.scrollTo(0, y) }
         )
         var token = 0L
+        var deliveryPosted = false
+        val owns = { request.owns(token) }
+        val wake = { if (request.owns(token)) scrollView.postInvalidateOnAnimation() }
+        val cancelOwned = { if (request.owns(token)) cancel() }
+        val delivery = Runnable {
+            if (!request.owns(token)) return@Runnable
+            deliveryPosted = false
+            if (!validRevealTree(scrollView, target) || horizontal?.isValid() == false) {
+                cancel()
+                return@Runnable
+            }
+            if (!stableRevealLayout(scrollView, target, settling)) {
+                wake()
+                return@Runnable
+            }
+            // A native/custom host or asynchronous content can move after pre-draw. Keep
+            // the same request until its posted handoff also observes both actual axes.
+            val currentHost = findHorizontalHost(scrollView, target)
+            val horizontalSettled = (currentHost == null || currentHost === horizontal?.host) &&
+                horizontal?.isSettled() != false
+            val verticalSettled = isVerticalSettled(scrollView, target, absolute, topOffsetPx, rect)
+            if (!verticalSettled || !horizontalSettled) {
+                wake()
+                return@Runnable
+            }
+            if (request.completeWhenSettled(token, verticalSettled, horizontalSettled) && request.isCompleted(token)) {
+                if (highlight) scheduleHighlight(target)
+                afterReveal?.invoke()
+            }
+        }
+        val finish = {
+            // Business callbacks stay outside pre-draw, and no duplicate handoff is queued.
+            if (request.owns(token) && !deliveryPosted) {
+                deliveryPosted = true
+                scrollView.post(delivery)
+            }
+        }
         val observer = scrollView.viewTreeObserver
         val listener = ViewTreeObserver.OnPreDrawListener {
             if (!request.owns(token)) return@OnPreDrawListener true
-            if (!target.isAttachedToWindow || !scrollView.isAttachedToWindow || !target.isSameOrDescendantOf(scrollView)) {
+            if (!validRevealTree(scrollView, target) || horizontal?.isValid() == false) {
                 cancel()
                 return@OnPreDrawListener true
             }
             // 等真实的展开几何与最终变换，与动画时长缩放无关。
-            if (!scrollView.isLaidOut || scrollView.isLayoutRequested || target.isLayoutRequested ||
-                target.width <= 0 || target.height <= 0 ||
-                settling.any { it.isLayoutRequested || it.alpha != 1f || it.translationY != 0f }
-            ) {
+            if (!stableRevealLayout(scrollView, target, settling)) {
                 return@OnPreDrawListener true
             }
-            if (!target.isShown) {
+            val host = findHorizontalHost(scrollView, target)
+            if (host != null && host !== horizontal?.host) {
+                // The target stayed inside the owned tree, but a nearer carousel was inserted.
+                // Revoke the previous plan before taking ownership of this new host.
+                horizontal?.cancel()
+                horizontal = HorizontalScrollMotion(scrollView, host, target, stopHorizontalMotion, owns, wake, cancelOwned)
+            }
+            val horizontalSettled = horizontal?.update() != false
+            // Stopping a third-party host can synchronously replace/cancel this request or
+            // change layout. Never use its pre-stop geometry or write the replacement's axes.
+            if (!request.owns(token) || !stableRevealLayout(scrollView, target, settling)) {
+                return@OnPreDrawListener true
+            }
+            if (!validRevealTree(scrollView, target) || horizontal?.isValid() == false) {
                 cancel()
                 return@OnPreDrawListener true
             }
@@ -106,12 +169,7 @@ public class LumenReveal @JvmOverloads constructor(
                     (remaining < 0 && !scrollView.canScrollVertically(-1))
                 if (abs(remaining) <= 1 || blocked) {
                     relative?.cancel()
-                    if (request.complete(token)) {
-                        whenSettled(horizontal) {
-                            if (highlight) scheduleHighlight(target)
-                            afterReveal?.invoke()
-                        }
-                    }
+                    if (horizontalSettled) finish()
                     return@OnPreDrawListener true
                 }
                 val plan = relative
@@ -131,8 +189,10 @@ public class LumenReveal @JvmOverloads constructor(
             val range = (child.height + (margins?.topMargin ?: 0) + (margins?.bottomMargin ?: 0) -
                 (scrollView.height - scrollView.paddingTop - scrollView.paddingBottom)).coerceAtLeast(0)
             val desiredY = RevealPolicy.verticalDestination(rect.top, topOffsetPx, range)
-            if (destinationY != desiredY) {
-                // 异步内容可能在定位途中改变页面高度：重定向。
+            if (destinationY != desiredY ||
+                (scrollView.scrollY != desiredY && scrollAnimator?.isRunning != true)) {
+                // Redirect changing content or an external position write after the old
+                // plan ended. An unchanged active plan keeps its original phase/curve.
                 scrollAnimator?.cancel()
                 if (destinationY == null) stopFling(scrollView)
                 destinationY = desiredY
@@ -151,13 +211,7 @@ public class LumenReveal @JvmOverloads constructor(
                 }
             }
             // 被钳在列表末尾的目标以实际滚动位置为准，不等计时器。
-            if (scrollView.scrollY == destinationY && request.complete(token)) {
-                // 横向那一步可能还在滑：两步都到位再高亮，否则高亮会跟着目标横着飞。
-                whenSettled(horizontal) {
-                    if (highlight) scheduleHighlight(target)
-                    afterReveal?.invoke()
-                }
-            }
+            if (scrollView.scrollY == destinationY && horizontalSettled) finish()
             true
         }
         token = request.begin {
@@ -247,45 +301,193 @@ public class LumenReveal @JvmOverloads constructor(
         if (drawable != null) view?.overlay?.remove(drawable)
     }
 
-    /**
-     * 目标与竖向滚动容器之间最近的横向滚动容器（轮播）：把目标横向滚到完整可见。
-     * 用逐帧 `scrollBy` 推进，`HorizontalScrollView` 与横向 `RecyclerView` 都适用（后者不在本模块依赖里）。
-     * @return 正在进行的横向动画；不需要横向滚动时为 null。
-     */
-    private fun startHorizontalReveal(scrollView: ViewGroup, target: View): ValueAnimator? {
+    private fun findHorizontalHost(scrollView: ViewGroup, target: View): ViewGroup? {
         var node = target.parent as? ViewGroup
-        var carousel: ViewGroup? = null
         while (node != null && node !== scrollView) {
             if (node is HorizontalScrollView || node.canScrollHorizontally(1) || node.canScrollHorizontally(-1)) {
-                carousel = node
-                break
+                return node
             }
             node = node.parent as? ViewGroup
         }
-        val host = carousel ?: return null
-        val rect = Rect(0, 0, target.width, target.height)
-        runCatching { host.offsetDescendantRectToMyCoords(target, rect) }.getOrNull() ?: return null
-        // offsetDescendantRectToMyCoords 给的是内容坐标（不扣容器自己的滚动量）：HorizontalScrollView 要换成可见坐标；
-        // RecyclerView 的子 View 本来就摆在可见位置、scrollX 恒为 0，不受影响。
-        rect.offset(-host.scrollX, 0)
-        val margin = (12 * host.resources.displayMetrics.density).toInt()
-        val dx = RevealPolicy.horizontalDelta(rect.left, rect.right,
-            host.paddingLeft, host.width - host.paddingRight, margin)
-        if (dx == 0) return null
-        if (!ValueAnimator.areAnimatorsEnabled()) {
-            host.scrollBy(dx, 0)
-            return null
+        return null
+    }
+
+    private fun validRevealTree(scrollView: ViewGroup, target: View): Boolean =
+        scrollView.isAttachedToWindow && target.isAttachedToWindow && target.isShown &&
+            target.isSameOrDescendantOf(scrollView)
+
+    private fun stableRevealLayout(scrollView: ViewGroup, target: View, settling: List<View>): Boolean {
+        if (!scrollView.isLaidOut || scrollView.isLayoutRequested || target.isLayoutRequested ||
+            target.width <= 0 || target.height <= 0) return false
+        for (index in settling.indices) {
+            val view = settling[index]
+            if (view.isLayoutRequested || view.alpha != 1f || view.translationY != 0f) return false
         }
-        var applied = 0
-        return ValueAnimator.ofFloat(0f, 1f).apply {
-            duration = SCROLL_DURATION_MS
-            interpolator = DecelerateInterpolator()
-            addUpdateListener {
-                val next = (dx * it.animatedFraction).toInt()
-                host.scrollBy(next - applied, 0)
-                applied = next
+        return true
+    }
+
+    private fun isVerticalSettled(scrollView: ViewGroup, target: View, absolute: Boolean, topOffsetPx: Int, rect: Rect): Boolean {
+        target.getDrawingRect(rect)
+        scrollView.offsetDescendantRectToMyCoords(target, rect)
+        if (!absolute) {
+            val remaining = rect.top - scrollView.scrollY - topOffsetPx
+            return abs(remaining) <= 1 || (remaining > 0 && !scrollView.canScrollVertically(1)) ||
+                (remaining < 0 && !scrollView.canScrollVertically(-1))
+        }
+        val child = if (scrollView.childCount > 0) scrollView.getChildAt(0) else return false
+        val margins = child.layoutParams as? ViewGroup.MarginLayoutParams
+        val range = (child.height + (margins?.topMargin ?: 0) + (margins?.bottomMargin ?: 0) -
+            (scrollView.height - scrollView.paddingTop - scrollView.paddingBottom)).coerceAtLeast(0)
+        return scrollView.scrollY == RevealPolicy.verticalDestination(rect.top, topOffsetPx, range)
+    }
+
+    /** Relative X plans are redirected from actual target geometry, never from elapsed time alone. */
+    private class HorizontalScrollMotion(
+        private val root: ViewGroup,
+        val host: ViewGroup,
+        private val target: View,
+        private val stopper: ((ViewGroup) -> Boolean)?,
+        private val owns: () -> Boolean,
+        private val wake: () -> Unit,
+        private val cancelOwned: () -> Unit
+    ) {
+        private val rect = Rect()
+        private var takenOver = false
+        private var active = true
+        private var plan: HorizontalScroll? = null
+
+        fun isValid(): Boolean = validHorizontalTree(root, host, target)
+
+        private fun stable(): Boolean = host.isLaidOut && !host.isLayoutRequested &&
+            !target.isLayoutRequested && host.width > host.paddingLeft + host.paddingRight && host.height > 0
+
+        private fun remaining(): Int {
+            target.getDrawingRect(rect)
+            host.offsetDescendantRectToMyCoords(target, rect)
+            // HSV returns content coordinates; RecyclerView children already use visible
+            // coordinates and its scrollX stays zero. Respect each host's public geometry.
+            rect.offset(-host.scrollX, 0)
+            val margin = (12 * host.resources.displayMetrics.density).toInt()
+            return RevealPolicy.horizontalDelta(rect.left, rect.right, host.paddingLeft,
+                host.width - host.paddingRight, margin)
+        }
+
+        private fun blocked(remaining: Int): Boolean =
+            (remaining > 0 && !host.canScrollHorizontally(1)) ||
+                (remaining < 0 && !host.canScrollHorizontally(-1))
+
+        fun update(): Boolean {
+            if (!active || !owns() || !stable()) return false
+            if (!takenOver) {
+                takenOver = true
+                try {
+                    if (host is HorizontalScrollView) {
+                        // In pre-draw both calls share Choreographer's frozen animation clock.
+                        // The first may replace a fling with a zero-distance smooth scroll;
+                        // the second takes the short-gap branch and aborts that scroller.
+                        host.smoothScrollTo(host.scrollX, host.scrollY)
+                        if (!active || !owns()) return false
+                        host.smoothScrollTo(host.scrollX, host.scrollY)
+                    } else stopper?.invoke(host)
+                } catch (_: Throwable) {
+                    cancelOwned()
+                    return false
+                }
+                if (!active || !owns()) return false
+                if (!isValid()) {
+                    cancelOwned()
+                    return false
+                }
+                if (!stable()) {
+                    wake()
+                    return false
+                }
             }
-            start()
+            val remaining = remaining()
+            if (abs(remaining) <= 1 || blocked(remaining)) return plan?.running != true
+            val previous = plan
+            if (previous == null || !previous.running || abs(previous.expectedRemaining - remaining) > 2) {
+                previous?.cancel()
+                val next = HorizontalScroll(root, host, target, remaining, owns, wake, cancelOwned)
+                plan = next
+                next.start()
+            }
+            return false
+        }
+
+        fun isSettled(): Boolean {
+            if (!active || !isValid() || !stable() || plan?.running == true) return false
+            val remaining = remaining()
+            return abs(remaining) <= 1 || blocked(remaining)
+        }
+
+        fun cancel() {
+            active = false
+            plan?.cancel()
+            plan = null
+        }
+    }
+
+    private class HorizontalScroll(
+        private val root: ViewGroup,
+        private val host: ViewGroup,
+        private val target: View,
+        private val total: Int,
+        private val owns: () -> Boolean,
+        private val wake: () -> Unit,
+        private val cancelOwned: () -> Unit
+    ) {
+        private var active = true
+        private var applied = 0
+        private var animator: ValueAnimator? = null
+        val running: Boolean get() = animator?.isRunning == true
+        val expectedRemaining: Int get() = total - applied
+
+        fun start() {
+            if (!ValueAnimator.areAnimatorsEnabled()) {
+                if (active && owns()) {
+                    if (!validHorizontalTree(root, host, target)) {
+                        cancelOwned()
+                        return
+                    }
+                    host.scrollBy(total, 0)
+                }
+                applied = total
+                wake()
+                return
+            }
+            val animation = ValueAnimator.ofFloat(0f, 1f).apply {
+                duration = SCROLL_DURATION_MS
+                interpolator = DecelerateInterpolator()
+                addUpdateListener {
+                    if (active && owns()) {
+                        // Detach/reparent can precede the next root pre-draw. Revoke the
+                        // old plan before it writes a host that no longer owns this target.
+                        if (!validHorizontalTree(root, host, target)) {
+                            cancelOwned()
+                            return@addUpdateListener
+                        }
+                        val next = (total * it.animatedFraction).toInt()
+                        host.scrollBy(next - applied, 0)
+                        applied = next
+                    }
+                }
+                addListener(object : AnimatorListenerAdapter() {
+                    private var cancelled = false
+                    override fun onAnimationCancel(animation: Animator) { cancelled = true }
+                    override fun onAnimationEnd(animation: Animator) {
+                        if (active && !cancelled && owns()) wake()
+                    }
+                })
+            }
+            animator = animation
+            animation.start()
+        }
+
+        fun cancel() {
+            active = false
+            animator?.cancel()
+            animator = null
         }
     }
 
@@ -321,18 +523,6 @@ public class LumenReveal @JvmOverloads constructor(
         }
     }
 
-    private fun whenSettled(animator: ValueAnimator?, action: () -> Unit) {
-        if (animator == null || !animator.isRunning) {
-            action()
-            return
-        }
-        animator.addListener(object : AnimatorListenerAdapter() {
-            private var cancelled = false
-            override fun onAnimationCancel(animation: Animator) { cancelled = true }
-            override fun onAnimationEnd(animation: Animator) { if (!cancelled) action() }
-        })
-    }
-
     /** 这个请求接管滚动之前，先结束之前的原生惯性滚动。 */
     private fun stopFling(scrollView: ViewGroup) {
         when (scrollView) {
@@ -341,21 +531,25 @@ public class LumenReveal @JvmOverloads constructor(
         }
     }
 
-    private fun View.isSameOrDescendantOf(ancestor: View): Boolean {
-        var node: View? = this
-        while (node != null) {
-            if (node === ancestor) return true
-            node = node.parent as? View
-        }
-        return false
-    }
-
     public companion object {
         public const val HIGHLIGHT_DELAY_MS: Long = 240L
         public const val HIGHLIGHT_DURATION_MS: Long = 560L
         public const val SCROLL_DURATION_MS: Long = 250L
     }
 }
+
+private fun View.isSameOrDescendantOf(ancestor: View): Boolean {
+    var node: View? = this
+    while (node != null) {
+        if (node === ancestor) return true
+        node = node.parent as? View
+    }
+    return false
+}
+
+private fun validHorizontalTree(root: ViewGroup, host: ViewGroup, target: View): Boolean =
+    root.isAttachedToWindow && host.isAttachedToWindow && target.isAttachedToWindow && target.isShown &&
+        target.isSameOrDescendantOf(host) && target.isSameOrDescendantOf(root)
 
 /** 定位的纯几何（适配标准 §14.6）。 */
 internal object RevealPolicy {

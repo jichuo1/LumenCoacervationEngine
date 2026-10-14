@@ -16,7 +16,7 @@ class LayoutLimitContractTest {
         val pager = MotionSource.file("LumenPagePager")
         assertFalse(pager.contains("require(childCount"))
         val chain = MotionSource.file("PageTextChain")
-        assertTrue(chain.contains("private val items = HashMap<Int, List<Item>>()"))
+        assertTrue(chain.contains("private val pages = PageTextChainPages<View, PageState>()"))
         assertTrue(chain.contains("for (index in 0 until pager.childCount) {"))
         assertFalse(MotionSource.all().contains("MAX_PAGES"))
     }

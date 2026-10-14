@@ -7,6 +7,7 @@ import android.widget.CheckBox
 import android.widget.EditText
 import androidx.annotation.MainThread
 import androidx.appcompat.widget.SwitchCompat
+import androidx.recyclerview.widget.RecyclerView
 import com.lumen.coacervation.engine.host.LumenActivityDelegate
 import com.lumen.coacervation.engine.liquid.LiquidChoiceDrawable
 import com.lumen.coacervation.engine.model.SurfaceRole
@@ -22,6 +23,20 @@ import com.lumen.coacervation.engine.model.SurfaceRole
  * 会话未准备（例如授权前）时不做任何事。
  */
 public object LumenControls {
+
+    /**
+     * Stops a RecyclerView's fling and LayoutManager smooth scroll, returning true when handled.
+     * Pass this axis-neutral adapter to `LumenReveal.setHorizontalScrollMotionStopper` to
+     * explicitly hand its nearest horizontal carousel to the reveal request. Other hosts
+     * return false; this does not dispatch synthetic touch events or change focus.
+     */
+    @MainThread
+    @JvmStatic
+    public fun stopScroll(host: ViewGroup): Boolean {
+        if (host !is RecyclerView) return false
+        host.stopScroll()
+        return true
+    }
 
     @MainThread
     @JvmStatic

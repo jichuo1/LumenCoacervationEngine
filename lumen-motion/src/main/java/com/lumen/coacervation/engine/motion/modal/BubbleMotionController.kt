@@ -10,6 +10,8 @@ import com.lumen.coacervation.engine.motion.InterruptibleMotionContinuation
 import com.lumen.coacervation.engine.motion.InterruptibleMotionPhase as MotionState
 import com.lumen.coacervation.engine.motion.InterruptibleMotionPolicy
 import com.lumen.coacervation.engine.motion.InterruptibleMotionSession
+import com.lumen.coacervation.engine.motion.AnimatorDurationScale
+import com.lumen.coacervation.engine.motion.MotionTimeDomain
 
 /**
  * 锚定气泡的展开/收起驱动。
@@ -192,7 +194,8 @@ public class BubbleMotionController(
         val actualDuration = InterruptibleMotionPolicy.remainingDuration(durationMs, start, target)
         val now = SystemClock.uptimeMillis()
         val continuation = if (retarget) {
-            InterruptibleMotionContinuation(start, target, session.velocity(now), actualDuration)
+            val wallDuration = MotionTimeDomain.wallDurationMs(actualDuration, AnimatorDurationScale.current(layer.context))
+            InterruptibleMotionContinuation(start, target, session.velocity(now), wallDuration)
         } else {
             null
         }

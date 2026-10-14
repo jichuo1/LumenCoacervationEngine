@@ -49,22 +49,26 @@ public class PageTextChain(
 ) {
     /** [roomLeft]/[roomRight]：文字实际绘制范围到所在卡片（裁剪边界）的余量，偏移不越过它。 */
     private class Item(
-        val view: View, val y: Float, val heading: Boolean, val roomLeft: Float, val roomRight: Float
+        val view: View, val y: Float, val heading: Boolean, val roomLeft: Float, val roomRight: Float,
+        val originalMatrix: Matrix?
     ) {
         var offset = 0f
         var applied = 0f
+        val writtenMatrix = Matrix()
+        var matrixBorrowed = false
+        var matrixTaken = false
     }
+
+    private class PageState(
+        // Only true clipping flags collected here are temporarily relaxed and later restored.
+        val items: List<Item>, val relaxed: List<ViewGroup>, val paddingRelaxed: List<ViewGroup>
+    )
 
     private val density = pager.resources.displayMetrics.density
     // 页面取 pager 的直接子 View：滚动页外面还包着回弹视口，平移作用在视口上。
-    private val items = HashMap<Int, List<Item>>()
-    /** 为了让文字能偏出行矩形而临时关掉 clipChildren 的中间容器；该页联动结束时恢复。 */
-    private val relaxed = HashMap<Int, List<ViewGroup>>()
-    /**
-     * 临时关掉 clipToPadding 的卡片：ViewGroup 默认把子 View 裁在内边距以内，开关拨钮右缘正贴着内边距线，
-     * 一偏就被齐刷刷切掉（2026-09-27 录屏）。卡片自身矩形/圆角裁剪不动，文字仍被余量限在卡片边缘 4dp 以内。
-     */
-    private val paddingRelaxed = HashMap<Int, List<ViewGroup>>()
+    private val pages = PageTextChainPages<View, PageState>()
+    private val isCurrentPage: (View) -> Boolean = { it.parent === pager }
+    private val releasePage: (PageState) -> Unit = { restore(it) }
     /** 本段运动的起点（页坐标）：静止时记下所在页，运动开始后固定；中途改目标时改为当时的位置。 */
     private var motionFrom = Float.NaN
     private var motionTo = Float.NaN
@@ -83,12 +87,26 @@ public class PageTextChain(
 
     /** 页面位置刚变（与 translation 同步调用）：排帧回调，偏移统一在帧回调里按进度算，每帧一次。 */
     fun onPositionChanged() {
-        if (disposed || !supported) return
+        if (disposed) return
+        pages.releaseRemoved(isCurrentPage, releasePage)
+        if (!supported) {
+            pages.clear(releasePage)
+            return
+        }
         postFrame()
     }
 
     private fun step(frameNanos: Long) {
         if (disposed) return
+        // A removed tail is outside childCount; clean cached identities before that traversal.
+        pages.releaseRemoved(isCurrentPage, releasePage)
+        if (!supported) {
+            pages.clear(releasePage)
+            lastFrameNanos = 0L
+            motionFrom = Float.NaN
+            motionTo = Float.NaN
+            return
+        }
         val height = pager.height.toFloat().coerceAtLeast(1f)
         val anchor = pager.motionAnchorY.takeIf { it.isFinite() } ?: height
         // 按离锚点最远的屏幕边缘归一：点底栏时整页从下到上逐级展开；手在中部时上下两端各自拉满。
@@ -121,14 +139,14 @@ public class PageTextChain(
         for (index in 0 until pager.childCount) {
             val page: View = pager.getChildAt(index)
             val visible = abs(index - position) < 1f && page.isVisible
-            var list = items[index]
-            if (list == null) {
+            var state = pages[page]
+            if (state == null) {
                 if (!visible || progress <= 0f) continue
-                list = collect(index, page)
-                items[index] = list
+                state = collect(page)
+                pages.put(page, state)
             }
             var pageActive = false
-            for (item in list) {
+            for (item in state.items) {
                 val reach = (abs(item.y - anchor) / span).coerceIn(0f, 1f)
                 var skew = 1f + SKEW * reach
                 var share = SHARE_NEAR + (1f - SHARE_NEAR) * reach
@@ -144,12 +162,12 @@ public class PageTextChain(
                 item.offset = offset
                 if (offset != 0f) pageActive = true
                 if (abs(offset - item.applied) >= APPLY_STEP_PX || (offset == 0f && item.applied != 0f)) {
-                    apply(item.view, offset)
+                    apply(item, offset)
                     item.applied = offset
                 }
             }
             if (pageActive) active = true
-            else if (!visible || settled) release(index)
+            else if (!visible || settled) pages.remove(page)?.let(releasePage)
         }
         if (active || !settled) postFrame()
         else { lastFrameNanos = 0L; motionFrom = Float.NaN; motionTo = Float.NaN }
@@ -161,19 +179,35 @@ public class PageTextChain(
         Choreographer.getInstance().postFrameCallback(frame)
     }
 
-    private fun apply(view: View, offset: Float) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        if (offset == 0f) Api29.clear(view)
-        else {
-            matrix.setTranslate(offset, 0f)
-            Api29.set(view, matrix)
+    private fun apply(item: Item, offset: Float) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || item.matrixTaken) return
+        if (offset == 0f) {
+            restoreMatrix(item)
+        } else {
+            if (item.originalMatrix == null) matrix.reset() else matrix.set(item.originalMatrix)
+            matrix.postTranslate(offset, 0f)
+            Api29.set(item.view, matrix)
+            item.writtenMatrix.set(matrix)
+            item.matrixBorrowed = true
         }
     }
 
-    private fun release(index: Int) {
-        items.remove(index)
-        relaxed.remove(index)?.forEach { it.clipChildren = true }
-        paddingRelaxed.remove(index)?.forEach { it.clipToPadding = true }
+    private fun restore(state: PageState) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            for (item in state.items) restoreMatrix(item)
+        }
+        // Only flags that were true at collection were borrowed; initially false flags stay false.
+        for (view in state.relaxed) if (!view.clipChildren) view.clipChildren = true
+        for (view in state.paddingRelaxed) if (!view.clipToPadding) view.clipToPadding = true
+    }
+
+    private fun restoreMatrix(item: Item) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q || !item.matrixBorrowed) return
+        // The platform getter allocates a Matrix: read it only when returning an actual loan.
+        // Preserve a host transform written after our last frame, including during removal.
+        if (Api29.matches(item.view, item.writtenMatrix)) Api29.set(item.view, item.originalMatrix)
+        else item.matrixTaken = true
+        item.matrixBorrowed = false
     }
 
     /**
@@ -194,7 +228,7 @@ public class PageTextChain(
             view.canScrollVertically(1) || view.canScrollVertically(-1)
 
     /** 只在该页首次进入可见时走一遍树：记录视口内文字的中心 y 与到裁剪边界的余量（pager 坐标）。 */
-    private fun collect(index: Int, page: View): List<Item> {
+    private fun collect(page: View): PageState {
         val out = ArrayList<Item>()
         val relax = LinkedHashSet<ViewGroup>()
         val relaxPadding = LinkedHashSet<ViewGroup>()
@@ -234,7 +268,8 @@ public class PageTextChain(
                 }
                 val roomLeft = (left - boundaryRect.left - margin).coerceAtLeast(0f)
                 val roomRight = (boundaryRect.right - right - margin).coerceAtLeast(0f)
-                out += Item(view, rect.exactCenterY(), inHeading, roomLeft, roomRight)
+                val originalMatrix = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) Api29.snapshot(view) else null
+                out += Item(view, rect.exactCenterY(), inHeading, roomLeft, roomRight, originalMatrix)
                 // 滚动容器不放开：它的裁剪管的是竖向视口，放开后滚出视口的内容会画出来。
                 // clipToPadding 独立于 clipChildren 生效：只关 clipChildren 时，行容器仍把文字裁在自己的内边距线上。
                 between.forEach {
@@ -256,10 +291,8 @@ public class PageTextChain(
         relax.remove(page as? ViewGroup)
         relaxPadding.remove(page as? ViewGroup)
         relax.forEach { it.clipChildren = false }
-        relaxed[index] = relax.toList()
         relaxPadding.forEach { it.clipToPadding = false }
-        paddingRelaxed[index] = relaxPadding.toList()
-        return out
+        return PageState(out, relax.toList(), relaxPadding.toList())
     }
 
     fun dispose() {
@@ -267,14 +300,14 @@ public class PageTextChain(
         disposed = true
         if (framePosted) Choreographer.getInstance().removeFrameCallback(frame)
         framePosted = false
-        for (list in items.values) list.forEach { if (it.applied != 0f) apply(it.view, 0f) }
-        for (index in (items.keys + relaxed.keys + paddingRelaxed.keys).toList()) release(index)
+        pages.clear(releasePage)
     }
 
     @RequiresApi(Build.VERSION_CODES.Q)
     private object Api29 {
-        fun set(view: View, matrix: Matrix) { view.animationMatrix = matrix }
-        fun clear(view: View) { view.animationMatrix = null }
+        fun set(view: View, matrix: Matrix?) { view.animationMatrix = matrix }
+        fun snapshot(view: View): Matrix? = view.animationMatrix?.let { Matrix(it) }
+        fun matches(view: View, expected: Matrix?): Boolean = view.animationMatrix == expected
     }
 
     internal companion object {

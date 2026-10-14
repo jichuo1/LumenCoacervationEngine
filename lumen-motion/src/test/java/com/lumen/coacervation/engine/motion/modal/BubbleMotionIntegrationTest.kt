@@ -30,7 +30,8 @@ class BubbleMotionIntegrationTest {
         assertEquals(1, Regex("InterruptibleMotionPolicy.remainingDuration\\(").findAll(source).count())
         assertTrue(source.contains("predictiveStartExpansion = expansion"))
         assertTrue(source.contains("BubbleMotionSpec.predictiveExpansion(predictiveStartExpansion, mapped)"))
-        assertTrue(source.contains("InterruptibleMotionContinuation(start, target, session.velocity(now), actualDuration)"))
+        assertTrue(source.contains("MotionTimeDomain.wallDurationMs(actualDuration, AnimatorDurationScale.current(layer.context))"))
+        assertTrue(source.contains("InterruptibleMotionContinuation(start, target, session.velocity(now), wallDuration)"))
     }
 
     @Test

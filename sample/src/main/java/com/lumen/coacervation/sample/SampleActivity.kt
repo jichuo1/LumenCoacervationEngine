@@ -82,7 +82,11 @@ class SampleActivity : AppCompatActivity() {
             elastic = elastic, styleContent = { LumenControls.style(it, lumen) })
     }
     // §13.8 定位并高亮。
-    internal val reveal by lazy(LazyThreadSafetyMode.NONE) { LumenReveal(lumen.palette.primary) }
+    internal val reveal by lazy(LazyThreadSafetyMode.NONE) {
+        LumenReveal(lumen.palette.primary).apply {
+            setHorizontalScrollMotionStopper(LumenControls::stopScroll)
+        }
+    }
 
     private var chrome: GlowFloatingChrome? = null
     private var textChain: PageTextChain? = null

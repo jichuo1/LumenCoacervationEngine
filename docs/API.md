@@ -174,6 +174,8 @@
 - 把 `SwitchCompat`、`CheckBox`、`EditText` 换装成引擎材质；
 - 未 `prepare()` 时是空操作（§5.3）。
 
+`LumenControls.stopScroll(host: ViewGroup): Boolean`：主线程停止 `RecyclerView` 当前惯性及平滑滚动，已处理时返回 `true`，其它类型返回 `false`。通过 `LumenReveal.setHorizontalScrollMotionStopper(LumenControls::stopScroll)` 接入横向轮播定位（§14.6）。
+
 ## 11. 交互与动效（`lumen-motion`）
 
 ### 11.1 长按弹性（`com.lumen.coacervation.engine.interaction`）
@@ -231,7 +233,7 @@
 | `PageTextChain(pager, headings)` | `onPositionChanged()`、`dispose()` | §13.6 |
 | `LumenPageScrollView(context, onUserScroll, onContentTouch)` | 页内滚动容器（`NestedScrollView`，实现 `LiquidStretchGestureObserver`）；可空属性 `onScrollPositionChanged: ((View) -> Unit)?` 在实际 scrollX/Y 改变后同步回调，构造签名保持不变；销毁时设为 null | §13.6 |
 | `SectionExpansionController(card, content, chevron, density, cornerRadiusDp = 12f, notifyPositionChanged)` | `setExpanded(target, animate = true)`、`expanded`、`cancel()` | §13.7 |
-| `LumenReveal(accentColor, highlightDelayMs = 240, highlightDurationMs = 560)` | `reveal(scrollView, target, settling = [], topOffsetPx = 0, highlight = true, afterReveal = null)`（目标在横向轮播里时先横向滚到可见）、`highlight(target)`、`cancel()`、`isActive` | §13.8、§14.6 |
+| `LumenReveal(accentColor, highlightDelayMs = 240, highlightDurationMs = 560)` | `reveal(scrollView, target, settling = [], topOffsetPx = 0, highlight = true, afterReveal = null)`（按两轴实际位置验收后交付回调）、`setHorizontalScrollMotionStopper(stopper: ((ViewGroup) -> Boolean)?)`（横向第三方容器停止适配；null 恢复默认）、`highlight(target)`、`cancel()`、`isActive` | §13.8、§14.6 |
 
 ### 11.6 控件（`com.lumen.coacervation.engine.widget`）
 
@@ -250,7 +252,7 @@
 | 声明 | 说明 | 标准 |
 |---|---|---|
 | `LumenControls.switchParts(view): Pair<Drawable?, Drawable?>?` | `SwitchCompat` 的（轨道, 滑块），接到 `LumenPagePager.switchParts` | §13.6 |
-| `LumenReorderCallback(canDrag, onMove, onDrop, directions = null)` | 长按拖拽排序（`ItemTouchHelper.Callback`）；`isDragging`；方向默认按布局自动判断 | §12.5、§14.5 |
+| `LumenReorderCallback(canDrag, onMove, onDrop, directions = null)` | 长按拖拽排序（`ItemTouchHelper.Callback`）；`isDragging`；方向默认按布局自动判断；`onDrop` 在全部交叠拖拽回位清理后异步交付，每次完成通知一次，参数是清理时的位置或 `-1` | §12.5、§14.5 |
 | `LumenReorderCallback.directionsFor(layoutManager)`、`liftScale(longSidePx, density)`、`dropSettleDurationMs(px)` | 自动方向、按尺寸封顶的拾起放大、按距离的落位时长 | §14.5 |
 
 

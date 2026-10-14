@@ -50,7 +50,11 @@ public class LumenSurfaceInteraction @JvmOverloads constructor(
     public fun observeTouch(event: MotionEvent) {
         if(closed||paused)return
         val view=host.get()?:return
-        if((!press.enabled&&!light.enabled)||reducedMotion||!ValueAnimator.areAnimatorsEnabled())return
+        if(reducedMotion||!ValueAnimator.areAnimatorsEnabled()){
+            if(hasTransientGesture()){cancel();advanceFrame()}
+            return
+        }
+        if(!press.enabled&&!light.enabled)return
         when(event.actionMasked){
             MotionEvent.ACTION_DOWN->{pointer=event.getPointerId(0);x=event.x;y=event.y;target=event.pressure.coerceIn(0f,1f);last=clock.nowNanos();scheduleIfNeeded()}
             MotionEvent.ACTION_MOVE->{
@@ -74,8 +78,11 @@ public class LumenSurfaceInteraction @JvmOverloads constructor(
         if(!binding.isBound){close();return}
         val view=host.get()?:return
         if(!view.isAttachedToWindow||!view.isShown||!view.hasWindowFocus()){cancel();return}
+        val motionDisabled=reducedMotion||!ValueAnimator.areAnimatorsEnabled()
+        // Clear a gesture that began before the system setting changed, but keep static light/time updates.
+        if(motionDisabled&&hasTransientGesture())cancel()
         val now=clock.nowNanos();val dt=((now-last).coerceAtLeast(0L)/1_000_000_000f).coerceAtMost(.1f);last=now
-        if(reducedMotion||!ValueAnimator.areAnimatorsEnabled())spring.reset(target)
+        if(motionDisabled)spring.reset()
         else spring.advance(dt,target,stiffness=(36f/(press.releaseDurationMs/1000f).let {it*it}).coerceIn(100f,2500f),dampingRatio=.85f)
         binding.setFrameTimeNanos(now,clock is LumenFixedFrameClock)
         binding.setPressPixels(x,y,if(press.enabled)spring.value.coerceIn(0f,1f)else 0f)
@@ -96,6 +103,8 @@ public class LumenSurfaceInteraction @JvmOverloads constructor(
         val ripple=lastRipple!=Long.MIN_VALUE&&now-lastRipple<press.rippleLifetimeMs*1_000_000L
         return !spring.atRest(target,.002f)||ripple||lightSettling
     }
+    private fun hasTransientGesture(): Boolean = pointer>=0||target!=0f||spring.value!=0f||spring.velocity!=0f||
+        lastRipple!=Long.MIN_VALUE||lightSettling
     private fun scheduleIfNeeded(){
         if(closed||paused||scheduled||clock is LumenFixedFrameClock||!needsFrame())return
         host.get()?.let {scheduled=true;it.postOnAnimation(frame)}

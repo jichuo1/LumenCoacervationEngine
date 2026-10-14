@@ -1,5 +1,6 @@
 package com.lumen.coacervation.engine.motion.pager
 
+import com.lumen.coacervation.engine.motion.MotionTimeDomain
 import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.pow
@@ -152,6 +153,17 @@ public object PageMotionPolicy {
         return minOf(base, matched).coerceAtLeast(minOf(base, HANDOFF_MIN_MS))
     }
 
+    /** Velocity uses real seconds; the animator duration and its minimum remain nominal. */
+    internal fun handoffDuration(base: Long, start: Float, target: Float, velocity: Float, durationScale: Float): Long {
+        val scale = MotionTimeDomain.durationScale(durationScale)
+        if (scale == 1f) return handoffDuration(base, start, target, velocity)
+        if (scale == 0f || !start.isFinite() || !target.isFinite() || !velocity.isFinite()) return base
+        val delta = target - start
+        if (delta == 0f || velocity == 0f || delta * velocity < 0f) return base
+        val matched = (HANDOFF_TANGENT_RATIO * abs(delta) / abs(velocity) / scale * 1000f).roundToLong()
+        return minOf(base, matched).coerceAtLeast(minOf(base, HANDOFF_MIN_MS))
+    }
+
     const val HANDOFF_TANGENT_RATIO = 2.6f
     const val HANDOFF_MIN_MS = 120L
     const val NAVIGATION_MIN_MS = 240L
@@ -166,9 +178,17 @@ public object PageMotionPolicy {
  * 长尾减速滑入，陡度随跨页距离增大，不过冲；拖动松手（false）保持原来的 Hermite 回弹。两种曲线都叠加
  * 同一个速度项，动画途中再次点击时从当前速度无缝接续。
  */
-public class PageMotionContinuation(
-    start: Float, target: Int, velocity: Float, duration: Long, count: Int, private val navigation: Boolean = false
+public class PageMotionContinuation private constructor(
+    start: Float, target: Int, velocity: Float, wallDurationMs: Float, count: Int, private val navigation: Boolean
 ) {
+    public constructor(start: Float, target: Int, velocity: Float, duration: Long, count: Int, navigation: Boolean = false) :
+        this(start, target, velocity, nominalDuration(duration, navigation).toFloat(), count, navigation)
+
+    internal constructor(
+        start: Float, target: Int, velocity: Float, duration: Long, count: Int, navigation: Boolean, durationScale: Float
+    ) : this(start, target, velocity,
+        MotionTimeDomain.wallDurationMs(nominalDuration(duration, navigation), durationScale).toFloat(), count, navigation)
+
     private val last = PageMotionPolicy.lastPage(count).toFloat()
     private val lower = -PageMotionPolicy.EDGE_LIMIT
     private val upper = last + PageMotionPolicy.EDGE_LIMIT
@@ -176,7 +196,7 @@ public class PageMotionContinuation(
     private val to = PageMotionPolicy.selected(target, count).toFloat()
     private val delta = to - from
     private val tangent = (if (velocity.isFinite()) velocity.coerceIn(-8f, 8f) else 0f).let { speed ->
-        val raw = speed * duration.coerceIn(0L, 420L) / 1000f
+        val raw = speed * wallDurationMs / 1000f
         val cap = if (raw * delta >= 0f) 3f * abs(delta)
         else 3f * (if (raw > 0f) upper - from else from - lower).coerceAtLeast(0f)
         raw.coerceIn(-cap, cap)
@@ -184,6 +204,11 @@ public class PageMotionContinuation(
 
     private val steepness = PageMotionPolicy.navigationSteepness(delta)
     private val springNorm = 1f - (1f + steepness) * exp(-steepness)
+
+    private companion object {
+        fun nominalDuration(duration: Long, navigation: Boolean): Long =
+            duration.coerceIn(0L, if (navigation) PageMotionPolicy.NAVIGATION_MAX_MS else 420L)
+    }
 
     fun value(fraction: Float): Float {
         val t = if (fraction.isFinite()) fraction.coerceIn(0f, 1f) else 1f

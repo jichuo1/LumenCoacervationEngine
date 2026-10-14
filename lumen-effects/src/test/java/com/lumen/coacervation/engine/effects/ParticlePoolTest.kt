@@ -24,4 +24,13 @@ class ParticlePoolTest {
         p.emit(1f,1f,2f,0,c);assertTrue(p.live<24);assertTrue(p.dropped>0)
     }
     @Test fun defaultsDoNotStartAnEmitter(){val p=ParticlePool(1);assertEquals(0,p.emit(1f,1f,1f,0,LumenParticleOptions()))}
+    @Test fun shiftingSuspendedTimePreservesPositionAndRemainingLifetime(){
+        val p=ParticlePool(1);val c=LumenParticleOptions(enabled=true,lifetimeMs=1000)
+        val count=p.emit(100f,100f,1f,0,c);p.update(250_000_000)
+        val x=p.x.copyOf();val y=p.y.copyOf();val alpha=p.alpha.copyOf()
+        p.shiftTime(5_000_000_000);p.update(5_250_000_000)
+        assertEquals(count,p.live);assertArrayEquals(x,p.x,0f);assertArrayEquals(y,p.y,0f);assertArrayEquals(alpha,p.alpha,0f)
+        p.update(5_999_000_000);assertEquals(count,p.live)
+        p.update(6_000_000_000);assertEquals(0,p.live)
+    }
 }

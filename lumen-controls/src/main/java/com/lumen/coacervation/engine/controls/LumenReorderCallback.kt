@@ -2,6 +2,8 @@ package com.lumen.coacervation.engine.controls
 
 import android.view.HapticFeedbackConstants
 import android.view.animation.PathInterpolator
+import android.os.Handler
+import android.os.Looper
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -21,7 +23,8 @@ import kotlin.math.hypot
  *
  * @param canDrag 这一行能不能被拾起（例如过滤视图下顺序与存储顺序不同构时整体禁用）。
  * @param onMove 交换两行；返回 false 拒绝（例如越出可排序的前缀）。宿主在这里移动适配器数据并 `notifyItemMoved`。
- * @param onDrop 松手：参数是被拖行最终的位置（拿不到时为 -1）。宿主在这里提交一次排序。
+ * @param onDrop 回位完成后异步通知：参数是被拖行清理时的位置（拿不到时为 -1）。
+ *               等所有交叠拖拽结束后，每次完成的拖拽仅通知一次；宿主在这里提交排序。
  * @param directions 允许的拖动方向（`ItemTouchHelper.UP` 等的组合）；null 表示按布局自动判断（适配标准 §14.5）：
  *   网格与瀑布流四个方向，横向列表左右，竖向列表上下。
  */
@@ -30,11 +33,23 @@ public class LumenReorderCallback @JvmOverloads constructor(
     private val onMove: (from: Int, to: Int) -> Boolean,
     private val onDrop: (finalPosition: Int) -> Unit,
     private val directions: Int? = null
-) : ItemTouchHelper.Callback() {
+) : ReorderCleanupCallback() {
 
     /** 当前是否有行正被拖动（宿主据此暂停外部数据提交）。 */
     public var isDragging: Boolean = false
         private set
+
+    private val drops = ReorderDropTracker<RecyclerView.ViewHolder>()
+    private val main = Handler(Looper.getMainLooper())
+    private var deliveryPosted = false
+    private val deliverDrops = Runnable {
+        deliveryPosted = false
+        // Take ownership before entering business code, which can detach the helper.
+        while (!drops.isDragging) {
+            val position = drops.poll() ?: break
+            onDrop(position)
+        }
+    }
 
     override fun getMovementFlags(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder): Int {
         val position = viewHolder.bindingAdapterPosition
@@ -56,7 +71,8 @@ public class LumenReorderCallback @JvmOverloads constructor(
     override fun onSelectedChanged(viewHolder: RecyclerView.ViewHolder?, actionState: Int) {
         super.onSelectedChanged(viewHolder, actionState)
         if (actionState == ItemTouchHelper.ACTION_STATE_DRAG && viewHolder != null) {
-            isDragging = true
+            drops.begin(viewHolder)
+            isDragging = drops.isDragging
             viewHolder.itemView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
             // 放大量按卡片尺寸封顶：大卡片（网格大方块、横幅）按比例放大 3% 会鼓出一大圈。
             val view = viewHolder.itemView
@@ -84,14 +100,17 @@ public class LumenReorderCallback @JvmOverloads constructor(
         return dropSettleDurationMs(hypot(animateDx, animateDy))
     }
 
-    override fun clearView(recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder) {
-        super.clearView(recyclerView, viewHolder)
+    override fun onCleared(viewHolder: RecyclerView.ViewHolder) {
         viewHolder.itemView.animate()
             .scaleX(1f).scaleY(1f).alpha(1f)
             .setInterpolator(settleEase)
             .setDuration(DROP_RESTORE_MS).start()
-        isDragging = false
-        onDrop(viewHolder.bindingAdapterPosition)
+        if (!drops.finish(viewHolder, viewHolder.bindingAdapterPosition)) return
+        isDragging = drops.isDragging
+        if (!isDragging && drops.hasCompletedDrops && !deliveryPosted) {
+            deliveryPosted = true
+            main.post(deliverDrops)
+        }
     }
 
     override fun isLongPressDragEnabled(): Boolean = true

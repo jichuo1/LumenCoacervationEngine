@@ -2,6 +2,7 @@
 package com.lumen.coacervation.engine.assets.rive
 
 import android.content.Context
+import android.content.ContextWrapper
 import android.view.View
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
@@ -51,23 +52,29 @@ public class LumenRiveFactory @JvmOverloads constructor(context:Context,renderer
         private var closed=false
         override fun close(){if(!closed){closed=true;file.release()}}
     }
-    private class OwnedLifecycle:LifecycleOwner {
+    // The SDK subscribes to a Context owner during construction, before window attach.
+    private class OwnedLifecycle(context:Context):ContextWrapper(context),LifecycleOwner {
         val registry=LifecycleRegistry(this)
         override val lifecycle:Lifecycle get()=registry
     }
     private class Player(context:Context,private val asset:Decoded,options:LumenAssetOptions):LumenAssetPlayer {
-        private val lifecycle=OwnedLifecycle()
-        private val widget=RiveAnimationView(RiveAnimationView.Builder(context).setRendererType(asset.rendererType).setAutoplay(false).setShouldLoadCDNAssets(false))
-        private var closed=false;private var playing=false
         private val inputTypes=asset.metadata.inputs.associate{it.name to it.kind}
+        private val lifecycle=OwnedLifecycle(context).apply{registry.currentState=Lifecycle.State.CREATED}
+        private val widget=try{
+            RiveAnimationView(RiveAnimationView.Builder(lifecycle).setRendererType(asset.rendererType).setAutoplay(false).setShouldLoadCDNAssets(false)).also{
+                it.setViewTreeLifecycleOwner(lifecycle)
+                it.setRiveFile(asset.file,artboardName=asset.selection.artboard,animationName=asset.selection.animation,stateMachineName=asset.selection.stateMachine,autoplay=false)
+                configure(it,options)
+            }
+        }catch(error:Throwable){
+            try{lifecycle.registry.currentState=Lifecycle.State.DESTROYED}catch(cleanup:Throwable){error.addSuppressed(cleanup)}
+            throw error
+        }
+        private var closed=false;private var playing=false
         override val view:View get()=widget
         override val metadata get()=asset.metadata
-        init{
-            lifecycle.registry.currentState=Lifecycle.State.CREATED;widget.setViewTreeLifecycleOwner(lifecycle)
-            widget.setRiveFile(asset.file,artboardName=asset.selection.artboard,animationName=asset.selection.animation,stateMachineName=asset.selection.stateMachine,autoplay=false)
-            update(options)
-        }
-        override fun update(options:LumenAssetOptions){if(closed)return
+        override fun update(options:LumenAssetOptions){if(closed)return;configure(widget,options)}
+        private fun configure(widget:RiveAnimationView,options:LumenAssetOptions){
             require(options.speed==1f&&options.repeatCount==1){"Rive native-clock adapter supports speed1 and one play; frame submission rate does not control its native clock"}
             widget.fit=when(options.fit){LumenAssetFit.CONTAIN->Fit.CONTAIN;LumenAssetFit.COVER->Fit.COVER;LumenAssetFit.FILL->Fit.FILL}
             widget.setVolume(if(options.mute)0f else 1f)
@@ -80,6 +87,10 @@ public class LumenRiveFactory @JvmOverloads constructor(context:Context,renderer
         override fun setNumber(name:String,value:Float):Boolean{if(closed||inputTypes[name]!=LumenAssetInputKind.NUMBER)return false;val machine=asset.selection.stateMachine?:return false;widget.setNumberState(machine,name,value);return true}
         override fun setBoolean(name:String,value:Boolean):Boolean{if(closed||inputTypes[name]!=LumenAssetInputKind.BOOLEAN)return false;val machine=asset.selection.stateMachine?:return false;widget.setBooleanState(machine,name,value);return true}
         override fun fire(name:String):Boolean{if(closed||inputTypes[name]!=LumenAssetInputKind.TRIGGER)return false;val machine=asset.selection.stateMachine?:return false;widget.fireState(machine,name);return true}
-        override fun close(){if(closed)return;widget.stop();closed=true;playing=false;lifecycle.registry.currentState=Lifecycle.State.DESTROYED;widget.setViewTreeLifecycleOwner(null)}
+        override fun close(){if(closed)return;closed=true;playing=false
+            try{widget.stop()}finally{
+                try{lifecycle.registry.currentState=Lifecycle.State.DESTROYED}finally{widget.setViewTreeLifecycleOwner(null)}
+            }
+        }
     }
 }

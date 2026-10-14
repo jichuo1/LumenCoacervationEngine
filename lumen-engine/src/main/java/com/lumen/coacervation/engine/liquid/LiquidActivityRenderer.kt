@@ -121,7 +121,10 @@ private fun postProcessRealtimeCapture(
 internal class LiquidActivityRenderer(
     private val activity: Activity,
     private val palette: LumenPalette,
-    private val effectTuning: LumenEffectTuning = LumenEffectTuning.DEFAULT
+    private val effectTuning: LumenEffectTuning = LumenEffectTuning.DEFAULT,
+    private val createRealtimeBitmap: (Int, Int) -> Bitmap = { width, height ->
+        createBitmap(width, height, Bitmap.Config.ARGB_8888)
+    }
 ) : GlowEngine {
     override val skin: SkinId get() = SkinId.LIQUID
     private val density = activity.resources.displayMetrics.density
@@ -584,7 +587,9 @@ internal class LiquidActivityRenderer(
             !realtimeCaptureSuspended
         ) {
             performanceController?.start(refreshRate.frameIntervalNanos)
-            boundRoot?.let(::configureRealtimeRefreshRate)
+            // start() 读取当前热状态；相同的首个监听回调会被协调器去重，需在此同步采样预算。
+            onThermalStatusChanged(performanceController?.currentThermalStatus
+                ?: LiquidPerformancePolicy.THERMAL_STATUS_NONE)
         }
         scheduleRealtimeCapture(LiquidRealtimeCapturePolicy.INITIAL_DELAY_MS)
     }
@@ -1562,9 +1567,8 @@ internal class LiquidActivityRenderer(
         ) {
             return
         }
-        val root = boundRoot ?: return
         refreshRate.resetThroughput()
-        configureRealtimeRefreshRate(root, status)
+        boundRoot?.let { configureRealtimeRefreshRate(it, status) }
         // 只降帧率仅减少"做几次"；同时降采样分辨率才能压住每次的回读与纹理上传量。
         val budget = LiquidPerformancePolicy.samplePixelBudget(thermalStatus = status)
         if (budget != realtimeSamplePixelBudget) {
@@ -1841,7 +1845,7 @@ internal class LiquidActivityRenderer(
         val created = ArrayList<LiquidBackdropSource>(LiquidRealtimeCapturePolicy.BUFFER_COUNT)
         val result = runCatching {
             repeat(LiquidRealtimeCapturePolicy.BUFFER_COUNT) {
-                val bitmap = createBitmap(target.width, target.height, Bitmap.Config.ARGB_8888)
+                val bitmap = createRealtimeBitmap(target.width, target.height)
                 bitmap.eraseColor(palette.background)
                 created += LiquidBackdropSource.fromRealtimeBitmap(bitmap, width, height)
             }
@@ -1851,7 +1855,7 @@ internal class LiquidActivityRenderer(
                 source.close()
                 if (!source.bitmap.isRecycled) source.bitmap.recycle()
             }
-            realtimeCaptureSuspended = true
+            suspendRealtimeCapture(releaseBuffers = false)
             return null
         }
         realtimeCaptureSources = result

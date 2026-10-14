@@ -4,6 +4,8 @@ package com.lumen.coacervation.engine.motion.reveal
 public class RevealRequest {
     private var generation = 0L
     private var release: (() -> Unit)? = null
+    private var completed = false
+    private var completedToken = 0L
     val isActive: Boolean get() = release != null
 
     fun begin(onRelease: () -> Unit): Long {
@@ -16,14 +18,26 @@ public class RevealRequest {
 
     fun complete(token: Long): Boolean {
         if (!owns(token)) return false
-        cancel()
+        releaseCurrent(markCompleted = true)
         return true
     }
 
-    fun cancel() {
+    internal fun completeWhenSettled(token: Long, verticalSettled: Boolean, horizontalSettled: Boolean): Boolean =
+        verticalSettled && horizontalSettled && complete(token)
+
+    /** Completion callbacks are posted; a later cancellation/replacement invalidates them too. */
+    internal fun isCompleted(token: Long): Boolean = completed && completedToken == token && release == null
+
+    fun cancel() = releaseCurrent(markCompleted = false)
+
+    private fun releaseCurrent(markCompleted: Boolean) {
+        val token = generation
         generation++
         val previous = release
         release = null
+        // Record before invoking user code: a reentrant begin/cancel revokes this handoff.
+        completed = markCompleted
+        completedToken = token
         previous?.invoke()
     }
 }

@@ -69,7 +69,10 @@ public class LumenAssetSession @JvmOverloads constructor(
                     val mounted=factory.attach(container.context,completed,options)
                     player=mounted
                     mounted.setOnFailure{error->main.post{if(!closed&&generation==token&&player===mounted){releasePlayer();report(LumenAssetState.FAILED,error)}}}
-                    wrapper=PassiveAssetFrame(container.context).also{frame->frame.addView(mounted.view,FrameLayout.LayoutParams(-1,-1));container.addView(frame,ViewGroup.LayoutParams(-1,-1))}
+                    val frame=PassiveAssetFrame(container.context)
+                    // addView can insert the child before a vendor attach callback throws.
+                    wrapper=frame
+                    frame.addView(mounted.view,FrameLayout.LayoutParams(-1,-1));container.addView(frame,ViewGroup.LayoutParams(-1,-1))
                     mounted.view.isClickable=false;mounted.view.importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
                     applyViewOptions();report(LumenAssetState.READY,LumenAssetFailure.NONE);lastNanos=clock.nowNanos();refresh();advanceFrame();schedule()
                 }catch(_:LinkageError){releasePlayer();report(LumenAssetState.FAILED,LumenAssetFailure.UNSUPPORTED_ABI)}
@@ -123,7 +126,8 @@ public class LumenAssetSession @JvmOverloads constructor(
     @AnyThread private fun safeClose(value:AutoCloseable?){try{value?.close()}catch(_:Exception){}catch(_:LinkageError){}}
     private fun releasePlayer(){stopTick();accounting=false;val mounted=player;val loaded=decoded;val frame=wrapper;player=null;decoded=null;wrapper=null
         try{mounted?.setPlaying(false)}catch(_:Exception){}catch(_:LinkageError){}
-        if(frame?.parent===container)container.removeView(frame);safeClose(mounted);safeClose(loaded)}
+        try{if(frame?.parent===container)container.removeView(frame)}catch(_:Exception){}catch(_:LinkageError){}
+        safeClose(mounted);safeClose(loaded)}
     private fun report(value:LumenAssetState,error:LumenAssetFailure){if(state==value&&failure==error)return;state=value;failure=error
         val token=generation;main.post{if(!closed&&token==generation)try{listener?.onState(value,error)}catch(_:Exception){}}}
     private fun observe(){val current=container.viewTreeObserver;if(observer===current)return;unobserve();observer=current;current.addOnPreDrawListener(this);current.addOnWindowFocusChangeListener(this)}

@@ -24,6 +24,7 @@ import android.widget.FrameLayout
 import android.widget.SeekBar
 import android.widget.Switch
 import com.lumen.coacervation.engine.motion.InterruptibleMotionSession
+import com.lumen.coacervation.engine.motion.AnimatorDurationScale
 import java.util.IdentityHashMap
 import kotlin.math.abs
 
@@ -146,8 +147,9 @@ public open class LumenPagePager @JvmOverloads constructor(
             if (!motion.owns(token)) return
             val base = if (navigation) PageMotionPolicy.navigationDuration(position, target.toFloat())
             else PageMotionPolicy.duration(position, target.toFloat())
-            val duration = PageMotionPolicy.handoffDuration(base, position, target.toFloat(), velocity)
-            val continuation = PageMotionContinuation(position, target, velocity, duration, childCount, navigation)
+            val durationScale = AnimatorDurationScale.current(context)
+            val duration = PageMotionPolicy.handoffDuration(base, position, target.toFloat(), velocity, durationScale)
+            val continuation = PageMotionContinuation(position, target, velocity, duration, childCount, navigation, durationScale)
             motion.reset(position, SystemClock.uptimeMillis())
             val nextAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
                 this.duration = duration

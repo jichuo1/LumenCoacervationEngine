@@ -33,7 +33,9 @@ class SettingsPageInterruptionContractTest {
 
     @Test fun settleUsesVelocityMatchedHandoff() {
         val settle = pager.after("private fun settle(").before("private fun stopMotion()")
-        assertTrue(settle.contains("PageMotionPolicy.handoffDuration(base, position, target.toFloat(), velocity)"))
+        assertTrue(settle.contains("val durationScale = AnimatorDurationScale.current(context)"))
+        assertTrue(settle.contains("PageMotionPolicy.handoffDuration(base, position, target.toFloat(), velocity, durationScale)"))
+        assertTrue(settle.contains("PageMotionContinuation(position, target, velocity, duration, childCount, navigation, durationScale)"))
     }
 
     @Test fun textChainOnlyTouchesTheDrawMatrixAndSkipsSurfacedControls() {
@@ -61,11 +63,18 @@ class SettingsPageInterruptionContractTest {
         assertTrue(chain.contains("if (boundary !== page && boundary is ViewGroup && boundary.clipToPadding && !isScrollContainer(boundary)) relaxPadding += boundary"))
         assertTrue(chain.contains("relax.remove(page as? ViewGroup)"))
         assertTrue(chain.contains("relaxPadding.remove(page as? ViewGroup)"))
-        val release = chain.after("private fun release(index: Int) {").before("private fun isClipBoundary(")
-        // 页数不设上限后按页号存（适配标准 §15.1），恢复语义不变。
-        assertTrue(release.contains("relaxed.remove(index)?.forEach { it.clipChildren = true }"))
-        assertTrue(release.contains("paddingRelaxed.remove(index)?.forEach { it.clipToPadding = true }"))
-        assertTrue(chain.after("fun dispose() {").contains("release(index)"))
+        val restore = chain.after("private fun restore(state: PageState) {").before("private fun isClipBoundary(")
+        assertTrue(restore.contains("for (view in state.relaxed) if (!view.clipChildren) view.clipChildren = true"))
+        assertTrue(restore.contains("for (view in state.paddingRelaxed) if (!view.clipToPadding) view.clipToPadding = true"))
+        assertTrue(restore.contains("Api29.matches(item.view, item.writtenMatrix)"))
+        assertTrue(restore.contains("Api29.set(item.view, item.originalMatrix)"))
+        assertTrue(chain.after("fun dispose() {").contains("pages.clear(releasePage)"))
+        val apply = MotionSource.functions(chain, "apply").single()
+        // View.getAnimationMatrix allocates even when null. Ownership comparison belongs to
+        // actual loan return, never to each nonzero animation update.
+        assertFalse(apply.contains("Api29.matches("))
+        assertFalse(apply.contains("Api29.snapshot("))
+        assertTrue(apply.contains("if (offset == 0f) {\n            restoreMatrix(item)"))
     }
 
     /**

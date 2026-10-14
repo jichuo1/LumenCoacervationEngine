@@ -48,7 +48,8 @@ public data class LiquidBackgroundReadResult(
  * 自定义背景的唯一存储边界。
  *
  * 外部 URI 只在导入期间读取；成功后配置仅引用应用私有目录内的 generation 文件。新资产完整
- * 写入并回读验证后才提交配置，配置成功后才清理旧资产，从而在任意中断点保住旧背景。
+ * 写入并回读验证后才提交配置。只有新配置或旧配置回滚的持久化已确认，才清理其它代次；
+ * 提交中断或存储持续失败时保留可能被磁盘配置引用的资产，供重试或恢复使用。
  */
 public object LiquidBackgroundStore {
     // 文件名可配置（LumenStorageNames），默认 lumen_ 前缀；来源工程为 liquid_background_preferences / ui_skin_background。
@@ -60,20 +61,10 @@ public object LiquidBackgroundStore {
     private const val COPY_BUFFER_BYTES = 64 * 1024
     private const val JPEG_QUALITY = 92
 
-    private val lock = Any()
+    private val transactions = LiquidBackgroundTransactions()
 
     fun read(context: Context): LiquidBackgroundReadResult {
-        val preferences = preferences(context)
-        val decoded = runCatching {
-            LiquidBackgroundConfigCodec.decode(preferences.all.toMap())
-        }.getOrElse {
-            LiquidBackgroundConfigDecodeResult(
-                config = LiquidBackgroundConfig.AUTOMATIC,
-                issue = LiquidBackgroundConfigIssue.TYPE_MISMATCH,
-                needsRepair = true
-            )
-        }
-        if (decoded.needsRepair) writeConfig(context, LiquidBackgroundConfig.AUTOMATIC)
+        val decoded = transactions.read(preferenceAccess(context))
         val config = decoded.config
         val assetPresent = config.mode == LiquidBackgroundMode.CUSTOM &&
             assetFile(context, requireNotNull(config.assetId)).let { it.isFile && it.length() > 0L }
@@ -81,11 +72,11 @@ public object LiquidBackgroundStore {
     }
 
     fun importFromUri(context: Context, uri: Uri): LiquidBackgroundImportResult =
-        synchronized(lock) {
+        transactions.withWriter {
             val appContext = context.applicationContext ?: context
             val directory = assetDirectory(appContext)
             if (!directory.exists() && !directory.mkdirs()) {
-                return@synchronized LiquidBackgroundImportResult.Failure(
+                return@withWriter LiquidBackgroundImportResult.Failure(
                     LiquidBackgroundImportFailure.STORAGE_FAILED
                 )
             }
@@ -94,44 +85,44 @@ public object LiquidBackgroundStore {
             var normalized: Bitmap? = null
             try {
                 when (copyExternalInput(appContext, uri, raw)) {
-                    CopyResult.TOO_LARGE -> return@synchronized LiquidBackgroundImportResult.Failure(
+                    CopyResult.TOO_LARGE -> return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.FILE_TOO_LARGE
                     )
-                    CopyResult.FAILED -> return@synchronized LiquidBackgroundImportResult.Failure(
+                    CopyResult.FAILED -> return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.READ_FAILED
                     )
                     CopyResult.SUCCESS -> Unit
                 }
                 val decodeResult = decodeAndNormalize(raw)
                 if (decodeResult.failure != null) {
-                    return@synchronized LiquidBackgroundImportResult.Failure(decodeResult.failure)
+                    return@withWriter LiquidBackgroundImportResult.Failure(decodeResult.failure)
                 }
                 normalized = requireNotNull(decodeResult.bitmap)
                 if (!encodeNormalized(normalized, encoded)) {
-                    return@synchronized LiquidBackgroundImportResult.Failure(
+                    return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.ENCODE_FAILED
                     )
                 }
                 if (encoded.length() !in 1..LiquidBackgroundSizingPolicy.MAX_ASSET_BYTES) {
-                    return@synchronized LiquidBackgroundImportResult.Failure(
+                    return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.ENCODE_FAILED
                     )
                 }
                 val verifiedBounds = decodeBounds(encoded)
-                    ?: return@synchronized LiquidBackgroundImportResult.Failure(
+                    ?: return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.ENCODE_FAILED
                     )
                 val assetId = UUID.randomUUID().toString()
                 val destination = assetFile(appContext, assetId)
                 if (!encoded.renameTo(destination)) {
-                    return@synchronized LiquidBackgroundImportResult.Failure(
+                    return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.STORAGE_FAILED
                     )
                 }
                 val sha256 = hash(destination)
                     ?: run {
                         destination.delete()
-                        return@synchronized LiquidBackgroundImportResult.Failure(
+                        return@withWriter LiquidBackgroundImportResult.Failure(
                             LiquidBackgroundImportFailure.STORAGE_FAILED
                         )
                     }
@@ -144,12 +135,10 @@ public object LiquidBackgroundStore {
                     displayName = queryDisplayName(appContext, uri)
                 )
                 if (!writeConfig(appContext, config)) {
-                    destination.delete()
-                    return@synchronized LiquidBackgroundImportResult.Failure(
+                    return@withWriter LiquidBackgroundImportResult.Failure(
                         LiquidBackgroundImportFailure.STORAGE_FAILED
                     )
                 }
-                cleanupUnreferencedAssets(appContext, assetId)
                 LiquidBackgroundImportResult.Success(config)
             } catch (_: SecurityException) {
                 LiquidBackgroundImportResult.Failure(LiquidBackgroundImportFailure.READ_FAILED)
@@ -164,11 +153,9 @@ public object LiquidBackgroundStore {
             }
         }
 
-    fun restoreAutomatic(context: Context): Boolean = synchronized(lock) {
+    fun restoreAutomatic(context: Context): Boolean = transactions.withWriter {
         val appContext = context.applicationContext ?: context
-        if (!writeConfig(appContext, LiquidBackgroundConfig.AUTOMATIC)) return@synchronized false
-        cleanupUnreferencedAssets(appContext, keepAssetId = null)
-        true
+        writeConfig(appContext, LiquidBackgroundConfig.AUTOMATIC)
     }
 
     /**
@@ -412,21 +399,38 @@ public object LiquidBackgroundStore {
         ?.joinToString("")
         ?.take(LiquidBackgroundConfigCodec.MAX_DISPLAY_NAME)
 
+    private fun writeConfig(context: Context, config: LiquidBackgroundConfig): Boolean = transactions.withWriter {
+        val preferences = runCatching { preferenceAccess(context) }.getOrElse { return@withWriter false }
+        val result = transactions.replace(preferences, config)
+        result.confirmedConfig?.let { cleanupUnreferencedAssets(context, it.assetId) }
+        result.committed
+    }
+
     @SuppressLint("UseKtx")
-    private fun writeConfig(context: Context, config: LiquidBackgroundConfig): Boolean = runCatching {
+    private fun preferenceAccess(context: Context): LiquidBackgroundPreferenceAccess {
         val preferences = preferences(context)
-        val editor = preferences.edit().clear()
-        LiquidBackgroundConfigCodec.encode(config).forEach { (key, value) ->
-            when (value) {
-                is Int -> editor.putInt(key, value)
-                is String -> editor.putString(key, value)
-                else -> error("Unsupported liquid background preference type")
+        return object : LiquidBackgroundPreferenceAccess {
+            override fun snapshot(): Map<String, *> = preferences.all.toMap()
+
+            override fun stage(config: LiquidBackgroundConfig) {
+                val editor = preferences.edit().clear()
+                LiquidBackgroundConfigCodec.encode(config).forEach { (key, value) ->
+                    when (value) {
+                        is Int -> editor.putInt(key, value)
+                        is String -> editor.putString(key, value)
+                        else -> error("Unsupported liquid background preference type")
+                    }
+                }
+                // apply 的内存发布与 read/repair 共用短锁；磁盘写入异步，不把主线程阻塞
+                // 在 URI 读取、图片处理或 commit 的磁盘等待上。
+                editor.apply()
             }
+
+            // 空编辑器不再改写目标值；同步 commit 确认 apply 发布的 memory generation，
+            // 并等待此前的写入。false（包括 await 被中断）不能证明磁盘仍是旧值。
+            override fun persist(): Boolean = preferences.edit().commit()
         }
-        if (!editor.commit()) return@runCatching false
-        val readBack = LiquidBackgroundConfigCodec.decode(preferences.all.toMap())
-        !readBack.needsRepair && readBack.config == config
-    }.getOrDefault(false)
+    }
 
     private fun cleanupUnreferencedAssets(context: Context, keepAssetId: String?) {
         assetDirectory(context).listFiles()?.forEach { file ->
@@ -447,4 +451,84 @@ public object LiquidBackgroundStore {
 
     private fun assetFile(context: Context, assetId: String) =
         File(assetDirectory(context), "$ASSET_PREFIX$assetId$ASSET_SUFFIX")
+}
+
+/** SharedPreferences 之外的事务边界，可用内存先发布、磁盘后确认的替身验证故障与交错。 */
+internal interface LiquidBackgroundPreferenceAccess {
+    fun snapshot(): Map<String, *>
+    fun stage(config: LiquidBackgroundConfig)
+    fun persist(): Boolean
+}
+
+internal data class LiquidBackgroundWriteResult(
+    val committed: Boolean,
+    // 仅持久化确认且回读一致时提供；null 意味着必须保留全部可能被引用的资产。
+    val confirmedConfig: LiquidBackgroundConfig?
+)
+
+internal class LiquidBackgroundTransactions {
+    private val writerLock = Any()
+    private val stateLock = Any()
+
+    // URI/位图处理、配置替换和清理串行，避免 restore/retry 删除另一次导入的临时资产。
+    // read 不获取此锁。
+    fun <T> withWriter(action: () -> T): T = synchronized(writerLock, action)
+
+    fun read(preferences: LiquidBackgroundPreferenceAccess): LiquidBackgroundConfigDecodeResult =
+        synchronized(stateLock) {
+            val decoded = runCatching {
+                LiquidBackgroundConfigCodec.decode(preferences.snapshot())
+            }.getOrElse {
+                // 无法取得快照时不能据此覆盖仍可能有效的配置。
+                return@synchronized LiquidBackgroundConfigDecodeResult(
+                    LiquidBackgroundConfig.AUTOMATIC,
+                    LiquidBackgroundConfigIssue.TYPE_MISMATCH,
+                    needsRepair = true
+                )
+            }
+            if (decoded.needsRepair) {
+                runCatching { preferences.stage(LiquidBackgroundConfig.AUTOMATIC) }
+            }
+            decoded
+        }
+
+    fun replace(
+        preferences: LiquidBackgroundPreferenceAccess,
+        config: LiquidBackgroundConfig
+    ): LiquidBackgroundWriteResult = withWriter {
+        val previous: LiquidBackgroundConfig
+        val staged: Boolean
+        synchronized(stateLock) {
+            previous = runCatching {
+                LiquidBackgroundConfigCodec.decode(preferences.snapshot()).config
+            }.getOrElse {
+                return@withWriter LiquidBackgroundWriteResult(false, null)
+            }
+            staged = runCatching { preferences.stage(config) }.isSuccess
+        }
+        if (staged && confirm(preferences, config)) {
+            return@withWriter LiquidBackgroundWriteResult(true, config)
+        }
+
+        // commit false 不回滚内存，也可能有尚未完成的磁盘写入。先恢复旧的 canonical
+        // 配置，再锁外确认其持久化；旧值本来损坏时，它的合法回退就是 AUTOMATIC。
+        val restored = synchronized(stateLock) {
+            runCatching { preferences.stage(previous) }.isSuccess
+        }
+        val confirmed = if (restored && confirm(preferences, previous)) previous else null
+        LiquidBackgroundWriteResult(false, confirmed)
+    }
+
+    private fun confirm(
+        preferences: LiquidBackgroundPreferenceAccess,
+        config: LiquidBackgroundConfig
+    ): Boolean {
+        if (!runCatching { preferences.persist() }.getOrDefault(false)) return false
+        return synchronized(stateLock) {
+            runCatching {
+                val readBack = LiquidBackgroundConfigCodec.decode(preferences.snapshot())
+                !readBack.needsRepair && readBack.config == config
+            }.getOrDefault(false)
+        }
+    }
 }

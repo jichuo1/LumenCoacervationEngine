@@ -78,6 +78,9 @@ public class GlowFloatingChrome(
         checkEngine()
         true
     }
+    private val hostLayoutListener = View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (!disposed) updateGeometry()
+    }
     private val attachListener = object : View.OnAttachStateChangeListener {
         override fun onViewAttachedToWindow(v: View) = observe()
         override fun onViewDetachedFromWindow(v: View) = unobserve()
@@ -116,7 +119,7 @@ public class GlowFloatingChrome(
         if (disposed) return
         surfaces += Surface(host, companions, edge, foregroundColor, thickenHost, onForeground)
         backdropsDirty = true
-        host.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> if (!disposed) updateGeometry() }
+        host.addOnLayoutChangeListener(hostLayoutListener)
         updateGeometry()
         onContentMoved()
     }
@@ -137,6 +140,7 @@ public class GlowFloatingChrome(
         probe.close()
         val glow = engine()
         for (surface in surfaces) {
+            surface.host.removeOnLayoutChangeListener(hostLayoutListener)
             surface.animator?.cancel()
             surface.animator = null
             glow?.setSurfaceLegibility(surface.host, null)
@@ -146,6 +150,12 @@ public class GlowFloatingChrome(
         }
         if (lastEngine !== glow) clearBackdrops(lastEngine)
         target.contentCaptureEnabled = false
+        for (view in edgeViews.values) {
+            if (view.parent === target) target.removeView(view)
+        }
+        surfaces.clear()
+        probedSurfaces = emptyList()
+        lastEngine = null
     }
 
     private fun observe() {
