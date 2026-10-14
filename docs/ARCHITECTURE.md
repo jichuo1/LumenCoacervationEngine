@@ -28,6 +28,7 @@ GlowEngine（契约 / SPI）─────────────── glow/
    LiquidStretchViewport ──────────────────── liquid/   回弹视口（内部，经委托安装）
    TouchGlowRenderer / GlowState ──────────── touch/    触摸光晕
    LiquidBackgroundStore ──────────────────── background/ 自定义背景图
+   LumenFluentControl / FluentControlDrawable ─ host/ fluent/ Fluent 亚克力与层级（控件效果）
 
 进程级：
    LumenEngine ── 配置、材质选择、实时取样开关、内存压力
@@ -52,6 +53,7 @@ GlowEngine（契约 / SPI）─────────────── glow/
 | `model` | 6 | `SkinId`、`SurfaceRole`、`LumenPalette`、令牌与参数 | 前三个公开 |
 | `touch` | 2 | 触摸光晕：纯几何状态机 + 绘制器 | 公开 |
 | `interaction` | 1 | `ElasticGestureClaim`：手势归属声明 | 公开 |
+| `fluent` | 5 | Fluent 亚克力配方、层级描边与状态令牌、共享噪点、API 29 混合隔离类、控件 Drawable（入口 `host.LumenFluentControl`） | 内部 |
 
 ## 3. 分层规则
 
@@ -264,3 +266,12 @@ LumenSurfaceSession在完整Activity会话之外复用现有GPU节点与软件�
 新位图输入计划将来源主线程Picture录制与后台固定滤波分开；API33+直接Paint Shader复用清晰/弱/强输入，以uniform更新几何、触点和光源，避免连续RenderEffect快照。
 来源组检查依赖图与代次、独立可用性及迟到结果；细节质量有单独阈值/滞回，不修改原有热策略。旧RenderNode路径与安全clamp保留。
 公开入口、坐标空间、颜色假设和平台回退见VISUAL_EFFECTS.md。
+
+## 13. Fluent 亚克力与层级
+
+`host.LumenFluentControl` 把 WinUI `AcrylicBrush` 的配方和 Fluent 层级描边、阴影接到任意 View 上，详见 `FLUENT_MATERIAL.md`。
+
+- 模糊背景不新建采样管线：控件在宿主的 `LumenSurfaceSession` 里登记一个**只绘制**的 View 绑定（`bindViewDrawOnly`，内部），同一来源 View 的多个控件共用一次录制；控件自己的 Drawable 在不透明回退色之上调用绑定绘制，再叠加亮度、色调、噪点与交叉淡化。
+- 每帧通过无分配的 `backendOf` 读取绑定的实际后端，`AcrylicAvailability` 以 120ms 滞回判定背景是否可用；不可用只回退本控件。
+- 纯计算（配方、修正系数、亮度推导、层级换算、描边令牌、过渡、滞回）都在 `FluentAcrylicPolicy` / `FluentElevationPolicy` 中，JVM 单测覆盖；`BlendMode` 只出现在 `AcrylicBlendApi29`。
+- 阴影交给平台 `View.elevation` 与 Drawable 轮廓；控件只恢复仍由自己持有的背景、高度和阴影颜色。

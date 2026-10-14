@@ -97,7 +97,7 @@
 
 | 项 | 说明 |
 |:---|:---|
-| **引擎版本** | 1.4.2 |
+| **引擎版本** | 1.4.3 |
 | **运行系统** | Android 8.1+（`minSdk 27`） |
 | **编译环境** | `compileSdk 37`；源码构建使用 JDK 17+ |
 | **基础依赖** | 引擎本体依赖 AndroidX core；motion 不要求 AppCompat |
@@ -147,10 +147,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.4.2")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.4.3")
     // 按需添加，版本保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.4.2")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.4.2")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.4.3")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.4.3")
 }
 ```
 
@@ -212,6 +212,7 @@ override fun onTrimMemory(level: Int) {
 | [视效参数](docs/VISUAL_EFFECTS.md) | 轮廓、按压、光源、渐进模糊与平台回退 |
 | [效果与动画资产](docs/P2_EFFECTS_AND_ASSETS.md) | 装饰、传感器、Lottie / PAG / Rive |
 | [Compose 接入](docs/NATIVE_COMPOSE.md) | 原生局部材质与弹性原型 |
+| [Fluent 亚克力与层级](docs/FLUENT_MATERIAL.md) | 控件级亚克力配方、回退规则、层级描边与阴影 |
 | [更新记录](CHANGELOG.md) | 各版本变化 |
 
 ## 反馈

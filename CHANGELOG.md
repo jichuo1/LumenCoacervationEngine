@@ -2,6 +2,19 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
+## [1.4.3] - 2026-10-14
+
+### 新增：Fluent 亚克力与层级（lumen-engine）
+
+- 新增 `LumenFluentControl`：按 WinUI `AcrylicBrush` 配方为任意 View 绘制应用内亚克力（不透明回退底、模糊背景、亮度混合、色调混合、2% 噪点、167ms 回退交叉淡化），叠加 Fluent 层级描边、悬停/按下轻填充、键盘焦点双环和平台阴影。配方数值、主题默认值与描边令牌取自 microsoft-ui-xaml 源码，见 `docs/FLUENT_MATERIAL.md`。
+- 模糊背景复用宿主的 `LumenSurfaceSession`（新增内部只绘制 View 绑定，同一来源共用录制），不新增采样管线或线程；没有会话时显示 Fluent 回退色。
+- 回退覆盖禁用、降低透明度、低内存设备、省电模式、可选的窗口失焦，以及背景不可用（120ms 滞回）；均为修饰性失败，只影响本控件。
+- API 29+ 使用平台 `BlendMode.LUMINOSITY` / `COLOR`（隔离在 `AcrylicBlendApi29`），API 27–28 使用源覆盖近似；噪点为进程共享 16 KiB 常量预算位图。
+- Sample 新增“表面沙盒 → Fluent 亚克力与层级”页面（全部开关与诊断）和 6 项设备回归测试。
+- 真机复核修正：单色描边（禁用态）不再被 `Paint.setAlpha` 覆盖成不透明黑边；沙盒页按系统栏让位，文字颜色随调色板切换。
+
+新增公开 API 通常属于次版本，本次按用户明确指定发布为 1.4.3，作为编号例外（见 `docs/VERSIONING.md`）；旧公开入口、持久化协议与契约版本 1 保持不变。
+
 ## [1.4.2] - 2026-10-14
 
 ### 稳定性与资源管理

@@ -157,6 +157,35 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         return LumenSurfaceBinding(this, entry.id)
     }
 
+    /**
+     * Draw-only View binding for composite materials (Fluent acrylic) that keep their own background.
+     * Shares one source group per source View, like [bindSource], so several controls record it once.
+     */
+    internal fun bindViewDrawOnly(view: View, surface: LumenSurfaceOptions, source: View): LumenSurfaceBinding {
+        if (closed) return LumenSurfaceBinding(null, -1L)
+        checkMain()
+        require(entries.size < options.maxSurfaces) { "Surface count exceeds session budget" }
+        val group = groups.firstOrNull { it.source is ViewContentSource && it.source.coordinateView === source }
+            ?: Group(ViewContentSource(source)).also(groups::add)
+        val entry = Entry(nextId++, view, surface, group, ViewSurfaceTarget(view, matrices), false)
+        entries.add(entry)
+        group.refreshCounterOptions()
+        entry.rebuild()
+        registerTrim()
+        view.addOnAttachStateChangeListener(entry)
+        return LumenSurfaceBinding(this, entry.id)
+    }
+
+    /** Backend of the binding's latest draw; allocation-free for per-frame reads. */
+    internal fun backendOf(id: Long): LumenSurfaceBackend {
+        if (closed) return LumenSurfaceBackend.STATIC
+        for (entry in entries) if (entry.id == id) return entry.stateBackend
+        return LumenSurfaceBackend.STATIC
+    }
+
+    /** True while a source is being recorded; composite drawables must not draw their binding then. */
+    internal val isRecordingContent: Boolean get() = recordingDepth > 0
+
     internal fun draw(id: Long, canvas: Canvas) {
         if (closed) return
         checkMain()
@@ -1130,5 +1159,7 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
     public fun clearTransientEffects() {session.get()?.clearTransient(id)}
     public fun setQualityPressure(pressure: Float) {session.get()?.qualityHint(id,pressure)}
     public fun diagnostics(): LumenSurfaceState? = session.get()?.state(id)
+    internal fun lastBackend(): LumenSurfaceBackend = session.get()?.backendOf(id) ?: LumenSurfaceBackend.STATIC
+    internal val isRecordingContent: Boolean get() = session.get()?.isRecordingContent == true
     override fun close() { session.get()?.detach(id) }
 }

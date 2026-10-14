@@ -381,3 +381,19 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 - `hasLaunchOrigin`：使用宿主原来的 Intent/弱引用来源时，告知入场是否可解析。
 
 `start/beginPredictiveBack/progressPredictiveBack/cancelPredictiveBack/commitBack/onDestroy` 的调用顺序沿用原入口。`showExpanded()` 用于替换内部业务页前结束形变；`isExpanded/isSettledExpanded/isClosingOrFinished` 为只读状态。`onDestroy` 后这些入口为空操作，原 delegate 重载仍把位置刷新接到 `lumen.notifyPositionChanged()`。
+
+## 20. Fluent 亚克力与层级（host，1.4.3）
+
+包 `com.lumen.coacervation.engine.host`，位于 **lumen-engine**。配方、回退规则与数值来源见 [FLUENT_MATERIAL.md](FLUENT_MATERIAL.md)。全部入口只能在主线程调用，关闭后为空操作。
+
+| 声明 | 公开成员 |
+|---|---|
+| `LumenFluentControl(view, palette, options = LumenFluentControlOptions(), session: LumenSurfaceSession? = null, source: View? = null)` | `update(options)` / `updatePalette(palette)` / `notifyPositionChanged()` / `diagnostics(): LumenFluentDiagnostics` / `isClosed` / `close()`；安装可逆背景与平台阴影，只恢复仍由自己持有的背景、`elevation` 和 API 28+ 阴影颜色；来源不得包含 `view` |
+| `LumenFluentControlOptions` | acrylic / elevation / cornerRadiusDp（null = 层级默认 4dp 或 8dp，0–128）/ stateLayerEnabled / focusVisualEnabled / reduceTransparency / reduceMotion |
+| `LumenAcrylicOptions` | enabled / kind / tintColor / tintOpacity（0–1）/ luminosityOpacity（0–1）/ fallbackColor / blurRadiusDp（0–48，默认 48）/ noiseOpacity（0–0.1，默认 0.02）/ fallbackWhenWindowInactive / fallbackOnPowerSave / fallbackOnLowRamDevice / exactBlend；颜色和透明度为 null 时取 kind 的主题默认值 |
+| `LumenFluentElevationOptions` | level / shadowEnabled / strokeEnabled / strokeWidthDp（0.5–2）/ accentStroke / pressedLowersElevation |
+| `LumenAcrylicKind` | DEFAULT / BASE / ACCENT（ACCENT 以 `palette.primary` 着色） |
+| `LumenFluentElevation(fluentValue)` | LAYER(1) / CONTROL(2) / CARD(8) / TOOLTIP(16) / FLYOUT(32) / DIALOG(128) |
+| `LumenAcrylicFallbackReason` | NONE / DISABLED / REDUCE_TRANSPARENCY / LOW_RAM_DEVICE / POWER_SAVE / WINDOW_INACTIVE / NO_BACKDROP / BACKDROP_UNAVAILABLE / CLOSED |
+| `LumenAcrylicBlend` | EXACT（API 29+ 平台混合模式）/ APPROXIMATE |
+| `LumenFluentDiagnostics` | closed / acrylicVisible / fallbackReason / backdropBackend / blend / draws / transitions / noiseTextureBytes |
