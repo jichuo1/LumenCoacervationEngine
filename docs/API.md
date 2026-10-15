@@ -400,7 +400,7 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 | `LumenAcrylicBlend` | EXACT（API 29+ 平台混合模式）/ APPROXIMATE |
 | `LumenFluentDiagnostics` | closed / acrylicVisible / fallbackReason / backdropBackend / blend / draws / transitions / noiseTextureBytes |
 
-## 20. 可选云母与内容分层（host，待发布）
+## 20. 可选云母与内容分层（host，自 1.4.5）
 
 包 `com.lumen.coacervation.engine.host`，位于 **lumen-engine**。完整资料依据、配方、参数默认值、线程和预算见 [MICA_MATERIAL.md](MICA_MATERIAL.md)。除 `LumenMicaImage.prepare()` 外，控制器入口只能在主线程调用。此入口不改变 `SkinId`；避免与其他控制器共同接管同一个根背景。
 
