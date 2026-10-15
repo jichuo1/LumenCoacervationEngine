@@ -143,13 +143,20 @@ class SurfacePixelContractTest {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use {s->
             scene(s,marked=true)
             fun setup(range:LumenSamplingRangeMode){s.onActivity {a->
-                a.binding.update(LumenSurfaceOptions(radiusDp=0f,tintEnabled=false,edgeEnabled=false,sampling=LumenSurfaceSampling(blurEnabled=false,refractionStrength=2f,softwareScale=1f,maxSoftwarePixels=96_000)))
+                // This scene and its 20px marker use physical pixels. Keep the warp at <=16px on every
+                // density instead of overshooting the marker and the source on high-density devices.
+                val strength=2f/a.resources.displayMetrics.density.coerceAtLeast(1f)
+                a.binding.update(LumenSurfaceOptions(radiusDp=0f,tintEnabled=false,edgeEnabled=false,sampling=LumenSurfaceSampling(blurEnabled=false,refractionStrength=strength,softwareScale=1f,maxSoftwarePixels=96_000)))
                 a.binding.updateEnhancements(LumenSurfaceEnhancements(geometry=LumenSurfaceGeometryOptions(cornersEnabled=true,corners=LumenSurfaceCorners(0f,0f,0f,0f)),
                     material=LumenMaterialRecipeOptions(chromaticStrength=0f),quality=LumenSurfaceQualityOptions(maxBitmapPixels=96_000),debug=LumenSurfaceDebugOptions(samplingRange=range)))
             };gpu(s)}
             setup(LumenSamplingRangeMode.SAFE_INTERIOR);val safe=image(s)
             setup(LumenSamplingRangeMode.PADDED_EXPERIMENTAL);val padded=image(s)
-            assertTrue(Color.blue(safe.getPixel(1,80))>180);assertTrue(Color.red(padded.getPixel(1,80))>180)
+            val safePixel=safe.getPixel(1,80);val paddedPixel=padded.getPixel(1,80)
+            var regions=""
+            s.onActivity {regions=it.binding.samplingRegions().toString()}
+            assertTrue("Safe pixel=${Integer.toHexString(safePixel)}",Color.blue(safePixel)>180)
+            assertTrue("Padded pixel=${Integer.toHexString(paddedPixel)}; safe=${Integer.toHexString(safePixel)}; regions=$regions",Color.red(paddedPixel)>180)
             s.onActivity {a->
                 val r=a.binding.samplingRegions()!!
                 assertEquals(LumenRegionSpace.SOURCE_LOCAL,r.recordedBounds.space)

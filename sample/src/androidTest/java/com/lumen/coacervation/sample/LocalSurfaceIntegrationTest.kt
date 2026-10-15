@@ -201,7 +201,12 @@ class LocalSurfaceIntegrationTest {
         checkGpuFade(LumenSurfaceFadeCurve.LINEAR)
     }
 
-    private fun checkGpuFade(curve: LumenSurfaceFadeCurve) {
+    @SdkSuppress(minSdkVersion = 33)
+    @Test fun linearEnhancedGpuFadeHasUniformPixelCoverage() {
+        checkGpuFade(LumenSurfaceFadeCurve.LINEAR, enhanced = true)
+    }
+
+    private fun checkGpuFade(curve: LumenSurfaceFadeCurve, enhanced: Boolean = false) {
         // ATD images disable final hardware output while still running View draw callbacks.
         val wasDrawing=if(Build.VERSION.SDK_INT>=33)TestDrawingApi33.isEnabled()else true
         Log.i("Lumen-SurfaceTest","GPU fade: enable drawing")
@@ -224,8 +229,10 @@ class LocalSurfaceIntegrationTest {
                 }
                 activity.binding=activity.session.bindSource(activity.glass,
                     LumenSurfaceOptions(radiusDp=0f,tintEnabled=false,edgeEnabled=false,
-                        sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.GPU,softwareFallback=false,
+                        sampling=LumenSurfaceSampling(backend=LumenSurfaceBackend.GPU,softwareFallback=enhanced,
                             blurEnabled=false,refractionEnabled=false,minIntervalMs=0,fadeEnabled=true,fadeCurve=curve)),custom)
+                if(enhanced)activity.binding.updateEnhancements(LumenSurfaceEnhancements(
+                    geometry=LumenSurfaceGeometryOptions(cornersEnabled=true,corners=LumenSurfaceCorners(0f,0f,0f,0f))))
             }
             val deadline=SystemClock.uptimeMillis()+5000
             var gpu=false
@@ -274,6 +281,10 @@ class LocalSurfaceIntegrationTest {
             assertTrue(kotlin.math.abs(Color.green(low)-Color.green(behind))<35)
             assertTrue(kotlin.math.abs(Color.blue(low)-Color.blue(behind))<35)
             if (curve == LumenSurfaceFadeCurve.LINEAR) {
+                val bands=(1..9).joinToString { step ->
+                    val y=origin+(height*step/10f).toInt()
+                    "$step:${Integer.toHexString(screenshot.getPixel(x,y))}/${Integer.toHexString(screenshot.getPixel(outside,y))}"
+                }
                 for (step in 1..9) {
                     val y=origin+(height*step/10f).toInt()
                     val fraction=(y-origin+.5f)/height
@@ -281,7 +292,7 @@ class LocalSurfaceIntegrationTest {
                     val background=screenshot.getPixel(outside,y)
                     // FROSTED also applies its established +10 sRGB tone bias to captured red.
                     val expectedRed=255f*(1f-fraction)+Color.red(background)*fraction
-                    assertEquals("Linear red coverage at $step/10",expectedRed,Color.red(actual).toFloat(),4f)
+                    assertEquals("Linear red coverage at $step/10 (origin=$origin height=$height bands=$bands)",expectedRed,Color.red(actual).toFloat(),4f)
                     assertEquals("Linear green coverage at $step/10",10f*(1f-fraction)+Color.green(background)*fraction,Color.green(actual).toFloat(),4f)
                     assertEquals("Linear blue coverage at $step/10",10f*(1f-fraction)+Color.blue(background)*fraction,Color.blue(actual).toFloat(),4f)
                 }

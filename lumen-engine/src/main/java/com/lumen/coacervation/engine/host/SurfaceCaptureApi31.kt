@@ -94,9 +94,12 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
             it.copy(refractionAmountDp = it.refractionAmountDp * sampling.refractionStrength,
                 interiorDistortionDp = it.interiorDistortionDp * sampling.refractionStrength)
         }
-        private val lens: Any? = if (sampling.refractionEnabled && sampling.refractionStrength > 0f &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            cache.lens(options.material, liquidParameters, density, sampling.refractionStrength, counters)
+        private val lensStrength = if (sampling.refractionEnabled) sampling.refractionStrength else 0f
+        // ColorMatrix can retain extended-range RGB through the following alpha blend. The existing
+        // frosted shader clamps RGB to premultiplied alpha before fading, including when the lens is off.
+        private val lens: Any? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            (options.material == LumenSurfaceMaterial.FROSTED || lensStrength > 0f)) {
+            cache.lens(options.material, liquidParameters, density, lensStrength, counters)
         } else null
         val renderer = GlowChromeGlassApi31(pad) { width, height, padding, radius, intensity, direction ->
             var effect = blur
@@ -109,7 +112,7 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
             if (lens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 effect = if (options.material == LumenSurfaceMaterial.LIQUID)
                     LiquidChromeLensApi33.effect(lens, effect, width, height, padding, radius, intensity, direction)
-                else FrostedChromeLensApi33.effect(lens, effect, width, height, padding, sampling.refractionStrength)
+                else FrostedChromeLensApi33.effect(lens, effect, width, height, padding, lensStrength)
             }
             if (sampling.fadeEnabled) {
                 val colors = IntArray(33)

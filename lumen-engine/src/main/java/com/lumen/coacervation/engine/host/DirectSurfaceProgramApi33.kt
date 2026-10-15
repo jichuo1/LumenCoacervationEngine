@@ -91,6 +91,7 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
             (if(customEdge)1f else 70f/255f)*c.edgeIntensity,alpha)
         s.setFloatUniform("fade",if(c.sampling.fadeEnabled)1f else 0f,c.sampling.fadeHold,c.sampling.fadeEnd,
             if(c.sampling.fadeDirection==LumenSurfaceFadeDirection.BOTTOM_TO_TOP)1f else 0f)
+        s.setFloatUniform("fadeLinear",if(c.sampling.fadeCurve==LumenSurfaceFadeCurve.LINEAR)1f else 0f)
         val shadowWidth=if(e.material.normalizeBySize)minOf(geometry.shadowRadiusDp*density,short*.25f)else geometry.shadowRadiusDp*density
         s.setFloatUniform("shadow",if(geometry.shadowEnabled&&detail!=LumenDetailMode.LOW)shadowWidth else 0f,geometry.shadowOpacity)
         val now=if(state.manualClock)state.frameNanos else System.nanoTime()
@@ -137,6 +138,7 @@ layout(color) uniform half4 edgeColor;
 layout(color) uniform half4 edgeColorBottom;
 uniform float4 style;
 uniform float4 fade;
+uniform float fadeLinear;
 uniform float2 shadow;
 uniform float4 rippleA;
 uniform float4 rippleB;
@@ -246,7 +248,12 @@ half4 main(float2 coord){
     stroke*=float(edge.a);
     color=half4(edge.rgb*half(stroke),half(stroke))+color*half(1.0-stroke);
     float dissolve=1.0;
-    if(fade.x>0.5){float q=p.y/viewport.y;if(fade.w>0.5)q=1.0-q;dissolve=1.0-ramp(q,fade.y,fade.z);}
+    if(fade.x>0.5){
+        float q=p.y/viewport.y;if(fade.w>0.5)q=1.0-q;
+        if(q<=fade.y)dissolve=1.0;
+        else if(q>=fade.z||fade.z<=fade.y)dissolve=0.0;
+        else {float t=clamp((q-fade.y)/(fade.z-fade.y),0.0,1.0);dissolve=1.0-(fadeLinear>0.5?t:t*t*(3.0-2.0*t));}
+    }
     color*=half(coverage*dissolve*style.w);
     if(shadow.x>0.0&&f.x>0.0){float alpha=exp(-f.x*f.x/(2.0*shadow.x*shadow.x))*shadow.y*(1.0-coverage)*style.w;color+=half4(0.0,0.0,0.0,alpha)*(1.0-color.a);}
     return color;
