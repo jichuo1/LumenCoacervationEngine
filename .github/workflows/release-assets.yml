@@ -26,6 +26,7 @@ permissions:
 env:
   RELEASE_TAG: ${{ inputs.tag }}
   GH_HOST: github.com
+  JDK_JAVA_OPTIONS: '-XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=512m -XX:+UseCodeCacheFlushing'
 
 jobs:
   prepare:

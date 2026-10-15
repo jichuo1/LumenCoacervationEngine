@@ -12,6 +12,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  JDK_JAVA_OPTIONS: '-XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=512m -XX:+UseCodeCacheFlushing'
+
 jobs:
   gate:
     runs-on: ubuntu-latest
@@ -28,14 +31,14 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6.4.0
 
       - name: Build, unit test, lint
-        run: ./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug --console=plain --no-daemon
+        run: ./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug bundleReleaseAar sourceReleaseJar --console=plain --daemon
 
       - name: Verify optional runtimes through Sample R8
-        run: ./gradlew :sample:minifyReleaseWithR8 -Plumen.verifySampleR8=true --console=plain --no-daemon
+        run: ./gradlew :sample:minifyReleaseWithR8 -Plumen.verifySampleR8=true --console=plain --daemon
 
       - name: Verify third-party notices in distributions
         run: |
-          ./gradlew bundleReleaseAar sourceReleaseJar --console=plain --no-daemon
+          ./gradlew bundleReleaseAar sourceReleaseJar --console=plain --daemon
           for module in lumen-engine lumen-compose lumen-effects lumen-assets lumen-assets-lottie lumen-assets-pag lumen-assets-rive; do
             python3 tools/check_third_party_notices.py --aar "$module/build/outputs/aar/$module-release.aar" --sources "$module/build/intermediates/source_jar/release/release-sources.jar" || exit 1
           done
