@@ -9,6 +9,7 @@
 | [INTEGRATION_STANDARD.md](INTEGRATION_STANDARD.md) | 宿主接入的必须/应当/可以条款；代码和测试按节号引用 | 接入方式或条款变化时；节号只增不改（`VERSIONING.md` §4） |
 | [API.md](API.md) | 受兼容承诺保护的全部公开声明 | 新增或改变公开声明时 |
 | [ENGINEERING_RULES.md](ENGINEERING_RULES.md) | 引擎内部写法规则（隔离类、零分配、线程、失败隔离、测试） | 新的真机教训落成规则时；隔离类表随类增删同步 |
+| [BUILD_WORKFLOW.md](BUILD_WORKFLOW.md) | 严格配置缓存、源码契约输入、精确 APK 分发与设备门禁 | 构建、缓存或门禁执行方式变化时 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、包职责、管线与扩展点 | 新增包、管线或跨模块协作时 |
 | [VERSIONING.md](VERSIONING.md) | 版本规则、持久化协议、发布检查清单 | 每次发布（编号例外记录在这里） |
 
@@ -21,6 +22,7 @@
 | [P2_EFFECTS_AND_ASSETS.md](P2_EFFECTS_AND_ASSETS.md) | 传感器光源、程序化效果与粒子、Lottie / PAG / Rive 资产 |
 | [NATIVE_COMPOSE.md](NATIVE_COMPOSE.md) | 原生 Compose 接入原型与待验收项 |
 | [FLUENT_MATERIAL.md](FLUENT_MATERIAL.md) | Fluent 亚克力与层级：配方来源、回退规则、接入与验证 |
+| [MICA_MATERIAL.md](MICA_MATERIAL.md) | 可选云母背景：Mica / Mica Alt、静态背景预算、内容分层、状态回退与资料依据 |
 
 ## 参考
 
@@ -33,6 +35,7 @@
 
 | 文档 | 快照对象 |
 |---|---|
+| [MICA_BUILD_REVIEW_2026_10_15.md](MICA_BUILD_REVIEW_2026_10_15.md) | 云母审阅修复、构建／门禁性能基准，以及 API 37 的候选与基线设备失败对照 |
 | [PORTABILITY_AUDIT.md](PORTABILITY_AUDIT.md) | 1.0.0 从来源工程抽离时的可移植性审查 |
 | [VISUAL_ENHANCEMENT_PLAN.md](VISUAL_ENHANCEMENT_PLAN.md)、[VISUAL_EFFECTS_REVIEW.md](VISUAL_EFFECTS_REVIEW.md) | 1.2.0 视效增强的执行记录与候选阶段 Review |
 | [P2_ENHANCEMENT_PLAN.md](P2_ENHANCEMENT_PLAN.md)、[P2_REVIEW.md](P2_REVIEW.md) | 1.2.1 传感器、效果与资产的计划与 Review |

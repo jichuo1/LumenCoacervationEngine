@@ -30,15 +30,11 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v6.4.0
 
-      - name: Build, unit test, lint
-        run: ./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug bundleReleaseAar sourceReleaseJar --console=plain --daemon
-
-      - name: Verify optional runtimes through Sample R8
-        run: ./gradlew :sample:minifyReleaseWithR8 -Plumen.verifySampleR8=true --console=plain --daemon
+      - name: Build, unit test, lint, publications and Sample R8
+        run: ./gradlew assembleDebug testDebugUnitTest :sample:testReleaseUnitTest lintDebug bundleReleaseAar sourceReleaseJar :sample:minifyReleaseWithR8 -Plumen.verifySampleR8=true --console=plain --daemon
 
       - name: Verify third-party notices in distributions
         run: |
-          ./gradlew bundleReleaseAar sourceReleaseJar --console=plain --daemon
           for module in lumen-engine lumen-compose lumen-effects lumen-assets lumen-assets-lottie lumen-assets-pag lumen-assets-rive; do
             python3 tools/check_third_party_notices.py --aar "$module/build/outputs/aar/$module-release.aar" --sources "$module/build/intermediates/source_jar/release/release-sources.jar" || exit 1
           done

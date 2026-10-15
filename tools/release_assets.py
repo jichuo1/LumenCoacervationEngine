@@ -27,7 +27,7 @@ LIMITS = [
     "Safety caps, tiny durations and later scale changes can limit velocity continuity.",
     "Third-party horizontal native motion requires the explicit stopper adapter.",
     "Emulator results do not establish OEM equivalence or long-running native heap bounds.",
-    "No raw benchmark JSON or measured performance improvement is claimed.",
+    "Local cache/log benchmarks do not establish hosted CI speedups, GPU power or OEM equivalence.",
 ]
 
 

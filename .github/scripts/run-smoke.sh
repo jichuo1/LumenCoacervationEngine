@@ -18,20 +18,34 @@ sampler_pid=$!
 adb logcat -c || true
 adb logcat -v threadtime > logcat.txt 2>&1 &
 logcat_pid=$!
+cleanup() {
+  if [ -n "${logcat_pid:-}" ]; then kill "$logcat_pid" 2>/dev/null || true; logcat_pid=; fi
+  if [ -n "${sampler_pid:-}" ]; then kill "$sampler_pid" 2>/dev/null || true; sampler_pid=; fi
+}
+trap cleanup EXIT
 
 started=$(date +%s)
-timeout 15m ./gradlew :sample:connectedReleaseAndroidTest -x lint -x lintVitalRelease --console=plain --daemon
-status=$?
+api=${SMOKE_API_LEVEL:-$(adb shell getprop ro.build.version.sdk | tr -d '\r')}
+results=sample/build/outputs/androidTest-results/connected
+if [ -n "${SMOKE_APK_BUNDLE:-}" ]; then
+  mkdir -p sample/build/outputs/androidTest-results
+  results=$(mktemp -d sample/build/outputs/androidTest-results/prebuilt.XXXXXXXX) || exit 1
+  python3 .github/scripts/run_device_tests.py "$SMOKE_APK_BUNDLE" --revision "$(git rev-parse HEAD)" --api "$api" --output "$results"
+  status=$?
+else
+  # Explicit local fallback; failed prebuilt tests are never retried through a different runner.
+  timeout 15m ./gradlew :sample:connectedReleaseAndroidTest -x lint -x lintVitalRelease --console=plain --daemon
+  status=$?
+fi
 
-kill "$logcat_pid" "$sampler_pid" 2>/dev/null || true
+cleanup
 
 echo "::group::主机资源采样"
 cat host-usage.txt || true
 echo "::endgroup::"
 
 echo "::group::测试结果"
-api=${SMOKE_API_LEVEL:-$(adb shell getprop ro.build.version.sdk | tr -d '\r')}
-python3 .github/scripts/verify-smoke-results.py sample/build/outputs/androidTest-results/connected --api "$api" --since "$started" || status=1
+python3 .github/scripts/verify-smoke-results.py "$results" --api "$api" --since "$started" --summary || status=1
 grep -E "DemoSmokeTest: material" logcat.txt | sed -E 's/^.*DemoSmokeTest: /实际材质：/' || true
 echo "::endgroup::"
 

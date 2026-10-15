@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.CommonExtension
+import org.gradle.api.tasks.testing.Test
 
 plugins {
     alias(libs.plugins.android.application) apply false
@@ -11,6 +12,15 @@ plugins {
 
 subprojects {
     plugins.withId("com.android.base") {
+        // Source-contract tests read text directly. Bytecode inputs alone cannot invalidate a cached
+        // test after a comment/whitespace-only change, or a cross-module contract source change.
+        val contractSources = files(fileTree("src/main"))
+        if (name == "lumen-engine") contractSources.from(rootProject.fileTree("lumen-controls/src/main"))
+        if (name == "lumen-motion") contractSources.from(rootProject.fileTree("lumen-engine/src/main"))
+        tasks.withType<Test>().configureEach {
+            inputs.files(contractSources).withPropertyName("sourceContractInputs")
+                .withPathSensitivity(PathSensitivity.RELATIVE)
+        }
         extensions.configure<CommonExtension>("android") {
             lint.apply {
                 checkReleaseBuilds = false

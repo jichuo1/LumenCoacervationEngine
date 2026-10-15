@@ -18,8 +18,11 @@ on:
       - '.github/scripts/run-smoke.sh'
       - '.github/scripts/prepare-emulator.sh'
       - '.github/scripts/verify-smoke-results.py'
+      - '.github/scripts/smoke_artifacts.py'
+      - '.github/scripts/run_device_tests.py'
       - 'tools/test_prepare_emulator.py'
       - 'tools/test_verify_smoke_results.py'
+      - 'tools/test_device_smoke.py'
       - '.github/scripts/install-emulator-libraries.sh'
       - 'tools/test_install_emulator_libraries.py'
   push:
@@ -35,8 +38,11 @@ on:
       - '.github/scripts/run-smoke.sh'
       - '.github/scripts/prepare-emulator.sh'
       - '.github/scripts/verify-smoke-results.py'
+      - '.github/scripts/smoke_artifacts.py'
+      - '.github/scripts/run_device_tests.py'
       - 'tools/test_prepare_emulator.py'
       - 'tools/test_verify_smoke_results.py'
+      - 'tools/test_device_smoke.py'
       - '.github/scripts/install-emulator-libraries.sh'
       - 'tools/test_install_emulator_libraries.py'
   release:
@@ -59,10 +65,15 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.sha }}
+      - name: Record immutable source revision
+        id: source
+        run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
@@ -73,14 +84,16 @@ jobs:
         run: python3 -m unittest discover -s tools -p 'test_*smoke*.py' -v && python3 -m unittest discover -s tools -p test_prepare_emulator.py -v && python3 -m unittest discover -s tools -p test_install_emulator_libraries.py -v
 
       - name: Build release APK and test APK
-        run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest --console=plain --no-daemon
+        run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest --console=plain --daemon
+
+      - name: Bind APK pair to the exact source revision
+        run: python3 .github/scripts/smoke_artifacts.py create build/demo-apks --revision "$(git rev-parse HEAD)"
 
       - uses: actions/upload-artifact@v7.0.2
         with:
           name: demo-apks
-          path: |
-            sample/build/outputs/apk/release/*.apk
-            sample/build/outputs/apk/androidTest/release/*.apk
+          path: build/demo-apks/
+          if-no-files-found: error
           retention-days: 14
 
   smoke:
@@ -105,14 +118,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ needs.build.outputs.revision }}
+      # The SDK manager still needs a stable Java runtime even though this job no longer builds.
       - uses: actions/setup-java@v6.0.1
         with:
           distribution: temurin
           java-version: '17'
-      - uses: gradle/actions/setup-gradle@v6.4.0
+      - uses: actions/download-artifact@v8.0.2
         with:
-          cache-read-only: true
+          name: demo-apks
+          path: build/demo-apks
+
+      - name: Verify the exact APK pair before booting the emulator
+        run: python3 .github/scripts/smoke_artifacts.py verify build/demo-apks --revision "$(git rev-parse HEAD)"
 
       - name: Enable KVM
         run: |
@@ -128,15 +146,13 @@ jobs:
       - name: Prepare Android Emulator with bounded retry
         run: bash .github/scripts/prepare-emulator.sh
 
-      - name: Warm up release and androidTest APKs before emulator boot
-        run: ./gradlew :sample:assembleRelease :sample:assembleReleaseAndroidTest -x lint -x lintVitalRelease --console=plain --daemon
-
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2.38.0
         env:
           # Keep API34 off the failing Vulkan path without suppressing actual pixel assertions.
           HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
           SMOKE_API_LEVEL: ${{ matrix.api-level }}
+          SMOKE_APK_BUNDLE: build/demo-apks
         with:
           api-level: ${{ matrix.api-level }}
           target: ${{ matrix.target }}
@@ -174,7 +190,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.1
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ needs.build.outputs.revision }}
       - uses: actions/download-artifact@v8.0.2
         with:
           name: demo-apks
@@ -185,7 +201,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || inputs.tag }}
         run: |
-          apk=$(find apks -path '*androidTest*' -prune -o -name '*.apk' -print | head -n 1)
-          test -n "$apk"
-          cp "$apk" "lumen-demo-${TAG}.apk"
+          python3 .github/scripts/smoke_artifacts.py verify apks --revision "$(git rev-parse HEAD)"
+          cp apks/sample.apk "lumen-demo-${TAG}.apk"
           gh release upload "$TAG" "lumen-demo-${TAG}.apk" --clobber

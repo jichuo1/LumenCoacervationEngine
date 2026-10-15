@@ -14,13 +14,15 @@ SPEC.loader.exec_module(VERIFIER)
 
 
 class SmokeResultsTest(unittest.TestCase):
-    def check(self, api=34, omit=None, problem=None, suite_errors="0", empty=False, malformed=False, stale=False):
+    def check(self, api=34, omit=None, problem=None, suite_errors="0", empty=False, malformed=False, stale=False,
+              mutate=None, verbose=True):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             root = ET.Element("testsuite", errors=suite_errors)
             keys = {(owner, name) for owner, names in VERIFIER.REQUIRED.items() for name in names}
             if api >= 31:
                 keys.add(VERIFIER.GPU_TEST)
+                keys.add(VERIFIER.LINEAR_GPU_TEST)
                 keys.update(VERIFIER.PANEL_STRETCH_TESTS)
             if api >= 33:
                 keys.update(VERIFIER.ENHANCED_GPU_TESTS)
@@ -32,12 +34,16 @@ class SmokeResultsTest(unittest.TestCase):
                 if (owner, name) == VERIFIER.GPU_TEST and problem:
                     ET.SubElement(case, problem)
             path = directory / "TEST-result.xml"
+            if mutate:
+                replacement = mutate(root)
+                if replacement is not None:
+                    root = replacement
             if malformed:
                 path.write_text("<unfinished", encoding="utf-8")
             else:
                 ET.ElementTree(root).write(path)
             with contextlib.redirect_stdout(io.StringIO()):
-                return VERIFIER.verify(directory, api, time.time() + 60 if stale else 0)
+                return VERIFIER.verify(directory, api, time.time() + 60 if stale else 0, verbose=verbose)
 
     def test_complete_matrix_result_is_accepted(self):
         self.assertTrue(self.check())
@@ -54,8 +60,16 @@ class SmokeResultsTest(unittest.TestCase):
     def test_zero_tests_is_rejected(self):
         self.assertFalse(self.check(empty=True))
 
+    def test_each_mica_regression_is_required_on_every_smoke_api(self):
+        owner = VERIFIER.PREFIX + "MicaIntegrationTest"
+        for api in (27, 31, 33, 34):
+            for name in VERIFIER.REQUIRED[owner]:
+                with self.subTest(api=api, method=name):
+                    self.assertFalse(self.check(api=api, omit=(owner, name)))
+
     def test_missing_gpu_assertion_is_rejected(self):
         self.assertFalse(self.check(omit=VERIFIER.GPU_TEST))
+        self.assertFalse(self.check(omit=VERIFIER.LINEAR_GPU_TEST))
 
     def test_each_embedded_viewport_regression_is_required(self):
         owner = VERIFIER.PREFIX + "PanelEmbeddedViewportTest"
@@ -110,6 +124,42 @@ class SmokeResultsTest(unittest.TestCase):
 
     def test_runner_error_without_failed_case_is_rejected(self):
         self.assertFalse(self.check(suite_errors="1"))
+
+    def test_duplicate_case_cannot_supply_another_invocations_success(self):
+        def duplicate(root):
+            root.append(root[0])
+        self.assertFalse(self.check(mutate=duplicate))
+
+    def test_declared_but_missing_non_required_case_is_rejected(self):
+        def incomplete(root):
+            root.set("tests", str(len(root) + 1))
+        self.assertFalse(self.check(mutate=incomplete))
+
+    def test_invalid_or_negative_suite_counts_fail_closed(self):
+        for count in ("unknown", "-1", "1.5", ""):
+            def invalid(root):
+                root.set("errors", count)
+            with self.subTest(count=count):
+                self.assertFalse(self.check(mutate=invalid))
+
+    def test_aggregate_counts_and_errors_are_checked(self):
+        def aggregate(root):
+            parent = ET.Element("testsuites", tests=str(len(root) + 1))
+            parent.append(root)
+            return parent
+        self.assertFalse(self.check(mutate=aggregate))
+
+    def test_complete_nested_aggregate_is_accepted(self):
+        def aggregate(root):
+            parent = ET.Element("testsuites", tests=str(len(root)), errors="0", failures="0")
+            parent.append(root)
+            return parent
+        self.assertTrue(self.check(mutate=aggregate))
+
+    def test_summary_mode_preserves_the_same_acceptance_rules(self):
+        self.assertTrue(self.check(verbose=False))
+        self.assertFalse(self.check(verbose=False, problem="failure"))
+        self.assertFalse(self.check(verbose=False, omit=VERIFIER.GPU_TEST))
 
     def test_unreadable_result_is_rejected(self):
         self.assertFalse(self.check(malformed=True))

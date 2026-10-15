@@ -143,6 +143,8 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
   - 读入的源码统一把 CRLF 换成 LF。
 - 宿主义务（例如"弹窗标题与入口标题用同一段文字""自带手势的控件打 `EXCLUDED_TAG`"）**不**写进引擎测试，而是写进 `INTEGRATION_STANDARD.md`，由宿主自己的测试守住。
 
+源码契约测试直接读取的生产文件必须声明为 Gradle `Test` 输入。根构建脚本统一登记 `sourceContractInputs`，包括本模块 `src/main` 与现有跨模块读取（core → controls、motion → core）；新增跨模块读取时同步登记。不得只依赖测试 classpath 的变化，否则纯源码文本变化可能复用过期的通过结果。
+
 ## 9. 命名与日志
 
 - 线程、RenderNode、日志 tag 一律以 `Lumen-` 开头，便于宿主在 systrace、`dumpsys gfxinfo` 和 logcat 里识别引擎。
@@ -163,6 +165,7 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
 ```
 
 - 四个任务都必须通过，Lint 必须 0 错误。Demo 使用 release 测试变体，宿主接入契约通过 `:sample:testReleaseUnitTest` 验证。
+- 配置缓存默认启用并严格检查兼容性；缓存输入、CI 任务图、APK 分发和设备协议验收见 [BUILD_WORKFLOW.md](BUILD_WORKFLOW.md)。
 - 在 Windows 上一律加 `--no-daemon`：常驻的 daemon 可能产出陈旧的 APK，而安装命令照样返回成功。
 - 涉及平台类型的改动，再加跑 §2.4 的审计。
 
