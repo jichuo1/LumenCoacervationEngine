@@ -111,6 +111,7 @@ class SurfaceSandboxActivity : Activity() {
 
     private fun buildControls(parent:LinearLayout) {
         parent.addView(Button(this).apply{text="Fluent 亚克力与层级";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,FluentSandboxActivity::class.java))}})
+        parent.addView(Button(this).apply{text="Mica 云母与内容分层";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,MicaSandboxActivity::class.java))}})
         parent.addView(Button(this).apply{text="Compose 原生材质与交互";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,ComposeSandboxActivity::class.java))}})
         parent.addView(Button(this).apply{text="下一轮：传感器 / 程序化效果 / 粒子 / 动画资产";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,P2SandboxActivity::class.java))}})
         fun toggle(label:String,checked:Boolean,change:(Boolean)->Unit) { parent.addView(CheckBox(this).apply { text=label;isChecked=checked;setOnCheckedChangeListener { _,v->change(v) } }) }

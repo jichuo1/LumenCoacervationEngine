@@ -29,6 +29,7 @@ GlowEngine（契约 / SPI）─────────────── glow/
    TouchGlowRenderer / GlowState ──────────── touch/    触摸光晕
    LiquidBackgroundStore ──────────────────── background/ 自定义背景图
    LumenFluentControl / FluentControlDrawable ─ host/ fluent/ Fluent 亚克力与层级（控件效果）
+   LumenMicaBackdrop / LumenMicaImage ───────── host/ fluent/ 可选云母窗口基础层、静态背景与内容分层
 
 进程级：
    LumenEngine ── 配置、材质选择、实时取样开关、内存压力
@@ -54,6 +55,8 @@ GlowEngine（契约 / SPI）─────────────── glow/
 | `touch` | 触摸光晕：纯几何状态机 + 绘制器 | 公开 |
 | `interaction` | `ElasticGestureClaim`：手势归属声明 | 公开 |
 | `fluent` | Fluent 亚克力配方、层级描边与状态令牌、共享噪点、API 29 混合隔离类、控件 Drawable（入口 `host.LumenFluentControl`） | 内部 |
+
+可选 `host.LumenMicaBackdrop` 不进入 `ActivitySkinSession` 或持久化皮肤状态机。它仅持有窗口根背景、焦点／省电监听和内存回收登记；`LumenMicaImage.prepare` 在宿主后台生成有常量预算的静态模糊快照，`fluent.MicaPolicy` 负责纯配方与状态，`MicaBackdropDrawable` 只绘制预着色结果。子层使用低透明度 Drawable，不重复采样；接入与来源依据见 [MICA_MATERIAL.md](MICA_MATERIAL.md)。
 
 ## 3. 分层规则
 

@@ -14,7 +14,7 @@
 | microsoft-ui-xaml `Common_themeresources_any.xaml`、`CornerRadius_themeresources.xaml` | `ControlElevationBorderBrush` 渐变、描边 / 轻填充 / 焦点颜色、4dp 与 8dp 圆角、83ms 状态过渡 |
 | Avalonia `Avalonia.Skia/DrawingContextImpl.cs` | Skia 上的参照实现（平铺噪点 + 色调合成），用于核对 Android 侧写法 |
 
-Mica 的默认色调参数没有公开源码，本轮不实现 Mica。Mica 面向整个窗口的底层，不是控件效果。
+Mica 面向整个窗口的底层，使用独立可选入口 `LumenMicaBackdrop`，与这里的应用内亚克力分别接入。云母的设计依据、Android 适配配方与分层见 [MICA_MATERIAL.md](MICA_MATERIAL.md)；未公开的 Windows 默认合成参数不作为等价实现承诺。
 
 ## 2. 渲染配方
 

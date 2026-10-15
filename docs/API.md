@@ -399,3 +399,17 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 | `LumenAcrylicFallbackReason` | NONE / DISABLED / REDUCE_TRANSPARENCY / LOW_RAM_DEVICE / POWER_SAVE / WINDOW_INACTIVE / NO_BACKDROP / BACKDROP_UNAVAILABLE / CLOSED |
 | `LumenAcrylicBlend` | EXACT（API 29+ 平台混合模式）/ APPROXIMATE |
 | `LumenFluentDiagnostics` | closed / acrylicVisible / fallbackReason / backdropBackend / blend / draws / transitions / noiseTextureBytes |
+
+## 20. 可选云母与内容分层（host，待发布）
+
+包 `com.lumen.coacervation.engine.host`，位于 **lumen-engine**。完整资料依据、配方、参数默认值、线程和预算见 [MICA_MATERIAL.md](MICA_MATERIAL.md)。除 `LumenMicaImage.prepare()` 外，控制器入口只能在主线程调用。此入口不改变 `SkinId`；避免与其他控制器共同接管同一个根背景。
+
+| 声明 | 公开成员 |
+|---|---|
+| `LumenMicaBackdrop(view, palette, options = LumenMicaOptions(), image: LumenMicaImage? = null)` | `update(options)` / `updatePalette(palette)` / `setImage(image?)` / `refreshPolicy()` / `layerBackground(layer = CONTENT, radiusDp = 8f): Drawable` / `diagnostics(): LumenMicaDiagnostics` / `isClosed` / `close()`；关闭时仅恢复仍由自身持有的根背景，保留内边距；setter、刷新与关闭的迟到调用为空操作 |
+| `LumenMicaImage` | `prepare(source: Bitmap): LumenMicaImage`（companion，`@WorkerThread`），`byteCount: Int`；输入为调用期间只读的软件 Bitmap，输出为独立不可变快照，不持有或回收输入；最长边 96 像素；取消通过线程中断传播 |
+| `LumenMicaOptions` | enabled = true / kind = BASE / tintColor、tintOpacity、luminosityOpacity、fallbackColor（默认 null，按 kind 与主题选择；opacity 限 0–1，拒绝非有限值）/ fallbackWhenWindowInactive、fallbackOnPowerSave、fallbackOnLowRamDevice = true / highContrast、reduceTransparency、reduceMotion = false |
+| `LumenMicaKind` | BASE / BASE_ALT |
+| `LumenMicaLayer` | COMMAND / CONTENT / CARD；工厂返回宿主所有的低透明度 Drawable，主题、kind、辅助功能改变后由宿主重新创建并赋值；radiusDp 限 0–128 |
+| `LumenMicaFallbackReason` | NONE / DISABLED / HIGH_CONTRAST / REDUCE_TRANSPARENCY / LOW_RAM_DEVICE / POWER_SAVE / WINDOW_INACTIVE / NO_BACKGROUND / MEMORY_PRESSURE / RENDER_UNAVAILABLE / CLOSED |
+| `LumenMicaDiagnostics` | closed / kind / fallbackReason / micaVisible（上一帧云母贡献，回退过渡中可能仍为 true）/ snapshotBytes（当前快照与着色副本合计）/ draws / transitions |
