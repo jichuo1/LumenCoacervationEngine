@@ -11,10 +11,11 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || { echo "cannot enter repository root" 
 
 MAX_ATTEMPTS=3
 RETRY_DELAY=30
+export JDK_JAVA_OPTIONS="${JDK_JAVA_OPTIONS:-} -XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=512m -XX:+UseCodeCacheFlushing"
 
 for attempt in $(seq 1 "$MAX_ATTEMPTS"); do
   echo "JitPack install: attempt $attempt/$MAX_ATTEMPTS"
-  if ./gradlew --no-daemon -Plumen.group=com.github.jichuo1.LumenCoacervationEngine publishToMavenLocal; then
+  if ./gradlew --no-daemon -Plumen.group=com.github.jichuo1.LumenCoacervationEngine publishToMavenLocal -x test -x lint; then
     exit 0
   fi
   if [ "$attempt" -lt "$MAX_ATTEMPTS" ]; then

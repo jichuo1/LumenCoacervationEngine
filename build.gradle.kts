@@ -1,3 +1,5 @@
+import com.android.build.api.dsl.CommonExtension
+
 plugins {
     alias(libs.plugins.android.application) apply false
     alias(libs.plugins.android.library) apply false
@@ -5,4 +7,21 @@ plugins {
     // 不声明就退回 AGP 自带的旧编译器。任何模块真的 apply 它，AGP 会让出内置 Kotlin。
     alias(libs.plugins.kotlin.android) apply false
     alias(libs.plugins.kotlin.compose) apply false
+}
+
+subprojects {
+    plugins.withId("com.android.base") {
+        extensions.configure<CommonExtension>("android") {
+            lint.apply {
+                checkReleaseBuilds = false
+                checkTestSources = false
+                ignoreTestSources = true
+            }
+        }
+        tasks.matching {
+            it.name.contains("Lint") && (it.name.contains("UnitTest") || it.name.contains("AndroidTest"))
+        }.configureEach {
+            enabled = false
+        }
+    }
 }

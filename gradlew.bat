@@ -49,6 +49,8 @@ set "TMP=%LUMEN_GRADLE_TMP%"
 @rem Match org.gradle.jvmargs so --no-daemon can reuse this JVM instead of
 @rem forking a single-use Daemon and opening a local selector/AF_UNIX pipe.
 set "LUMEN_GRADLE_HEAP=4096m"
+set "LUMEN_JVM_TUNING=-XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=512m -XX:+UseCodeCacheFlushing"
+set "JDK_JAVA_OPTIONS=%LUMEN_JVM_TUNING%"
 set DEFAULT_JVM_OPTS="-Xmx%LUMEN_GRADLE_HEAP%" "-Dfile.encoding=UTF-8" "-Djava.io.tmpdir=%LUMEN_GRADLE_TMP%"
 @rem Find java.exe
 if defined JAVA_HOME goto findJavaFromJavaHome
@@ -86,7 +88,7 @@ set CLASSPATH=%APP_HOME%\gradle\wrapper\gradle-wrapper.jar
 
 
 @rem Execute Gradle
-"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.jvmargs=-Xmx%LUMEN_GRADLE_HEAP% -Dfile.encoding=UTF-8" "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
+"%JAVA_EXE%" %DEFAULT_JVM_OPTS% %JAVA_OPTS% %GRADLE_OPTS% "-Dorg.gradle.jvmargs=-Xmx%LUMEN_GRADLE_HEAP% %LUMEN_JVM_TUNING% -Dfile.encoding=UTF-8" "-Dorg.gradle.appname=%APP_BASE_NAME%" -classpath "%CLASSPATH%" org.gradle.wrapper.GradleWrapperMain %*
 
 :end
 @rem End local scope for the variables with windows NT shell
