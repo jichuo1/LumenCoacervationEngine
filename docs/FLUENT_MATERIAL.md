@@ -38,6 +38,8 @@ Mica 面向整个窗口的底层，使用独立可选入口 `LumenMicaBackdrop`�
 - **模糊半径**：WinUI 的 30 是标准差；HWUI 把半径换算为 σ = 0.57735·r + 0.5，σ=30 需要约 51dp，超过会话上限 48dp，所以默认取 48dp（σ≈28.2）。
 - **噪点**：进程共享一张 64×64 ARGB 灰噪图（16 KiB，常量预算，JVM 测试守住），引用计数，最后释放时只丢引用、不 `recycle()`，因为显示列表可能仍在引用像素。
 
+自 1.4.6 起，复合亚克力的模糊底图在 GPU 与软件路径上均保留输入颜色，亮度只由上面的 Fluent 配方合成。此前先应用普通磨砂的预提亮、再混合 Fluent 亮度，会把粉色、薄荷绿等浅色底图冲淡。保色通过内部绑定和软件作业快照传递，主题更新、选项重建和回退后重新绑定继续采用同一规则；普通 `FROSTED` 表面保留既有的预提亮。公开 `LumenSurfaceSampling` 的构造、默认参数及 copy 签名未添加新参数。来源贡献和许可见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
+
 ## 3. 回退规则
 
 | 原因（`LumenAcrylicFallbackReason`） | 触发 | 是否释放采样绑定 |
@@ -102,6 +104,7 @@ flyout.close(); button.close(); session.close()
 
 - `FluentAcrylicPolicyTest`：配方数值逐项按 WinUI 公式手算；修正系数、亮度推导、默认值、回退优先级、过渡打断、可用性滞回、参数边界。
 - `FluentControlContractTest`：噪点预算与确定性、不回收共享位图、`BlendMode` 只出现在 API ≥ 29 的隔离类、绘制路径零分配、先画不透明底再画背景、录制期间不画绑定、只恢复自己持有的状态、监听都有移除路径、预算超限局部降级、同来源共用录制。
+- `AcrylicBackdropContractTest` 和 `AcrylicBackdropColorTest`：守住内部保色接线与旧公开采样 ABI；设备像素对照关闭额外色调／亮度／噪点的亚克力和普通 FROSTED，检查两种浅色、主题／选项更新和重绑。软件在所有 smoke API 必测，GPU 在 API 31+ 必测；运行结果以对应版本发布审阅和验证附件为准。
 - `sample` 的“表面沙盒 → Fluent 亚克力与层级”页面可以手动切换全部开关并查看诊断。
 - `FluentControlIntegrationTest`（sample 设备测试，CI 在 API 27/31/33/34 模拟器运行）：安装/关闭只恢复自己持有的背景、内边距与高度；按压降低高度；回退原因与混合模式选择；降低透明度时为不透明回退色；背景采样后淡入亚克力；单色描边保持令牌透明度。
 - 1.4.3 发布前在 OPPO PMA110（Android 17 / API 37，Adreno）上运行以上 6 项全部通过，并人工核对浅色、深色、降低透明度、BASE/ACCENT 与滚动跟随画面；后端为 GPU、混合为 EXACT。

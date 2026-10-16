@@ -1,10 +1,12 @@
 package com.lumen.coacervation.engine.host
 
+import android.graphics.Matrix
 import android.graphics.RectF
 import android.os.SystemClock
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.annotation.MainThread
+import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.glow.GlowContentProbe
 import com.lumen.coacervation.engine.glow.GlowContentSample
 import com.lumen.coacervation.engine.glow.GlowLegibilityPolicy
@@ -28,7 +30,8 @@ public class LumenSurfaceLegibilityController(private val source: View, private 
         var applied = Float.NaN
     }
     private val entries = WeakHashMap<View, Entry>()
-    private val location = IntArray(2)
+    private val mapping = ViewSamplingMatrix()
+    private val matrix = Matrix()
     private val observer = source.viewTreeObserver
     private var lastProbe = 0L
     private var failed = false
@@ -79,22 +82,26 @@ public class LumenSurfaceLegibilityController(private val source: View, private 
             if (now - entry.started < 240L) view.postInvalidateOnAnimation()
         }
         if (failed || visible.isEmpty() || now - lastProbe < 125L || probe?.inFlight == true) return
-        source.getLocationOnScreen(location)
-        val sourceX = location[0]; val sourceY = location[1]
-        val regions = visible.map { (view, entry) ->
-            view.getLocationOnScreen(location)
+        val regions = ArrayList<RectF>(visible.size)
+        val sampled = ArrayList<Entry>(visible.size)
+        for ((view, entry) in visible) {
+            if (!mapping.sourceToTarget(view, source, matrix)) continue
             val shape = entry.binding.samplingRegions()?.shapeBounds
             val rect = if (shape != null) RectF(shape.left, shape.top, shape.right, shape.bottom)
                 else RectF(0f, 0f, view.width.toFloat(), view.height.toFloat())
-            rect.offset((location[0] - sourceX).toFloat(), (location[1] - sourceY).toFloat())
-            rect
+            matrix.mapRect(rect)
+            if (rect.isEmpty || !rect.left.isFinite() || !rect.top.isFinite() ||
+                !rect.right.isFinite() || !rect.bottom.isFinite()) continue
+            regions.add(rect)
+            sampled.add(entry)
         }
+        if (regions.isEmpty()) return
         val sampler = probe ?: GlowContentProbe { samples ->
             pending.forEachIndexed { index, entry -> entry.sample = samples.getOrNull(index) }
             pending = emptyList()
             entries.keys.forEach { it.postInvalidateOnAnimation() }
         }.also { probe = it }
-        pending = visible.map { it.value }
+        pending = sampled
         lastProbe = now
         runCatching { sampler.probe(source, regions) { canvas, _ -> canvas.drawColor(surfaceColor) } }
             .onFailure { failed = true; probe?.close(); probe = null; pending = emptyList() }

@@ -2,6 +2,7 @@ import contextlib
 import importlib.util
 import io
 from pathlib import Path
+import re
 import tempfile
 import time
 import unittest
@@ -12,15 +13,20 @@ SPEC = importlib.util.spec_from_file_location("verify_smoke_results", SCRIPT)
 VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 
+VISUAL_HELPER_CLASSES = ("DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
+                         "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest")
+
 
 class SmokeResultsTest(unittest.TestCase):
     def check(self, api=34, omit=None, problem=None, suite_errors="0", empty=False, malformed=False, stale=False,
-              mutate=None, verbose=True):
+              mutate=None, verbose=True, problem_key=None):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)
             root = ET.Element("testsuite", errors=suite_errors)
             keys = {(owner, name) for owner, names in VERIFIER.REQUIRED.items() for name in names}
+            keys.add(VERIFIER.SCENE_HARDWARE_TEST if api >= 29 else VERIFIER.SCENE_PRE29_TEST)
             if api >= 31:
+                keys.add(VERIFIER.ACRYLIC_GPU_TEST)
                 keys.add(VERIFIER.GPU_TEST)
                 keys.add(VERIFIER.LINEAR_GPU_TEST)
                 keys.update(VERIFIER.PANEL_STRETCH_TESTS)
@@ -31,7 +37,7 @@ class SmokeResultsTest(unittest.TestCase):
                 if (owner, name) == omit:
                     continue
                 case = ET.SubElement(root, "testcase", classname=owner, name=name)
-                if (owner, name) == VERIFIER.GPU_TEST and problem:
+                if (owner, name) == (problem_key or VERIFIER.GPU_TEST) and problem:
                     ET.SubElement(case, problem)
             path = directory / "TEST-result.xml"
             if mutate:
@@ -50,6 +56,54 @@ class SmokeResultsTest(unittest.TestCase):
 
     def test_min_sdk_does_not_require_gpu_test(self):
         self.assertTrue(self.check(api=27))
+
+    def test_visual_helper_required_names_cover_the_actual_device_classes(self):
+        source = SCRIPT.parents[2] / "sample/src/androidTest/java/com/lumen/coacervation/sample"
+        for owner in VISUAL_HELPER_CLASSES:
+            actual = set(re.findall(r"@Test\s+fun\s+(\w+)\s*\(", (source / f"{owner}.kt").read_text(encoding="utf-8")))
+            registered = set(VERIFIER.REQUIRED[VERIFIER.PREFIX + owner])
+            if owner == "DrawableSceneInstrumentedTest":
+                registered.update((VERIFIER.SCENE_HARDWARE_TEST[1], VERIFIER.SCENE_PRE29_TEST[1]))
+            elif owner == "AcrylicBackdropColorTest":
+                registered.add(VERIFIER.ACRYLIC_GPU_TEST[1])
+            with self.subTest(owner=owner):
+                self.assertTrue(actual)
+                self.assertEqual(actual, registered)
+
+    def test_scene_backend_requirement_follows_the_api29_boundary(self):
+        for api in (27, 28, 29, 31, 33, 34, 37):
+            selected = VERIFIER.SCENE_HARDWARE_TEST if api >= 29 else VERIFIER.SCENE_PRE29_TEST
+            other = VERIFIER.SCENE_PRE29_TEST if api >= 29 else VERIFIER.SCENE_HARDWARE_TEST
+            with self.subTest(api=api):
+                self.assertIn(selected, VERIFIER.required_tests(api))
+                self.assertNotIn(other, VERIFIER.required_tests(api))
+                self.assertFalse(self.check(api=api, omit=selected))
+                self.assertTrue(self.check(api=api, omit=other))
+
+    def test_each_visual_helper_regression_is_required_on_every_smoke_api(self):
+        for api in (27, 31, 33, 34):
+            for owner in VISUAL_HELPER_CLASSES:
+                for name in VERIFIER.REQUIRED[VERIFIER.PREFIX + owner]:
+                    with self.subTest(api=api, owner=owner, method=name):
+                        self.assertFalse(self.check(api=api, omit=(VERIFIER.PREFIX + owner, name)))
+
+    def test_failed_or_skipped_visual_helper_regression_is_rejected(self):
+        for api in (27, 31, 33, 34):
+            keys = {VERIFIER.SCENE_HARDWARE_TEST if api >= 29 else VERIFIER.SCENE_PRE29_TEST}
+            if api >= 31:
+                keys.add(VERIFIER.ACRYLIC_GPU_TEST)
+            for owner in VISUAL_HELPER_CLASSES:
+                keys.update((VERIFIER.PREFIX + owner, name) for name in VERIFIER.REQUIRED[VERIFIER.PREFIX + owner])
+            for key in keys:
+                for problem in ("failure", "error", "skipped"):
+                    with self.subTest(api=api, method=key[1], problem=problem):
+                        self.assertFalse(self.check(api=api, problem=problem, problem_key=key))
+
+    def test_acrylic_gpu_requirement_starts_at_api31(self):
+        for api in (27, 29, 30, 31, 33, 34, 37):
+            with self.subTest(api=api):
+                self.assertEqual(api >= 31, VERIFIER.ACRYLIC_GPU_TEST in VERIFIER.required_tests(api))
+                self.assertEqual(api < 31, self.check(api=api, omit=VERIFIER.ACRYLIC_GPU_TEST))
 
     def test_native_compose_and_canvas_targets_are_required_on_min_sdk(self):
         for owner in ("NativeComposeIntegrationTest", "NativeSurfaceTargetTest"):

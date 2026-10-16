@@ -76,6 +76,7 @@ internal class LiveBackdropSampler(
 ) {
     private class Entry(val budget: LumenSampleBudget?) {
         var profile: LumenSurfaceSampling? = null
+        var preserveBackdropColors = false
         var raw: LumenRawSampleProfile? = null
         val cadence = LumenSampleCadence()
         var allocatedBytes = 0L
@@ -219,6 +220,7 @@ internal class LiveBackdropSampler(
         val outHeight: Int,
         val blurRadius: Int,
         val profile: LumenSurfaceSampling?,
+        val preserveBackdropColors: Boolean,
         val raw: LumenRawSampleProfile?,
         val weakPixels: IntArray?,val strongPixels: IntArray?,
         val weakRadius: Int,val strongRadius: Int,
@@ -297,20 +299,26 @@ internal class LiveBackdropSampler(
     }
     fun registerRaw(view: View,profile: LumenSurfaceSampling,raw: LumenRawSampleProfile) = registerRaw(viewTarget(view),profile,raw)
     fun register(view: LumenSurfaceTarget, profile: LumenSurfaceSampling? = null) = registerSample(view,profile,null)
+    fun register(view: LumenSurfaceTarget, profile: LumenSurfaceSampling?,
+        preserveBackdropColors: Boolean) = registerSample(view,profile,null,preserveBackdropColors)
     fun registerRaw(view: LumenSurfaceTarget,profile: LumenSurfaceSampling,raw: LumenRawSampleProfile) = registerSample(view,profile,raw)
     private fun viewTarget(view: View): ViewSurfaceTarget = viewTargets[view] ?: ViewSurfaceTarget(view,samplingMatrices).also { viewTargets[view] = it }
-    private fun registerSample(view: LumenSurfaceTarget,profile: LumenSurfaceSampling?,raw: LumenRawSampleProfile?) {
+    private fun registerSample(view: LumenSurfaceTarget,profile: LumenSurfaceSampling?,raw: LumenRawSampleProfile?,
+        preserveBackdropColors: Boolean = false) {
         if (!isActive || !view.isAttachedToWindow) return
         var changed=false
         if (!entries.containsKey(view)) {
-            entries[view] = Entry(sharedBudget).apply { this.profile = profile;this.raw=raw }
+            entries[view] = Entry(sharedBudget).apply {
+                this.profile = profile;this.raw=raw;this.preserveBackdropColors=preserveBackdropColors
+            }
             dirty = true
             changed=true
         }
         val entry = entries[view]
-        if (entry != null && (entry.profile != profile || entry.raw != raw)) {
+        if (entry != null && (entry.profile != profile || entry.raw != raw || entry.preserveBackdropColors != preserveBackdropColors)) {
             entry.release()
             entry.profile = profile
+            entry.preserveBackdropColors = preserveBackdropColors
             entry.raw=raw
             dirty = true
             changed=true
@@ -611,6 +619,7 @@ internal class LiveBackdropSampler(
         }
             ?: LensRefractionPolicy.blurRadius(entry.scale, density),
         profile = entry.profile,
+        preserveBackdropColors = entry.preserveBackdropColors,
         raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
         weakRadius=((entry.raw?.weakBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32),
         strongRadius=((entry.raw?.strongBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32),
@@ -794,7 +803,7 @@ internal class LiveBackdropSampler(
                 job.out, job.outWidth, job.outHeight,
                 if (job.profile?.refractionEnabled == false) 0f else job.profile?.refractionStrength ?: 1f
             )
-            LensRefractionPolicy.illuminate(job.out)
+            if (!job.preserveBackdropColors) LensRefractionPolicy.illuminate(job.out)
             LensRefractionPolicy.unpremultiply(job.out)
             val profile = job.profile
             if (profile?.fadeEnabled == true) {

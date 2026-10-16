@@ -413,3 +413,19 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 | `LumenMicaLayer` | COMMAND / CONTENT / CARD；工厂返回宿主所有的低透明度 Drawable，主题、kind、辅助功能改变后由宿主重新创建并赋值；radiusDp 限 0–128 |
 | `LumenMicaFallbackReason` | NONE / DISABLED / HIGH_CONTRAST / REDUCE_TRANSPARENCY / LOW_RAM_DEVICE / POWER_SAVE / WINDOW_INACTIVE / NO_BACKGROUND / MEMORY_PRESSURE / RENDER_UNAVAILABLE / CLOSED |
 | `LumenMicaDiagnostics` | closed / kind / fallbackReason / micaVisible（上一帧云母贡献，回退过渡中可能仍为 true）/ snapshotBytes（当前快照与着色副本合计）/ draws / transitions |
+
+## 21. 小视口来源与共享录制（host，自 1.4.6）
+
+包 `com.lumen.coacervation.engine.host`，位于 **lumen-engine**。全部入口在主线程调用。来源选择、材质、主题、业务坐标、失效与资源预算由宿主决定，API 不接管根 Window，不增加采样线程或常驻帧回调。接入见 [小视口内容源](VIEWPORT_CONTENT_SOURCE.md)与[局部会话](SURFACE_SESSIONS.md)。
+
+| 声明 | 公开成员与语义 |
+|---|---|
+| `LumenViewportContentSource(source: LumenContentSource, regions: (consumer: (View, Float, Float, Float) -> Unit) -> Unit)` | `LumenVersionedContentSource` 的包装器；regions 同步枚举 `surface, insetX, insetY, padding`，单位为该 surface 本地 px；在原来源坐标中求相交区域并集并向外取整，source 的 coordinateView 在包装期间必须稳定 |
+| `LumenViewportContentSource(content: View, regions)` | 同上；使用引擎既有 View 内容源，保留 View 自身滚动的录制语义 |
+| `LumenViewportContentSource.sync(): Boolean` | 在会话 pre-draw 前显式更新移动区域、模糊余量与代理尺寸；返回裁剪边界是否变化。无有效区域时退回完整来源；provider 异常时暂不可用，之后可再次同步恢复；关闭后返回 false |
+| `LumenViewportContentSource` 来源成员及 `close()` | 暴露稳定 coordinateView、原来源 dependencies、sourceEpoch、contentVersion、availability 与 excludesSurfaces；不通过坐标代理的 dirty 驱动捕获。ViewGroup 使用透明 overlay 坐标代理，普通 View 保留原锚点并裁剪 Canvas；源中全部注入表面须列入 regions，未声明排除表面的源不得包含其表面。close 移除代理，不关闭原来源；关闭后不重新附着或绘制 |
+| `LumenDrawableScene.create(hardware: Boolean, scale: Float = 1f): LumenDrawableScene` | companion 工厂并提供 Java 静态重载；API 29+ 的硬件请求创建 RenderNode 录制场，旧系统回退 Picture。scale 及其倒数须有限，scale 在 `(0, 1]`；只影响硬件材质，软件保持完整分辨率 |
+| `LumenDrawableScene.record(drawable: Drawable, width: Int, height: Int)` | 用 Drawable 当前 bounds 录制，宽高须为正；不修改其 bounds/callback，不保留传入 Drawable。硬件栅格尺寸向上取整；调用方限制尺寸与预算并裁剪逻辑区域，取整可能在右/下多出不足一个栅格像素 |
+| `LumenDrawableScene.draw(canvas: Canvas)` / `close()` | 回放最近完成的录制；硬件实例只接受硬件 Canvas，软件采样须持有独立实例。RenderNode 在重新录制与尺寸变化时保持身份；不自动安排刷新。close 释放录制资源且幂等，关闭后的 record/draw/close 均为空操作 |
+
+小视口的原生前景探针独立于自定义源的像素配方。可读性控制器按完整 source/target 相对矩阵映射探针，过滤无效区域时保持结果与绑定身份一致；这些修正不改变原有公开签名。

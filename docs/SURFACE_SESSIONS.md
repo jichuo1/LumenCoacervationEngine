@@ -32,6 +32,28 @@ Dialog/Story 浮层要传入本窗口的来源。来源或目标 detach 后会�
 只有真正排除了全部注入表面时，才能声明 excludesSurfaces=true。录制不得改变 View 的可见性/层级，不得分配逐帧绘制对象。
 引擎录制时也会抑制自身背景，作为最后反馈防线。不同来源窗口独立监听、校验与释放，不共享纹理坐标。
 
+## 小视口来源与共享录制
+
+自 1.4.6 起，可以用 `LumenViewportContentSource(source, regions)` 将大来源的采样范围裁到多个表面所需区域的并集。regions 在每次 `sync()` 中同步提供表面 View、横纵 inset 和模糊 padding，单位均为该表面本地 px。调用方在会话 pre-draw 前同步；原来源的 coordinateView 在 wrapper 生命周期内保持固定。ViewGroup 用透明 overlay 坐标代理提供裁剪后的纹理尺寸，普通 View 只裁剪 Canvas。无有效相交区域时退回完整来源。
+
+完整祖先变换、来源自身滚动、可见性、版本、依赖及反馈拒绝继续生效。原生前景探针读取 owner 的真实内容，不以自定义背景配方代替可读性输入；其区域使用完整 source/target 相对矩阵，非法区域不会改变后续样本对应的绑定。关闭 wrapper 会移除代理，但不关闭调用方的原来源。边界与接入细节见 [VIEWPORT_CONTENT_SOURCE.md](VIEWPORT_CONTENT_SOURCE.md)。
+
+多个卡片需要裁剪同一份已混色材质时，可分别持有硬件和软件 `LumenDrawableScene`；它只封装 Drawable 的录制与回放，不创建新的材质或采样会话：
+
+```kotlin
+val hardware = LumenDrawableScene.create(hardware = true, scale = 0.5f)
+val software = LumenDrawableScene.create(hardware = false)
+// 调用方在素材/尺寸改变时设置 Drawable.bounds，并选择对应实例录制。
+hardware.record(materialDrawable, width, height)
+// 在原有卡片裁剪和坐标变换中回放；软件 Canvas 使用 software 实例。
+hardware.draw(hardwareCanvas)
+// 退场时释放两份录制。
+hardware.close()
+software.close()
+```
+
+只有 API 29+ 的硬件场应用 scale，软件保持完整分辨率；硬件实例拒绝软件 Canvas。硬件节点在 resize 后保持身份，scale 创建后固定，右/下边界取整由调用方现有逻辑裁剪吸收。每个实例的 dirty、可见性、每帧最多录制次数、尺寸与预算仍由调用方负责；关闭后迟到的 record/draw 不重新分配资源。不能把 quarter logical pixels 的结果直接当成真实设备帧时或功耗收益。
+
 ## 配置与调节
 
 配置显式传入、不自动持久化。宿主保存自己的用户意图，并提交不可变配置。构造器拒绝非有限值和越界参数。

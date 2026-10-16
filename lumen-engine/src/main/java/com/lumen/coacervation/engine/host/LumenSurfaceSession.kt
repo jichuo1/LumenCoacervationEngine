@@ -162,13 +162,19 @@ public class LumenSurfaceSession @JvmOverloads constructor(
      * Draw-only View binding for composite materials (Fluent acrylic) that keep their own background.
      * Shares one source group per source View, like [bindSource], so several controls record it once.
      */
-    internal fun bindViewDrawOnly(view: View, surface: LumenSurfaceOptions, source: View): LumenSurfaceBinding {
+    internal fun bindViewDrawOnly(view: View, surface: LumenSurfaceOptions, source: View): LumenSurfaceBinding =
+        bindViewDrawOnly(view, surface, source, false)
+
+    internal fun bindViewDrawOnly(view: View, surface: LumenSurfaceOptions, source: View,
+        preserveBackdropColors: Boolean): LumenSurfaceBinding {
         if (closed) return LumenSurfaceBinding(null, -1L)
         checkMain()
         require(entries.size < options.maxSurfaces) { "Surface count exceeds session budget" }
         val group = groups.firstOrNull { it.source is ViewContentSource && it.source.coordinateView === source }
             ?: Group(ViewContentSource(source)).also(groups::add)
-        val entry = Entry(nextId++, view, surface, group, ViewSurfaceTarget(view, matrices), false)
+        val entry = Entry(nextId++, view, surface, group, ViewSurfaceTarget(view, matrices), false).apply {
+            this.preserveBackdropColors = preserveBackdropColors
+        }
         entries.add(entry)
         group.refreshCounterOptions()
         entry.rebuild()
@@ -791,6 +797,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         val quality=LumenSurfaceQualityPolicy()
         var pressureHint=0f
         var direct: DirectSurfaceProgramApi33?=null
+        // Composite acrylic applies its own luminosity recipe after the sampled backdrop.
+        var preserveBackdropColors = false
         var rawProfile=LumenRawSampleProfile(1f)
         var rawSampling=config.sampling
         var rawDetail: LumenDetailMode?=null
@@ -1064,7 +1072,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                         reason = LumenSurfaceFailure.BUDGET_EXCEEDED
                                     } else {
                                     entry.gpuPixels = pixels
-                                    val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics).also { entry.gpu = it }
+                                    val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics,
+                                        preserveBackdropColors = entry.preserveBackdropColors).also { entry.gpu = it }
                                     group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, alpha * c.backdropOpacity)
                                     backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(entry.target)
                                     }
@@ -1072,7 +1081,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                             } catch (_: Throwable) { entry.gpuFailed = true; entry.releaseGpu(); reason = LumenSurfaceFailure.GPU_FAILED }
                         }
                         if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling)) {
-                            group.sampler.register(entry.target, c.sampling)
+                            group.sampler.register(entry.target, c.sampling, preserveBackdropColors = entry.preserveBackdropColors)
                             if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * alpha * c.backdropOpacity).roundToInt())) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
                             } else if (group.sampler.hasFailed) reason = LumenSurfaceFailure.SOFTWARE_FAILED

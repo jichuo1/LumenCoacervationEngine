@@ -10,6 +10,19 @@ Apache License, Version 2.0. The Bilibili Innocent Lab project itself,
 including its own copy of the engine, remains under its original license
 (GNU General Public License v3.0).
 
+The viewport-source cropping and shared Drawable recording introduced in 1.4.6
+adapt contributions by LiJiaHua1024 to Bilibili Innocent Lab's next branch:
+ba9e4e4ef59a1d2a0d524df811eb84928e26f936 (shared acrylic recording),
+fc840a5aa6e9021c41dd7f24ab1ec68f2d873b90 (shared material fields and status-source cropping),
+222e0ba9f9f8a43c0c215b5d1025146509453b29 (viewport cropping and reduced-resolution composition).
+The acrylic backdrop color preservation and source invalidation updates also adapt:
+e92737b4da832c7f4e93adacb7598eaaa159590b (preserving acrylic backdrop colors),
+56600c9ef321f7a16050b941ef3d36146085c9d5 (descendant invalidation, sampling coordinates and glass).
+Copyright 2026 LiJiaHua1024. The project maintainer confirmed on 2026-10-16
+that the contributor agreed to inclusion of these contributions in this engine
+under the Apache License, Version 2.0. Their attribution is retained here;
+the source project's license is unchanged. See THIRD_PARTY_NOTICES.md for source links.
+
 Native overscroll sampling compensation derives from Android Open Source Project
 frameworks/base core/java/android/widget/EdgeEffect.java and
 libs/hwui/effects/StretchEffect.cpp (Copyright 2010, 2021 The Android Open Source Project),

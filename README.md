@@ -42,6 +42,7 @@
 
 - 柔光与高级玻璃材质，多种表面角色
 - 可选 Mica / Mica Alt 云母窗口背景、内容分层与失焦回退，见[云母材质](docs/MICA_MATERIAL.md)
+- 局部取样区域裁剪与共享 Drawable 录制，见[小视口内容源](docs/VIEWPORT_CONTENT_SOURCE.md)和[局部会话](docs/SURFACE_SESSIONS.md)
 - 悬浮栏可读性、触摸光晕
 - 接入的竖向滚动回弹与材质采样同步
 - 材质降级与健康回退
@@ -98,7 +99,7 @@
 
 | 项 | 说明 |
 |:---|:---|
-| **引擎版本** | 1.4.5 |
+| **引擎版本** | 1.4.6 |
 | **运行系统** | Android 8.1+（`minSdk 27`） |
 | **编译环境** | `compileSdk 37`；源码构建使用 JDK 17+ |
 | **基础依赖** | 引擎本体依赖 AndroidX core；motion 不要求 AppCompat |
@@ -148,10 +149,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.4.5")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.4.6")
     // 按需添加，版本保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.4.5")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.4.5")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.4.6")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.4.6")
 }
 ```
 
@@ -224,6 +225,8 @@ override fun onTrimMemory(level: Int) {
 ## 出处与许可
 
 引擎抽离自 [Bilibili Innocent Lab](https://github.com/jichuo1/Bilibili_Innocent_Lab)，由原作者以 [Apache License 2.0](LICENSE) 重新授权发布，详见 [`NOTICE`](NOTICE)。来源工程保留其原有许可证。
+
+自 1.4.6 起的视口裁剪与共享录制还吸收了 LiJiaHua1024 在来源工程 `next` 分支的贡献，已取得其同意以 Apache-2.0 纳入引擎；具体提交和归属见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 
 感谢来源工程、AndroidX、Kotlin，以及参与使用和反馈的开发者。
 

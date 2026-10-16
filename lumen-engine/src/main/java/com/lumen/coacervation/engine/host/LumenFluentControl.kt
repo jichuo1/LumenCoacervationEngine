@@ -154,7 +154,7 @@ public class LumenFluentControl @JvmOverloads constructor(
         val content = sourceRef?.get() ?: return
         if (owner.isClosed || bindRejected) return
         try {
-            binding = owner.bindViewDrawOnly(view, surfaceOptions(), content).takeIf { it.isBound }
+            binding = owner.bindViewDrawOnly(view, surfaceOptions(), content, preserveBackdropColors = true).takeIf { it.isBound }
         } catch (_: IllegalArgumentException) {
             // The host's session surface budget is full; acrylic falls back on its own, the page is unaffected.
             bindRejected = true

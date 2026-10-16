@@ -1,0 +1,53 @@
+# 1.4.6 小视口来源与共享录制发布审阅
+
+源码基线为 `4b440861989e0d339bdf92cf16e1e5a8cea61c89`（1.4.5）。本次将宿主通用的视口裁剪与共享录制机制提取为可选引擎 API，并修正透明 overlay 坐标与可读性探针；页面结构、壁纸配方、Hook、宿主主题、业务判断和最终材质选择继续由宿主拥有。
+
+审阅范围随后包含来源工程合并 `15a31d8f63bbc5bf98845b03396e6b8f8bf9221b` 中的后续贡献：亚克力底图保色，以及软件来源的后代失效／属性移动刷新。下列早期候选证据不包含这些后续改动，最终门禁与设备需要按扩展后的完整源码重新执行。
+
+## 行为、来源与兼容性
+
+- `LumenViewportContentSource` 合并取样区域，保留模糊余量、原来源依赖与版本、真实坐标、自身滚动和自采样拒绝。ViewGroup 的透明代理只改变采样坐标与纹理尺寸，普通 View 保留原锚点；关闭移除代理但不关闭原来源。
+- overlay 的实际可见性和祖先矩阵不能由普通 parent 链推断。代理明确采用 owner 的可见性，并将 owner 的完整变换补入坐标；原生前景探针与自定义背景像素分离。版本化且已排除表面的源保留其自身版本权威，避免注入表面重绘诱发持续录制。
+- `LumenDrawableScene` 封装硬件 RenderNode 和软件 Picture；同一硬件节点在 resize 后保留身份，固定 scale 只影响硬件柔化材质，软件保持完整分辨率。两类缓存分别持有，硬件实例拒绝软件 Canvas；调用方管理脏标记、裁剪、可见性、尺寸和逐帧预算。
+- 可读性探针按 source/target 的完整相对矩阵定位。过滤非法区域时同步保留对应 entry，避免回执索引错配。
+- 亚克力的模糊底图不再先应用普通磨砂预提亮，避免两次亮度处理冲淡浅色背景。内部 Entry 标志分别传入 GPU 及软件作业快照，普通 FROSTED 默认提亮不变；公开 `LumenSurfaceSampling` 主构造、默认参数和 copy ABI 不增加字段，原三参数内部绑定入口也保留为委托重载。
+- 软件来源补齐后代失效与属性移动签名，子 View 变化可刷新纹理，静止继续收敛；相应独立设备回归纳入所有 smoke API 必测。
+- 没有新增生产依赖、权限、皮肤或持久化协议。既有公开入口与默认材质保留，minSdk 27，`CONTRACT_VERSION` 仍为 1；新增兼容 API 按用户明确指定采用 1.4.6，编号例外记录在 `VERSIONING.md`。
+
+本次提取吸收 LiJiaHua1024 在 Bilibili Innocent Lab `next` 分支的 `ba9e4e4e`（共享亚克力录制）、`fc840a5a`（共享材质场与状态来源裁剪）、`222e0ba9`（视口裁剪与低分辨率合成）贡献。项目维护者于 2026-10-16 确认已取得贡献者同意，以 Apache-2.0 纳入 Lumen；原作者归属、完整提交与来源链接保留在 `NOTICE`、`THIRD_PARTY_NOTICES.md`，不更改来源项目整体许可证。
+
+后续吸收同一贡献者的 `e92737b4da832c7f4e93adacb7598eaaa159590b` 亚克力保色补丁，以及 `56600c9ef321f7a16050b941ef3d36146085c9d5` 后代失效、坐标与玻璃修复中的通用来源刷新逻辑；授权及归属同样保留，宿主壁纸滚动和导航栏业务处理不迁入本引擎。
+
+## 验证设计
+
+纯几何覆盖区域并集、边界裁剪、向外取整、连续移动、矩阵合成、scale 参数和极值。源码契约保护 API 29 类型隔离、overlay、前景探针、反馈与关闭出口。
+
+新增设备回归覆盖小视口的偏移／缩放／旋转／自身滚动像素、静止收敛、来源版本与 availability、异常恢复和 close；共享录制覆盖完整软件像素、Drawable 借用状态、失败录制恢复、稳定节点引用和软硬资源隔离；可读性回归调用实际 controller，检查缩放 owner 下的探针位置与非法区域后的样本对应关系。
+
+必测清单按 API 29 边界登记：API 27／28 要求硬件请求的 Picture 回退；API 29+ 要求硬件节点像素与缓存回归。公共软件、视口与可读性用例在所有 smoke API 必须通过。既有协议／XML 的身份、计数、失败、跳过、时间和终止校验继续保留。
+
+新增亚克力像素回归以关闭额外 tint／luminosity／noise 的原始底图作对照，分别检查两种浅色、updatePalette／选项更新与禁用后重绑，并同时检查普通 FROSTED 仍然提亮。软件在所有 smoke API 必测，GPU 在 API 31+ 必测；软件后代失效／属性移动回归同样列入全 API 必测。
+
+## 已有候选证据
+
+版本升级前的隔离候选已通过本地源码与构建门禁：consumer 的 3,358 项 JVM／契约用例无失败，保留一个预期的私有服务端投影跳过；引擎 533 项和 motion 380 项用例无失败、无跳过。候选 APK／androidTest APK 编译、Lint 和 R8 通过。
+
+候选设备首轮在 PMA110／API 37 上实际执行上述三个新增测试类：11 项，10 项通过，旧系统 Picture 回退用例在 API 37 上产生一个预期 assumption skip，无失败或错误。该包仍使用 1.4.5 候选版本号和独立的 `verify146` 包名；安装后实际 `base.apk` 与本轮 bundle 的 SHA-256 一致，为 `91e023534a3f1cc79b5b381aaed5bcaf4cbc6586fde17670cccf0eb59aca2a2a`。此结果尚未包含 release 树后续热路径复用改动，也未执行最终 1.4.6 字节。
+
+本轮新增必测名单及解析器回归后，`python -m unittest discover -s tools -p test_verify_smoke_results.py -v` 的 27 项主机测试通过。它核对三类实际 `@Test` 名与必测注册完全一致，并验证 API 29 分界、缺失／失败／错误／跳过均失败封闭；不代替设备执行。
+
+上述数字对应候选验证，不能替代 1.4.6 最终版本的完整门禁、设备像素或实际宿主效果。本轮不以编译、安装成功或逻辑像素面积证明 GPU 帧时、功耗、OEM 等价性或 LSPosed／Hook 页面验收。
+
+## 最终版本与设备验收
+
+- **本地完整门禁通过。** 最终 1.4.6 执行完整 CI 任务图并发布本地 Maven：937 项 JVM／源码契约，0 失败、0 错误、0 跳过；50 项发布与设备结果脚本测试通过。十个模块／Sample 的 Debug Lint 均为 0 生效错误；Sample R8、Debug APK、九模块 AAR／源码包与 1.4.6 本地 Maven 身份、ZIP 路径安全均通过，七组分发许可证检查通过。
+- **兼容性与 DEX。** 以正式 1.4.5 的 core／motion AAR 为基线，11 个受检类的既有 JVM 成员全部保留；`LumenSurfaceSampling` 的构造、默认参数、copy 与 componentN 未变。DEX 中高版本类型候选均处在对应隔离类；新增 RenderNode 字段仅位于 `DrawableSceneApi29`，既有 API 34 返回动画回调仍由 API 34 入口门控。
+- **PMA110／API 37 设备验收通过。** 最终版本使用独立 `com.lumen.coacervation.sample.verify146` 验证包，保留原 Demo 和 BIL 模块及配置。新增五类共 14 项：13 通过，1 项仅适用于 API 29 以下，按预期 assumption 跳过；既有 LocalSurface、ScrollSource、TintContinuity、Mica 四类共 21 项全部通过。总计 35 项／34 通过／1 预期跳过，0 失败、0 协议错误，均保留原始 instrumentation 与逐项 XML。
+- **实际字节与源码身份。** 安装后 pull app／test 的实际 base.apk，与冻结 bundle 分别逐字节核 SHA-256：app `e720a29265493d116a5c4f6290a76692ffdfcf556a9dc0830f0461c13ff30460`；test `29ba42be828e67f026acde0826addb5dbcefcefffb726f210c35ea73afcfba08`。十个本轮生产文件在 release 树、独立设备构建树与冻结清单中哈希一致。包名隔离验证与后续 CI 发布的标准包字节分别记录，不混同。
+- **验收范围。** 设备覆盖真实窗口像素、后端选择、可见性、连续变换、子 View 刷新、浅色背景保色、普通磨砂默认提亮、稳定节点引用、异常与生命周期恢复；本地未执行整个设备测试包。真实 BIL 的 LSPosed／Hook 页面、OEM 全机型等价性、长时间堆上界、GPU 帧时和功耗仍不由这些结果推断，远端四版本矩阵及精确发布字节以下述最终元数据为准。
+
+## 远端与发布附件
+
+最终 commit 的 `push/main` CI 与 Demo API 27／31／33／34 矩阵分别验收；tag `1.4.6` 必须等于 `lumen.version` 并固定到该 commit。发布工具检查 tag 源码、源码包、审阅文件、九模块身份、资产清单、大小及 SHA-256；Demo 以同一 APK 对完成矩阵后上传，JitPack 按精确公开 tag 核对。
+
+本文不预先声明远端工作流、Demo 发布或 JitPack 成功。实际 tag 提交、工作流运行、23 项发布资产和校验结果由 Release 的 `VERIFICATION_1.4.6.json` 与 `SHA256SUMS.txt` 记录。此审阅随 tag 和 `REVIEW_1.4.6.md` 发布后保持不可变。

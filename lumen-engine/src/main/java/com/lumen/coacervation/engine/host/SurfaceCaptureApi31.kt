@@ -85,7 +85,8 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
     }
 
     @RequiresApi(31)
-    class Glass(options: LumenSurfaceOptions, density: Float, dark: Boolean, cache: LensCache, counters: LumenGraphicsCounters? = null) : AutoCloseable {
+    class Glass(options: LumenSurfaceOptions, density: Float, dark: Boolean, cache: LensCache,
+        counters: LumenGraphicsCounters? = null, preserveBackdropColors: Boolean = false) : AutoCloseable {
         private val sampling = options.sampling
         private val pad = (maxOf(20f * sampling.refractionStrength, (if (sampling.blurEnabled) sampling.blurRadiusDp else 0f) * 2f) * density).roundToInt() + 2
         private val blur = if (!sampling.blurEnabled || sampling.blurRadiusDp == 0f) RenderEffect.createOffsetEffect(0f, 0f)
@@ -97,13 +98,13 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         private val lensStrength = if (sampling.refractionEnabled) sampling.refractionStrength else 0f
         // ColorMatrix can retain extended-range RGB through the following alpha blend. The existing
         // frosted shader clamps RGB to premultiplied alpha before fading, including when the lens is off.
-        private val lens: Any? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        private val lens: Any? = if (!preserveBackdropColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             (options.material == LumenSurfaceMaterial.FROSTED || lensStrength > 0f)) {
             cache.lens(options.material, liquidParameters, density, lensStrength, counters)
         } else null
         val renderer = GlowChromeGlassApi31(pad) { width, height, padding, radius, intensity, direction ->
             var effect = blur
-            if(options.material==LumenSurfaceMaterial.FROSTED&&lens==null) {
+            if(options.material==LumenSurfaceMaterial.FROSTED&&lens==null&&!preserveBackdropColors) {
                 val gain=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_GAIN
                 val bias=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_BIAS
                 effect=RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(ColorMatrix(floatArrayOf(

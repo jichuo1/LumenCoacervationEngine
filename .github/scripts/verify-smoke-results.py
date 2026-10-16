@@ -6,6 +6,27 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "AcrylicBackdropColorTest": {
+        "softwareAcrylicPreservesPaleColorsWhileOrdinaryFrostedStillIlluminates",
+    },
+    PREFIX + "ViewportSoftwareInvalidationTest": {
+        "softwareViewportRefreshesDescendantInvalidationAndPropertyMovement",
+    },
+    PREFIX + "DrawableSceneInstrumentedTest": {
+        "softwareRecordingKeepsNativePixelsAndBorrowedDrawableStateAndCloseIsFinal",
+        "failedSoftwareRecordingIsNotReplayedAndTheNextRecordCanRecover",
+    },
+    PREFIX + "ViewportContentSourceTest": {
+        "overlayVisibilityFollowsOwnerAndCloseCannotReviveIt",
+        "croppedSourceAndForegroundProbeMatchTheOwnerIncludingItsOwnScroll",
+        "customPixelsAndNativeForegroundRemainSeparateAndVersionsStayPure",
+        "continuousSurfaceMovementUpdatesTheCropAndStaticGeometryConverges",
+        "hiddenDescendantSurfaceIsStillRejectedAndProviderFailureRecovers",
+        "nonContainerSourceRetainsItsAnchorAndClipsInSourceCoordinates",
+    },
+    PREFIX + "SurfaceLegibilityViewportTest": {
+        "controllerMapsTheProbeIntoAnOffsetScaledOwnerAndKeepsPendingEntriesAligned",
+    },
     PREFIX + "MicaIntegrationTest": {
         "backgroundPreparationIsBoundedBorrowedAndMainThreadGuarded",
         "fallbackColoursAreOpaqueAndHighContrastHonoursHostPalette",
@@ -114,6 +135,12 @@ REQUIRED = {
         "bitmapSamplingTransformMatchesNativeWarpAtSurfaceEndpoints",
     },
 }
+ACRYLIC_GPU_TEST = (PREFIX + "AcrylicBackdropColorTest",
+                    "gpuAcrylicPreservesPaleColorsWhileOrdinaryFrostedStillIlluminates")
+SCENE_HARDWARE_TEST = (PREFIX + "DrawableSceneInstrumentedTest",
+                       "hardwareResizeAndFailureKeepCachedReferencesSafeAndSoftwareCaptureIndependent")
+SCENE_PRE29_TEST = (PREFIX + "DrawableSceneInstrumentedTest",
+                    "pre29HardwareRequestsUseAFullResolutionSoftwareRecording")
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
 LINEAR_GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "linearGpuFadeHasUniformPixelCoverage")
 PANEL_STRETCH_TESTS = {
@@ -143,7 +170,9 @@ ENHANCED_GPU_TESTS = {
 
 def required_tests(api):
     required = {(owner, name) for owner, methods in REQUIRED.items() for name in methods}
+    required.add(SCENE_HARDWARE_TEST if api >= 29 else SCENE_PRE29_TEST)
     if api >= 31:
+        required.add(ACRYLIC_GPU_TEST)
         required.add(GPU_TEST)
         required.add(LINEAR_GPU_TEST)
         required.update(PANEL_STRETCH_TESTS)

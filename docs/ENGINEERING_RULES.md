@@ -54,7 +54,7 @@ ART 执行 `check-cast` 和 `instance-of` 时，**先解析类型、再判断 nu
 | API | 隔离类 |
 |---|---|
 | 28 | `LiquidImageDecoderApi28` |
-| 29 | `LiquidThermalMonitorApi29`、`AcrylicBlendApi29`（Fluent 亚克力的 `BlendMode.LUMINOSITY` / `COLOR`） |
+| 29 | `LiquidThermalMonitorApi29`、`AcrylicBlendApi29`（Fluent 亚克力的 `BlendMode.LUMINOSITY` / `COLOR`）、`DrawableSceneApi29`（共享 Drawable 的 RenderNode 录制与回放） |
 | 31 | `GlowContentCaptureApi31`、`GlowChromeGlassApi31`、`GlowChromeBlurApi31`、`LiquidBlurBackendApi31`、`LiquidChromeBackdropApi31`、`LiquidPerformanceHintApi31`、`FrostedChromeGlassApi31`、`SurfaceCaptureApi31`（局部视效会话的节点采样） |
 | 33 | `LiquidRefractionBackendApi33`、`LiquidChromeLensApi33`、`FrostedChromeLensApi33`、`DirectSurfaceProgramApi33`（局部增强的直接着色）；lumen-motion：`PredictiveBackApi33`（承载 `android.window.*` 返回回调，对外签名一律用 `Any`）、`AnimatorDurationScaleApi33`；lumen-effects：`ProceduralProgramApi33` |
 
