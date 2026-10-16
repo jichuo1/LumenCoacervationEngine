@@ -448,7 +448,15 @@ public class LumenSurfaceSession @JvmOverloads constructor(
 
     private fun recordSource(source: LumenContentSource, canvas: Canvas) {
         recordingScrolls.beginRecord()
-        try { source.drawContent(canvas) } finally {
+        try {
+            val saved = canvas.save()
+            try {
+                val view = source.coordinateView
+                // Both capture backends own this declared frame; ancestor/background overflow is not input.
+                canvas.clipRect(0, 0, view.width, view.height)
+                source.drawContent(canvas)
+            } finally { canvas.restoreToCount(saved) }
+        } finally {
             recordingScrolls.finishRecord(!closed && !paused, applyDeferredScroll)
         }
     }

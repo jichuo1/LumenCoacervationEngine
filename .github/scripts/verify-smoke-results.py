@@ -6,6 +6,9 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "SurfaceSourceFrameClipTest": {
+        "softwareHaloIgnoresPixelsOutsideDeclaredSourceFrame",
+    },
     PREFIX + "AcrylicBackdropColorTest": {
         "softwareAcrylicPreservesPaleColorsWhileOrdinaryFrostedStillIlluminates",
     },
@@ -135,6 +138,8 @@ REQUIRED = {
         "bitmapSamplingTransformMatchesNativeWarpAtSurfaceEndpoints",
     },
 }
+FRAME_CLIP_GPU_TEST = (PREFIX + "SurfaceSourceFrameClipTest",
+                       "gpuHaloIgnoresPixelsOutsideDeclaredSourceFrame")
 ACRYLIC_GPU_TEST = (PREFIX + "AcrylicBackdropColorTest",
                     "gpuAcrylicPreservesPaleColorsWhileOrdinaryFrostedStillIlluminates")
 SCENE_HARDWARE_TEST = (PREFIX + "DrawableSceneInstrumentedTest",
@@ -172,6 +177,7 @@ def required_tests(api):
     required = {(owner, name) for owner, methods in REQUIRED.items() for name in methods}
     required.add(SCENE_HARDWARE_TEST if api >= 29 else SCENE_PRE29_TEST)
     if api >= 31:
+        required.add(FRAME_CLIP_GPU_TEST)
         required.add(ACRYLIC_GPU_TEST)
         required.add(GPU_TEST)
         required.add(LINEAR_GPU_TEST)

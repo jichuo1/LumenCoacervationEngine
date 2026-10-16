@@ -14,7 +14,7 @@ VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 
 VISUAL_HELPER_CLASSES = ("DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
-                         "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest")
+                         "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest", "SurfaceSourceFrameClipTest")
 
 
 class SmokeResultsTest(unittest.TestCase):
@@ -26,6 +26,7 @@ class SmokeResultsTest(unittest.TestCase):
             keys = {(owner, name) for owner, names in VERIFIER.REQUIRED.items() for name in names}
             keys.add(VERIFIER.SCENE_HARDWARE_TEST if api >= 29 else VERIFIER.SCENE_PRE29_TEST)
             if api >= 31:
+                keys.add(VERIFIER.FRAME_CLIP_GPU_TEST)
                 keys.add(VERIFIER.ACRYLIC_GPU_TEST)
                 keys.add(VERIFIER.GPU_TEST)
                 keys.add(VERIFIER.LINEAR_GPU_TEST)
@@ -66,6 +67,8 @@ class SmokeResultsTest(unittest.TestCase):
                 registered.update((VERIFIER.SCENE_HARDWARE_TEST[1], VERIFIER.SCENE_PRE29_TEST[1]))
             elif owner == "AcrylicBackdropColorTest":
                 registered.add(VERIFIER.ACRYLIC_GPU_TEST[1])
+            elif owner == "SurfaceSourceFrameClipTest":
+                registered.add(VERIFIER.FRAME_CLIP_GPU_TEST[1])
             with self.subTest(owner=owner):
                 self.assertTrue(actual)
                 self.assertEqual(actual, registered)
@@ -91,6 +94,7 @@ class SmokeResultsTest(unittest.TestCase):
         for api in (27, 31, 33, 34):
             keys = {VERIFIER.SCENE_HARDWARE_TEST if api >= 29 else VERIFIER.SCENE_PRE29_TEST}
             if api >= 31:
+                keys.add(VERIFIER.FRAME_CLIP_GPU_TEST)
                 keys.add(VERIFIER.ACRYLIC_GPU_TEST)
             for owner in VISUAL_HELPER_CLASSES:
                 keys.update((VERIFIER.PREFIX + owner, name) for name in VERIFIER.REQUIRED[VERIFIER.PREFIX + owner])
@@ -104,6 +108,12 @@ class SmokeResultsTest(unittest.TestCase):
             with self.subTest(api=api):
                 self.assertEqual(api >= 31, VERIFIER.ACRYLIC_GPU_TEST in VERIFIER.required_tests(api))
                 self.assertEqual(api < 31, self.check(api=api, omit=VERIFIER.ACRYLIC_GPU_TEST))
+
+    def test_frame_clip_gpu_requirement_starts_at_api31(self):
+        for api in (27, 29, 30, 31, 33, 34, 37):
+            with self.subTest(api=api):
+                self.assertEqual(api >= 31, VERIFIER.FRAME_CLIP_GPU_TEST in VERIFIER.required_tests(api))
+                self.assertEqual(api < 31, self.check(api=api, omit=VERIFIER.FRAME_CLIP_GPU_TEST))
 
     def test_native_compose_and_canvas_targets_are_required_on_min_sdk(self):
         for owner in ("NativeComposeIntegrationTest", "NativeSurfaceTargetTest"):

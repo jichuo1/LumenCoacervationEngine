@@ -267,7 +267,7 @@
 - setListener / updatePalette / updateOptions / notifyContentChanged / notifyPositionChanged / `notifyScrollPositionChanged(scrollHost: View)`。
 - pause / resume / releaseGraphics / diagnostics / close；关闭后入口无副作用。
 - LumenSurfaceBinding：id / update / diagnostics / close；旧绑定不能关闭新绑定。
-- LumenContentSource：coordinateView / excludesSurfaces / drawContent(Canvas)。
+- LumenContentSource：coordinateView / excludesSurfaces / drawContent(Canvas)。Session 的 GPU 与软件录制均裁剪到 `coordinateView` 的局部 `[0,width) × [0,height)`；需要额外采样余量的自定义来源应声明足够大的视口，不能依赖画出该范围的内容。
 - LumenSurfaceOptions / LumenSurfaceSampling / LumenSurfaceSessionOptions：不可变配置，所有字段受范围约束。
 - `LumenSurfaceSampling.fadeCurve`：`LumenSurfaceFadeCurve.SMOOTH`（默认，保持原平滑曲线）或 `LINEAR`（hold 到 end 之间等速衰减）。方向、端点及透明尾部规则相同；GPU、软件采样和静态承托使用同一曲线。不改变未显式选择 LINEAR 的表面。
 - LumenSurfaceMaterial / LumenSurfaceBackend / LumenSurfaceFadeDirection / LumenSurfaceFailure：公开枚举。
