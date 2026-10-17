@@ -160,6 +160,9 @@ public class LumenModalPresenter @JvmOverloads constructor(
             (style.paddingBottomDp * density).toInt()
         )
         background = lumen.modalBackground(lumen.palette.surface, style.cornerRadiusDp)
+        // 面板里的控件可能带软阴影或按压放大：内容容器放行两层裁剪（§5.6、§12.3）。
+        clipChildren = false
+        clipToPadding = false
         // 两套材质的卡片都是半透明的，不能用系统 elevation 投影：系统按不透明物体画阴影，半影有一半落在卡片
         // 内侧，透过玻璃显成一圈灰带。与气泡面板一致不带投影，面板靠描边与背板区分。
         elevation = 0f

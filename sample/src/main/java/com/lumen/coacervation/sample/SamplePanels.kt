@@ -206,6 +206,9 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
         orientation = LinearLayout.VERTICAL
         setPadding(dp(18), dp(16), dp(18), dp(16))
         background = lumen.cardBackground(palette.surface)
+        // 软阴影与按压放大都会画到子 View 边界之外：宿主放行两层裁剪（§5.6、§12.3）。
+        clipChildren = false
+        clipToPadding = false
         addView(swapTarget)
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL

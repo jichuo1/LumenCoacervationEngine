@@ -377,6 +377,9 @@ class SampleActivity : AppCompatActivity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(18), dp(16), dp(18), dp(16))
             background = lumen.cardBackground(palette.surface)
+            // 里面的按钮与控件表面带软阴影：宿主放行两层裁剪（§5.6）。
+            clipChildren = false
+            clipToPadding = false
             addView(EditText(context).apply {
                 hint = "输入框：SELECTED_ITEM 表面 + 控件描边"
                 setTextColor(palette.textPrimary)

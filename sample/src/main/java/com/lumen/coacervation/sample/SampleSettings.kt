@@ -215,6 +215,9 @@ internal fun SampleActivity.settingsCard(palette: LumenPalette, title: String) =
     orientation = LinearLayout.VERTICAL
     setPadding(dp(18), dp(16), dp(18), dp(16))
     background = lumen.cardBackground(palette.surface)
+    // 分段选项（CHIP 表面）等子控件的软阴影会画出自身边界：放行两层裁剪（§5.6）。
+    clipChildren = false
+    clipToPadding = false
     addView(TextView(context).apply {
         text = title
         textSize = 16f
