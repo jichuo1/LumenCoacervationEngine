@@ -67,10 +67,11 @@
 
 | 声明 | 说明 | 标准 |
 |---|---|---|
-| `LumenControlShadowOptions(enabled, blurRadiusDp, offsetYDp, spreadDp, opacity, contactOpacity, color, adaptToTheme, softenOverlap)`；`LumenControlShadowOptions.DISABLED` | 配置构造时校验范围；`adaptToTheme` 使深色主题自动加强环境影、减弱接触带；`softenOverlap` 在相邻同级控件落在外扩阴影内时降低本控件强度，避免交叉处叠加过黑 | §5.6 |
+| `LumenControlShadowOptions(enabled, blurRadiusDp, offsetYDp, spreadDp, opacity, contactOpacity, color, adaptToTheme, softenOverlap, overlapAttenuation)`；`LumenControlShadowOptions.DISABLED` | 配置构造时校验范围；`adaptToTheme` 使深色主题自动加强环境影、减弱接触带；`softenOverlap` 在相邻同级控件落在外扩阴影内时降低本控件强度，`overlapAttenuation`（0.1–1，默认 0.55）为保留比例 | §5.6 |
 | `LumenControlShadow.wrap(content, cornerRadiusDp, density, options, dark): Drawable` | 给任意背景包一层阴影；`enabled = false` 原样返回内容 | §5.6 |
 | `LumenControlShadow.shadowOnly(cornerRadiusDp, density, options, dark): Drawable` | 只要阴影层，叠在宿主自有背景之下 | §5.6 |
 | `LumenControlShadow.outsetPx(options, density): Int` | 阴影在控件边界外的最大外扩像素 | §5.6 |
+| `NavigationBarSelectionMask.color(palette, strength): Int` | 底栏选中滑块的对比遮罩：浅色用深色、深色用浅色，`strength` 0–1 连续；结果交给 `chromeOverlayBackground(..., selected = true)` | §12.4 |
 
 ### `abstract class LumenActivity : android.app.Activity`
 

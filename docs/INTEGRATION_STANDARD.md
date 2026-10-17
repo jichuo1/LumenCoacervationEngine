@@ -313,7 +313,7 @@
 - 单控件接入：`LumenControlShadow.wrap(content, cornerRadiusDp, density, options, dark)` 包住任意背景；`shadowOnly(...)` 只要阴影层。
 - 阴影画在控件边界**之外**：祖先容器需要 `clipChildren=false` 或按 `LumenControlShadow.outsetPx(options, density)` 预留外侧间距。密集列表（卡片互相贴边）里的阴影会被相邻项裁掉——这正是想要的效果，不要在那种布局里为它腾间距。
 - 列表类容器（`RecyclerView`、`ScrollView` 的内容层）要同时放行 `clipChildren=false` 与 `clipToPadding=false`，否则行阴影会在容器边界（而不是窗口边缘）被直线切掉；再按 `outsetPx` 留出内边距可保留完整尾部。
-- 重叠：`softenOverlap` 开启时，同级控件落在外扩阴影内会降低本控件强度（0.55×），避免交叉处叠加过黑；默认关闭（直接叠加）。这是同级 bounds 的近似检测，不改变纹理与缓存，宿主可按页面密度自行取舍。
+- 重叠：`softenOverlap` 开启时，同级控件落在外扩阴影内会降低本控件强度（`overlapAttenuation`，默认 0.55、范围 0.1–1），避免交叉处叠加过黑；默认关闭（直接叠加）。这是同级 bounds 的近似检测，不改变纹理与缓存，跨父容器/嵌套阴影不会命中，宿主可按页面密度自行取舍。
 - 延展与强度是连续量：`blurRadiusDp` 控制外扩范围、`opacity` 控制环境影强度、`contactOpacity` 控制贴边接触带；Demo 滑块按 0.1dp / 0.005 步长调节。
 - 宿主职责：阴影不与平台的 `elevation` 阴影叠加管理；同一控件二选一，避免双影。
 
@@ -517,7 +517,8 @@ root（bindRoot）
   - 轻点选页；横向按住拖动时滑块跟手，松手吸附到最近一页；纵向拖动只做弹性位移，不选页；
   - 触点高光带方向；
   - 宿主在翻页器的 `onPositionChanged` 里调用 `setPageProgress(position, notifyPositionChanged = false)`，在 `onPageSelected` 里调用 `setSelectedPage(index)`，把悬浮栏可读性接到 `setLegibility(boost, palette.surface)`，销毁时 `dispose()`。
-  - 选中滑块的背景**应当**用与栏体相反的对比遮罩：浅色主题用深色半透明、深色主题用浅色半透明（例如 `palette.textPrimary` 约 20% 透明度），不要与栏体同色，否则选中态在浅底上几乎读不出来。强度由宿主按 0–1 连续调节；Demo 设置页的「选中遮罩强度」即这条策略。
+  - 选中滑块的背景**应当**用与栏体相反的对比遮罩：浅色主题用深色半透明、深色主题用浅色半透明（例如 `palette.textPrimary` 约 20% 透明度），不要与栏体同色，否则选中态在浅底上几乎读不出来。强度由宿主按 0–1 连续调节；可直接用 `NavigationBarSelectionMask.color(palette, strength)`，Demo 设置页的「选中遮罩强度」即这条策略。
+  - 底栏背景的可选软阴影画在胶囊**之外**，因此承载 `LumenNavigationBar` 的父容器也必须 `clipChildren=false`；栏自身的 `clipToOutline` 已关闭，只给触点光晕单独按胶囊轮廓裁剪。
 - **`LumenSegmentScrubBar`**（分段档位条）：与底栏共用手势判定、高光和弹簧；用 `configure(labels, colors, thumbBackground, trackBackground, selectedIndex, onSelect)` 配置，1～8 段（§15.1）。
 - 两者都**必须**满足 §12.1 的 `EXCLUDED_TAG` 和 §12.3 的宿主裁剪。
 

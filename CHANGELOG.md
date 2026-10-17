@@ -9,7 +9,9 @@
 - 可选控件软阴影（`LumenControlShadowOptions` / `LumenControlShadow`，`LumenActivityDelegate.controlShadowProvider` 与 `LumenActivity.resolveControlShadow()`）：环境层（1.6× 模糊半径的宽幅高斯尾）+ 贴边接触带按到控件轮廓的距离场烘焙成连续剖面，解决浅色主题下浅色表面与白底内容分不清边的问题（色罩与白色描边在浅底失效）。纯软件位图缓存、API 27+ 可用、与高级材质无关；环境层与接触带各一张 0.4× 纹理（单张 ≤ 256×256 px，合计 ≤ 2 MiB），内存告急随 `releaseGraphics()` 清空。阴影**只画在控件边界之外**：内侧不画，边缘保留自己的干净轮廓，多个控件叠加时不会互相压出暗边。宿主需按 `outsetPx` 预留外侧间距或不裁剪子 View。吸收自 ColorOS SystemUI 的内阴影/描边分层思路，实现与参数体系为引擎自有。
 - 长按回弹弹簧规格 `LumenSpringSpec`：除直接给刚度/阻尼比外，可用 `ofResponseBounce(周期秒, 弹跳)` 以设计口语换算（与厂商弹簧库的 response/bounce 同语义）；`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `springSpec` 参数，默认引擎原样。
 - 跟手位移橡皮筋曲线族 `ElasticRubberCurve { TANH, RATIONAL }`：默认 TANH 不变；RATIONAL 初段更跟手、渐近行程上限更韧，与 TANH 共享同一径向预算与 slop 连续归零。`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `rubberCurve` 参数。
-- Demo 设置页新增「控件阴影」与「长按动效」调参卡：软阴影开关与五个参数、深色自适应、橡皮筋曲线与 response/bounce 弹簧换算；宿主侧持久化（引擎不存），改动重建页面生效。视效调参卡新增「表面立体边缘」开关（默认开启，可关闭贴边受光/底部立体边）；外观卡新增「选中遮罩强度」连续滑块；控件阴影卡新增「重叠处减弱阴影」开关，参数步长细化到 0.1dp / 0.005。
+- Demo 设置页新增「控件阴影」与「长按动效」调参卡：软阴影开关与五个参数、深色自适应、橡皮筋曲线与 response/bounce 弹簧换算；宿主侧持久化（引擎不存），改动重建页面生效。视效调参卡新增「表面立体边缘」开关（默认开启，可关闭贴边受光/底部立体边）；外观卡新增「选中遮罩强度」连续滑块；控件阴影卡新增「重叠处减弱阴影」开关与「重叠保留比例」滑块，参数步长细化到 0.1dp / 0.005。
+- 底栏选中遮罩的公开 helper `NavigationBarSelectionMask.color(palette, strength)`：保留浅色深遮罩/深色浅遮罩策略，强度 0–1 连续；`softenOverlap` 的衰减比例开放为 `overlapAttenuation`（0.1–1，默认 0.55）。
+- 新增设备像素契约 `ControlShadowPixelTest`：外侧连续衰减、内侧干净、遮罩强度单调、重叠减弱、底栏背景阴影不被自身胶囊裁剪。
 
 ### 修复
 
@@ -17,11 +19,14 @@
 - 控件软阴影的剖面美化：不再用"模糊 + 裁剪 + 两道硬描边"，改按到轮廓的距离场直出 alpha；环境项改为 1.6× 模糊半径的宽幅高斯尾、接触带权重降低，并移除矢量描边。阴影只画在控件外侧，控件边缘保持干净，多控件叠加不再出现内缘暗边。向下偏移改为"底部加强、顶部减弱"的竖向增益（不再平移纹理），卡片下缘不再露出背景亮缝。材质页掉帧保持 1.4%（关闭阴影为 0.9%）。
 - 列表与网格的 `RecyclerView` 放行 `clipChildren` 与 `clipToPadding` 并留出内边距，行阴影不再在容器边界被直线切掉（适配标准 §5.6）。
 - 底栏胶囊背景的软阴影被 `LumenNavigationBar` 自身的 `clipToOutline` 裁掉：改为只让触点光晕按胶囊轮廓裁剪，栏背景的阴影完整绘制。
-- 长按回弹在 720ms 固定上限处提前 `clear()`：低刚度/高弹跳的设计稿弹簧还没回到原位就被强制归位，动画末尾出现位置跳变。改为以弹簧静止为结束条件，12s 仅作防无限循环的安全阀；Compose 版同步。
+- 长按回弹在 720ms 固定上限处提前 `clear()`：低刚度/高弹跳的设计稿弹簧还没回到原位就被强制归位，动画末尾出现位置跳变。改为以弹簧静止为结束条件，安全阀按 `LumenSpringSpec` 自适应（6 个包络时间常数，720ms–12s）；Compose 版同步。安全阀在控制器构造/协程外只算一次，逐帧路径不再重复 `sqrt`。
+- 回弹测试原先按 12s 上限循环，JVM 用时放大约 16 倍；改用默认弹簧的实际安全阀（720ms）后恢复。
 - Demo 底栏选中滑块改为随主题反转的对比遮罩（浅色深遮罩、深色浅遮罩），并把这条宿主建议写进适配标准 §12.4。
 
 ### 兼容性
 
+- `ElasticMotionPolicy.MAX_SETTLE_MILLIS` 更名为 `SAFETY_SETTLE_MILLIS`；旧名保留为 `@Deprecated` 别名，源码兼容。语义由固定 720ms 改为自适应安全阀（默认弹簧仍为 720ms）。
+- `LumenControlShadowOptions` 追加 `softenOverlap` 与 `overlapAttenuation` 两个带默认值字段；该 API 尚未发布，宿主重新编译即可。
 - `LumenActivityDelegate` 构造新增 `controlShadowProvider` 参数，插在 `effectTuningProvider` 之前；两参数构造与既有尾随 lambda 写法不变。
 - `LumenElasticInteraction` / `ElasticInteractionController` 构造新增带默认值的可选参数，既有命名参数与位置参数调用不变。
 
