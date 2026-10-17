@@ -44,6 +44,7 @@ import com.lumen.coacervation.engine.motion.reveal.LumenReveal
 import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
 import com.lumen.coacervation.engine.widget.LumenNavigationBar
 import com.lumen.coacervation.engine.widget.NavigationBarColors
+import com.lumen.coacervation.engine.widget.NavigationBarSelectionMask
 import com.lumen.coacervation.engine.widget.NavigationBarSurface
 
 /**
@@ -298,8 +299,7 @@ class SampleActivity : AppCompatActivity() {
                 NavigationBarSurface.BAR -> lumen.floatingBackground(palette.surface, radius)
                 // 选中滑块的对比遮罩：浅色主题用深色、深色主题用浅色，强度由设置页无极调节。
                 NavigationBarSurface.SELECTION -> lumen.chromeOverlayBackground(
-                    ColorUtils.setAlphaComponent(palette.textPrimary,
-                        (settings.selectionMask * 255f).toInt().coerceIn(0, 255)),
+                    NavigationBarSelectionMask.color(palette, settings.selectionMask),
                     radius, selected = true)
             }
         },

@@ -1,5 +1,6 @@
 package com.lumen.coacervation.engine.interaction
 
+import com.lumen.coacervation.engine.motion.LumenSpringSpec
 import kotlin.math.abs
 import org.junit.Assert.*
 import org.junit.Test
@@ -246,7 +247,7 @@ class ElasticMotionPolicyTest {
         for (rate in listOf(30, 60, 90, 120)) {
             val spring = ElasticSpringAxis(12f)
             var crossed = false
-            repeat((rate * ElasticMotionPolicy.SAFETY_SETTLE_MILLIS / 1000L).toInt()) {
+            repeat((rate * ElasticMotionPolicy.safetySettleMillis(LumenSpringSpec.DEFAULT) / 1000L).toInt()) {
                 spring.advance(1f / rate, 0f)
                 assertTrue(spring.value.isFinite())
                 assertTrue(abs(spring.value) <= 12f)
@@ -255,6 +256,13 @@ class ElasticMotionPolicyTest {
             assertTrue(crossed)
             assertTrue(spring.atRest(0f, .025f))
         }
+    }
+
+    @Test fun safetyValveAdaptsToTheSpring() {
+        assertEquals(720L, ElasticMotionPolicy.safetySettleMillis(LumenSpringSpec.DEFAULT))
+        assertEquals(1_200L, ElasticMotionPolicy.safetySettleMillis(LumenSpringSpec(100f, .5f)))
+        assertEquals(ElasticMotionPolicy.SAFETY_SETTLE_MILLIS,
+            ElasticMotionPolicy.safetySettleMillis(LumenSpringSpec(20f, .1f)))
     }
 
     @Test fun slowSpringNeedsMoreThanTheOldFixedSettleCap() {

@@ -44,7 +44,12 @@ private const val LABEL_HALO_ALPHA = 0.55f
 public enum class NavigationBarSurface { BAR, SELECTION }
 public data class NavigationBarColors(val text: Int, val selectedText: Int, val highlight: Int)
 
-/** Native floating capsule. The host owns page navigation and the shared skin/backdrop session. */
+/**
+ * Native floating capsule. The host owns page navigation and the shared skin/backdrop session.
+ *
+ * 背景可由宿主包一层控件软阴影；阴影画在胶囊之外，因此承载本 View 的父容器也必须
+ * `clipChildren = false`。本 View 自身不 `clipToOutline`，只给触点光晕按胶囊轮廓裁剪。
+ */
 @SuppressLint("ViewConstructor")
 public class LumenNavigationBar(
     context: Context,

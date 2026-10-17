@@ -1,5 +1,6 @@
 package com.lumen.coacervation.engine.interaction
 
+import com.lumen.coacervation.engine.motion.LumenSpringSpec
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import kotlin.math.abs
@@ -103,6 +104,21 @@ public object ElasticMotionPolicy {
      * 视觉上表现为动画末尾位置跳变。这里只保留一个足够大的硬上限，防止极端参数下无限循环。
      */
     const val SAFETY_SETTLE_MILLIS = 12_000L
+
+    /**
+     * 安全阀的自适应值：按弹簧包络时间常数 `1/(ζω)` 取 6 个时间常数，再收进
+     * [720, SAFETY_SETTLE_MILLIS]。默认弹簧（310 / 0.7）约 0.49s，仍取 720ms；
+     * 低刚度/高弹跳弹簧则放宽到 12s，避免在尚未静止时被提前截断。
+     */
+    fun safetySettleMillis(springSpec: LumenSpringSpec): Long {
+        val decay = springSpec.dampingRatio * sqrt(springSpec.stiffness)
+        if (!decay.isFinite() || decay <= 0f) return SAFETY_SETTLE_MILLIS
+        return ((6.0 / decay) * 1000.0).toLong().coerceIn(720L, SAFETY_SETTLE_MILLIS)
+    }
+
+    /** 旧名，保留源码兼容；行为与 [SAFETY_SETTLE_MILLIS] 一致。 */
+    @Deprecated("Use SAFETY_SETTLE_MILLIS", ReplaceWith("SAFETY_SETTLE_MILLIS"))
+    const val MAX_SETTLE_MILLIS = SAFETY_SETTLE_MILLIS
     const val PRESS_DEPTH = .016f
     private const val DRAG_RESPONSE = .22f
     private const val DRAG_RESPONSE_RATIONAL = .55f

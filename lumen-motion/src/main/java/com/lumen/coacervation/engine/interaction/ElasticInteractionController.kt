@@ -127,6 +127,8 @@ public class ElasticInteractionController(
     private val clipReliefs = ArrayList<ClipRelief>()
     private var focusObserver: ViewTreeObserver? = null
     private var disposed = false
+    /** 回弹安全阀按构造时的弹簧规格算一次，逐帧只做一次比较（§5 逐帧路径不重复计算）。 */
+    private val settleDeadlineMillis = ElasticMotionPolicy.safetySettleMillis(springSpec)
 
     private val focusListener = ViewTreeObserver.OnWindowFocusChangeListener { focused ->
         if (!focused) clear()
@@ -444,9 +446,9 @@ public class ElasticInteractionController(
         val rest = pressAxis.atRest(pressed, .0003f) &&
             (motion != Motion.RELEASE || (xAxis.atRest(0f, .025f * density) &&
                 yAxis.atRest(0f, .025f * density)))
-        // 回弹以弹簧静止为准；这里只保留一个防无限循环的安全阀，不再用 720ms 提前截断。
+        // 回弹以弹簧静止为准；安全阀按当前弹簧自适应，不再用固定 720ms 提前截断。
         val expired = motion != Motion.DRAG &&
-            SystemClock.uptimeMillis() - motionStartedAt >= ElasticMotionPolicy.SAFETY_SETTLE_MILLIS
+            SystemClock.uptimeMillis() - motionStartedAt >= settleDeadlineMillis
         if ((rest || expired) && motion == Motion.RELEASE) {
             clear()
             return

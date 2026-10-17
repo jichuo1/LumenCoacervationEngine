@@ -26,6 +26,7 @@ import androidx.compose.ui.unit.IntSize
 import com.lumen.coacervation.engine.interaction.ElasticGestureDecision
 import com.lumen.coacervation.engine.interaction.ElasticGestureGate
 import com.lumen.coacervation.engine.interaction.ElasticMotionPolicy
+import com.lumen.coacervation.engine.motion.LumenSpringSpec
 import com.lumen.coacervation.engine.interaction.ElasticSpringAxis
 import com.lumen.coacervation.engine.interaction.ElasticVector
 import kotlinx.coroutines.Job
@@ -201,6 +202,8 @@ private class ElasticNode(private var enabled: Boolean) : Modifier.Node(),
         if (pressAxis.atRest(pressure, PRESS_TOLERANCE) &&
             (pressed || xAxis.atRest(0f, positionTolerance) && yAxis.atRest(0f, positionTolerance))) return
         val generation = animationGeneration
+        // 安全阀是常量：在协程外算一次，逐帧只做比较。
+        val settleDeadlineMillis = ElasticMotionPolicy.safetySettleMillis(LumenSpringSpec.DEFAULT)
         animation = coroutineScope.launch {
             var started = 0L
             var previousFrame = 0L
@@ -220,8 +223,8 @@ private class ElasticNode(private var enabled: Boolean) : Modifier.Node(),
                         }
                         val rest = pressAxis.atRest(pressure, PRESS_TOLERANCE) &&
                             (pressed || xAxis.atRest(0f, positionTolerance) && yAxis.atRest(0f, positionTolerance))
-                        // 与 View 控制器一致：以弹簧静止为准，安全阀只防无限循环。
-                        val expired = (now - started) / 1_000_000L >= ElasticMotionPolicy.SAFETY_SETTLE_MILLIS
+                        // 与 View 控制器一致：以弹簧静止为准，安全阀按弹簧自适应。
+                        val expired = (now - started) / 1_000_000L >= settleDeadlineMillis
                         if (rest || expired) {
                             pressAxis.reset(pressure)
                             if (!pressed) { xAxis.reset(); yAxis.reset() }
