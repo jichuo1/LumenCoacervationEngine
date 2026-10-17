@@ -705,6 +705,19 @@ API 33+ 读取进程当前的公开动画倍率；API 27–32 通过公开系统
 - 选中的行被长按拖动形变时，选中框跟随行的位移与缩放；横向分段控件把表面设在控件自身时，整条控件是一个形变单位（§12.2）。
 - 引擎在选中框位置、尺寸或跟随变换改变后重录背景；静止帧不反复通知。已有宿主自绘选择器**可以**改接本控件，保留自己的标题与业务回调。
 
+### 13.12 液态形变（`LumenMorphTile`，自未发布版本）
+
+一个固定 2 格外层、内部 1 格 ↔ 2 格的磁贴。宽度、圆角、内容三条弹簧独立推进；宽度/圆角的响应与回弹错开时，胶囊会先被“挤出去”、圆角再追上，形成液滴挤出感。圆角是连续曲率近似（`cornerSmoothing`），不是普通圆角矩形。
+
+- **用法**：`LumenMorphTile(context).apply { configure(palette, effectTuning, options); setContent(icon, "标题") }`，给一个 `2:1` 的固定尺寸；点击 `toggle()`，或程序 `setExpanded(...)`。
+- **手势**：`setProgress(0..1)` 供拖拽直接操纵；松手再 `setExpanded`，弹簧从当前值/速度续接。本控件只接受落在当前可见宽度内的按下，收起态右侧空宿主格不会误触。
+- **不得**在外层再包 `LumenControlShadow` 或把它塞进液态折射表面：形变中的圆角/边界会持续变化，预烘焙阴影纹理与背景采样都不成立。贴边高光由控件自己按当前路径绘制，并跟随 `LumenEffectTuning.edgeHighlightWidth/Intensity`；不需要时把 `edgeHighlightIntensity` 设为 0 或关闭 `LumenMorphOptions.edgeHighlight`。
+- **必须**给控件打 `ElasticInteractionController.EXCLUDED_TAG`：它自己处理点击/形变，不应再被全局长按弹性二次形变。
+- 父容器**应当** `clipChildren=false`、`clipToPadding=false`，为宽度回弹留出余量；内容在 `dispatchDraw` 里按当前路径裁剪，不需要宿主额外裁剪。
+- 颜色默认取 `palette.primary/onPrimary`；需要自有表面色时用 `setColors(fill, content)`。深色主题直接传当前 `palette` 即可。
+- 不改变布局参数：外层宿主尺寸固定，逐帧只更新路径/内容变换，因此不会触发布局；三条弹簧都走 `ElasticSpringAxis`，可随时打断。
+- Demo：动效页有专用测试件；设置页「液态形变（重建）」暴露开关、宽度/圆角/内容 response/bounce、收起比例、圆角/平滑/内容缩放与贴边显示。
+
 ## 14. 尺寸与排布适配（`lumen-motion`）
 
 同一套交互与动效会被放进不同尺寸的卡片（小图标、细长条目、方块、大卡片、横幅）和不同排布（竖向列表、网格、大小混排、瀑布流、横向轮播、卡中卡）。能自动适配的，引擎按几何自己算；需要宿主配合的，写在各小节里。

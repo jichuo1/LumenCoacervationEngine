@@ -73,6 +73,16 @@
 | `LumenControlShadow.outsetPx(options, density): Int` | 阴影在控件边界外的最大外扩像素 | §5.6 |
 | `NavigationBarSelectionMask.color(palette, strength): Int` | 底栏选中滑块的对比遮罩：浅色用深色、深色用浅色，`strength` 0–1 连续；结果交给 `chromeOverlayBackground(..., selected = true)` | §12.4 |
 
+### 液态形变（自未发布版本）
+
+`LumenMorphTile` 是 1 格 ↔ 2 格的独立磁贴：外层固定 2 格，内部用连续曲率路径 + 三条独立弹簧（宽度/圆角/内容）在收起/展开之间形变。它不叠加控件软阴影或液态折射表面（动态半径会让预烘焙阴影纹理每帧失效），只提供跟随 `LumenEffectTuning` 的贴边高光与接触线。详细耦合见适配标准 §13.12。
+
+| 声明 | 说明 | 标准 |
+|---|---|---|
+| `LumenMorphOptions(enabled, collapsedFraction, collapsedRadiusDp, expandedRadiusDp, cornerSmoothing, contentScale, fadeLabel, edgeHighlight, contactLine, contactAlpha, widthSpring, cornerSpring, contentSpring)`；`LumenMorphOptions.DEFAULT` | 构造时校验；默认三条弹簧为 0.35/0.17、0.35/0.16、0.2/0 | §13.12 |
+| `LumenMorphTile(context)` | `configure(palette, tuning, options)`、`setContent(icon, label)`、`setColors(fill, content)`、`setExpanded(expanded, animate = true)`、`toggle()`、`setProgress(0..1)`、`isExpanded` | §13.12 |
+| `LumenMorphPolicy` | 纯函数：宽度/圆角插值、内容 alpha/offset；控件与 JVM 测试共用 | §13.12 |
+
 ### `abstract class LumenActivity : android.app.Activity`
 
 - `val lumen: LumenActivityDelegate`：懒创建。

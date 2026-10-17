@@ -11,6 +11,7 @@
 - 跟手位移橡皮筋曲线族 `ElasticRubberCurve { TANH, RATIONAL }`：默认 TANH 不变；RATIONAL 初段更跟手、渐近行程上限更韧，与 TANH 共享同一径向预算与 slop 连续归零。`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `rubberCurve` 参数。
 - Demo 设置页新增「控件阴影」与「长按动效」调参卡：软阴影开关与五个参数、深色自适应、橡皮筋曲线与 response/bounce 弹簧换算；宿主侧持久化（引擎不存），改动重建页面生效。视效调参卡新增「表面立体边缘」开关（默认开启，可关闭贴边受光/底部立体边）；外观卡新增「选中遮罩强度」连续滑块；控件阴影卡新增「重叠处减弱阴影」开关与「重叠保留比例」滑块，参数步长细化到 0.1dp / 0.005。
 - 底栏选中遮罩的公开 helper `NavigationBarSelectionMask.color(palette, strength)`：保留浅色深遮罩/深色浅遮罩策略，强度 0–1 连续；`softenOverlap` 的衰减比例开放为 `overlapAttenuation`（0.1–1，默认 0.55）。
+- 液态形变磁贴 `LumenMorphTile` / `LumenMorphOptions`：外层固定 2 格，内部 1 格 ↔ 2 格；宽度、圆角、内容三条独立 `LumenSpringSpec`，连续曲率路径，宽度/圆角阈值错峰形成液滴挤出感。可开关弹簧/贴边高光/接触线/文字淡入，可调收起比例、圆角/平滑/内容缩放与三条 response/bounce；不改变布局、逐帧零分配。Demo 动效页有专用测试件，设置页有完整调参卡。
 - 新增设备像素契约 `ControlShadowPixelTest`：外侧连续衰减、内侧干净、遮罩强度单调、重叠减弱、底栏背景阴影不被自身胶囊裁剪。
 
 ### 修复
