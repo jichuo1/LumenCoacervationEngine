@@ -96,7 +96,13 @@ public class ElasticVector(var x: Float = 0f, var y: Float = 0f)
 
 public object ElasticMotionPolicy {
     const val HOLD_MILLIS = 160L
-    const val MAX_SETTLE_MILLIS = 720L
+
+    /**
+     * 回弹的安全阀（毫秒）。真正的结束条件是弹簧静止（[ElasticSpringAxis.atRest]）：
+     * 旧实现把 720ms 当成结束时间，低刚度/高弹跳的设计稿弹簧还没回到原位就被 `clear()` 强制归位，
+     * 视觉上表现为动画末尾位置跳变。这里只保留一个足够大的硬上限，防止极端参数下无限循环。
+     */
+    const val SAFETY_SETTLE_MILLIS = 12_000L
     const val PRESS_DEPTH = .016f
     private const val DRAG_RESPONSE = .22f
     private const val DRAG_RESPONSE_RATIONAL = .55f

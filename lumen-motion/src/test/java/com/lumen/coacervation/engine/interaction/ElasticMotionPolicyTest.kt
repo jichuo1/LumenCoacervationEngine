@@ -246,7 +246,7 @@ class ElasticMotionPolicyTest {
         for (rate in listOf(30, 60, 90, 120)) {
             val spring = ElasticSpringAxis(12f)
             var crossed = false
-            repeat((rate * ElasticMotionPolicy.MAX_SETTLE_MILLIS / 1000L).toInt()) {
+            repeat((rate * ElasticMotionPolicy.SAFETY_SETTLE_MILLIS / 1000L).toInt()) {
                 spring.advance(1f / rate, 0f)
                 assertTrue(spring.value.isFinite())
                 assertTrue(abs(spring.value) <= 12f)
@@ -255,6 +255,19 @@ class ElasticMotionPolicyTest {
             assertTrue(crossed)
             assertTrue(spring.atRest(0f, .025f))
         }
+    }
+
+    @Test fun slowSpringNeedsMoreThanTheOldFixedSettleCap() {
+        // 旧实现把 720ms 当结束时间：低刚度/高弹跳弹簧此时仍离原位很远，clear() 会造成末尾跳变。
+        val spring = ElasticSpringAxis(1f)
+        spring.advance(.72f, 0f, stiffness = 20f, dampingRatio = .1f)
+        assertFalse(spring.atRest(0f, .01f))
+        var elapsed = .72f
+        while (elapsed < 12f && !spring.atRest(0f, .01f)) {
+            spring.advance(.05f, 0f, stiffness = 20f, dampingRatio = .1f)
+            elapsed += .05f
+        }
+        assertTrue("slow spring should reach rest before the safety cap", spring.atRest(0f, .01f))
     }
 
     @Test fun highReleaseSpeedsRemainFiniteAndSettleWithoutAnUnboundedRebound() {

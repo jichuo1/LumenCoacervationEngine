@@ -444,8 +444,9 @@ public class ElasticInteractionController(
         val rest = pressAxis.atRest(pressed, .0003f) &&
             (motion != Motion.RELEASE || (xAxis.atRest(0f, .025f * density) &&
                 yAxis.atRest(0f, .025f * density)))
+        // 回弹以弹簧静止为准；这里只保留一个防无限循环的安全阀，不再用 720ms 提前截断。
         val expired = motion != Motion.DRAG &&
-            SystemClock.uptimeMillis() - motionStartedAt >= ElasticMotionPolicy.MAX_SETTLE_MILLIS
+            SystemClock.uptimeMillis() - motionStartedAt >= ElasticMotionPolicy.SAFETY_SETTLE_MILLIS
         if ((rest || expired) && motion == Motion.RELEASE) {
             clear()
             return

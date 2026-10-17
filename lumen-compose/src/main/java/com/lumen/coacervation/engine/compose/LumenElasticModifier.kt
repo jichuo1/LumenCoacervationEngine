@@ -220,7 +220,8 @@ private class ElasticNode(private var enabled: Boolean) : Modifier.Node(),
                         }
                         val rest = pressAxis.atRest(pressure, PRESS_TOLERANCE) &&
                             (pressed || xAxis.atRest(0f, positionTolerance) && yAxis.atRest(0f, positionTolerance))
-                        val expired = (now - started) / 1_000_000L >= ElasticMotionPolicy.MAX_SETTLE_MILLIS
+                        // 与 View 控制器一致：以弹簧静止为准，安全阀只防无限循环。
+                        val expired = (now - started) / 1_000_000L >= ElasticMotionPolicy.SAFETY_SETTLE_MILLIS
                         if (rest || expired) {
                             pressAxis.reset(pressure)
                             if (!pressed) { xAxis.reset(); yAxis.reset() }
