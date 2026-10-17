@@ -32,8 +32,11 @@ import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
 class DetailActivity : AppCompatActivity() {
 
     private val tuning by lazy(LazyThreadSafetyMode.NONE) { SampleTuningStore(this) }
-    private val lumen = LumenActivityDelegate(this, ::resolvePalette) { tuning.current }
-    private val elastic by lazy(LazyThreadSafetyMode.NONE) { LumenElasticInteraction(this, lumen) }
+    private val lumen = LumenActivityDelegate(this, ::resolvePalette,
+        controlShadowProvider = { tuning.controlShadow }) { tuning.current }
+    private val elastic by lazy(LazyThreadSafetyMode.NONE) {
+        LumenElasticInteraction(this, lumen, springSpec = tuning.springSpec, rubberCurve = tuning.rubberCurve)
+    }
     private lateinit var host: ContainerMorphHost
     private var morph: ContainerMorphController? = null
     private var toolbarTitle: TextView? = null

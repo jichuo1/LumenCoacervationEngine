@@ -70,11 +70,14 @@ class SampleActivity : AppCompatActivity() {
     internal val backgroundPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importBackgroundImage(uri)
     }
-    // §2 组合式接入：一个委托，六个回调转发给它。
-    internal val lumen = LumenActivityDelegate(this, ::resolvePalette) { tuning.current }
-    // §12 全局长按弹性：Activity 与弹窗窗口共用一个实例。光晕调参现读，滑块改动即时生效。
+    // §2 组合式接入：一个委托，六个回调转发给它。控件阴影首次读取后缓存（§5.6），设置页改动靠重建生效。
+    internal val lumen = LumenActivityDelegate(this, ::resolvePalette,
+        controlShadowProvider = { tuning.controlShadow }) { tuning.current }
+    // §12 全局长按弹性：Activity 与弹窗窗口共用一个实例。光晕调参现读，滑块改动即时生效；
+    // 弹簧规格与橡皮筋曲线构造时绑定，改动重建生效。
     internal val elastic by lazy(LazyThreadSafetyMode.NONE) {
-        LumenElasticInteraction(this, lumen, effectTuning = { tuning.current })
+        LumenElasticInteraction(this, lumen, effectTuning = { tuning.current },
+            springSpec = tuning.springSpec, rubberCurve = tuning.rubberCurve)
     }
     // §13 弹窗的打开与关闭；弹窗内容同样交给 lumen-controls 换装。
     internal val modals by lazy(LazyThreadSafetyMode.NONE) {
@@ -356,7 +359,7 @@ class SampleActivity : AppCompatActivity() {
     private fun buildMaterialPage(content: LinearLayout, palette: LumenPalette) {
         content.addView(caption("当前材质：" + if (lumen.isLiquidEffective) "高级材质（${lumen.backendName}）" else "柔光"))
         content.addView(caption("长按任意卡片或按钮后拖动：卡片跟手形变、触点高光流动，松手弹簧回弹（§12）。"))
-        content.addView(caption("边缘高光、长按形变与光晕等参数在「设置」页调节。"))
+        content.addView(caption("边缘高光、长按形变与光晕、控件阴影与长按动效等参数在「设置」页调节。"))
         // §13.1 条目 → 卡片形变：弹窗标题与条目标题**同一段文字**才会做标题迁移。
         content.addView(entryRow(palette, "形变面板", "条目长成屏幕中央的卡片；面板里还能再开覆盖式子面板") { row ->
             showMorphPanel(row)

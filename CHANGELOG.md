@@ -9,6 +9,7 @@
 - 可选控件软阴影（`LumenControlShadowOptions` / `LumenControlShadow`，`LumenActivityDelegate.controlShadowProvider` 与 `LumenActivity.resolveControlShadow()`）：投射层高斯软影 + 贴边接触环两道独立强度，解决浅色主题下浅色表面与白底内容分不清边的问题（色罩与白色描边在浅底失效）。纯软件位图缓存、API 27+ 可用、与高级材质无关；纹理按参数量化进进程级 LRU（单张 ≤ 384×384 px，合计 ≤ 2 MiB），内存告急随 `releaseGraphics()` 清空。阴影画在控件边界之外，宿主需按 `outsetPx` 预留间距或不裁剪子 View。吸收自 ColorOS SystemUI 的内阴影/描边分层思路，实现与参数体系为引擎自有。
 - 长按回弹弹簧规格 `LumenSpringSpec`：除直接给刚度/阻尼比外，可用 `ofResponseBounce(周期秒, 弹跳)` 以设计口语换算（与厂商弹簧库的 response/bounce 同语义）；`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `springSpec` 参数，默认引擎原样。
 - 跟手位移橡皮筋曲线族 `ElasticRubberCurve { TANH, RATIONAL }`：默认 TANH 不变；RATIONAL 初段更跟手、渐近行程上限更韧，与 TANH 共享同一径向预算与 slop 连续归零。`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `rubberCurve` 参数。
+- Demo 设置页新增「控件阴影」与「长按动效」调参卡：软阴影开关与五个参数、深色自适应、橡皮筋曲线与 response/bounce 弹簧换算；宿主侧持久化（引擎不存），改动重建页面生效。
 
 ### 兼容性
 

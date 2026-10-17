@@ -80,6 +80,8 @@ internal fun SampleActivity.buildSettingsPage(content: LinearLayout, palette: Lu
     content.addView(appearanceCard(palette), cardParams())
     content.addView(backgroundCard(palette), cardParams())
     content.addView(tuningCard(palette), cardParams())
+    content.addView(controlShadowCard(palette), cardParams())
+    content.addView(motionCard(palette), cardParams())
     content.addView(diagnosticsCard(palette), cardParams())
 }
 
@@ -221,7 +223,7 @@ internal fun SampleActivity.settingsCard(palette: LumenPalette, title: String) =
     })
 }
 
-private fun SampleActivity.label(palette: LumenPalette, text: String) = TextView(this).apply {
+internal fun SampleActivity.label(palette: LumenPalette, text: String) = TextView(this).apply {
     this.text = text
     textSize = 13f
     setTextColor(palette.textSecondary)
@@ -285,7 +287,7 @@ internal fun <T> SampleActivity.choiceRow(
 /** 选中框滑动 260ms，再留一帧余量后应用会重建页面的设置。 */
 private const val CHOICE_APPLY_DELAY_MS = 280L
 
-private fun SampleActivity.switchRow(
+internal fun SampleActivity.switchRow(
     palette: LumenPalette,
     title: String,
     summary: String,
