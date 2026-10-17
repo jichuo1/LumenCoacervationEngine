@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
@@ -36,6 +37,8 @@ internal class ControlShadowDrawable(
     private val dstRect = Rect()
     private val castFrame = RectF()
     private val ringRect = RectF()
+    private val clipPath = Path()
+    private val clipBounds = Rect()
     private val alphas = ControlShadowPolicy.adaptAlphas(
         options.opacity, options.contactOpacity, dark, options.adaptToTheme)
     private val spreadPx = options.spreadDp * density
@@ -64,6 +67,20 @@ internal class ControlShadowDrawable(
         if (content != null && content.callback !== callback) content.callback = callback
         val metrics = ControlShadowTextureCache.obtain(cornerRadiusPx + spreadPx.coerceAtLeast(0f),
             options.blurRadiusDp * density)
+        // 阴影只存在于轮廓之外：clipOut 掉控件轮廓，内侧半圈高斯与中心灰垫一律不画。
+        // 半透明表面不会透出底灰；宿主祖先裁剪（clipChildren）时整层自然消失，
+        // 不会在内侧残留读作"矩形框"的灰带。
+        if (bounds != clipBounds) {
+            clipBounds.set(bounds)
+            clipPath.reset()
+            val clipRadius = cornerRadiusPx.coerceAtMost(
+                min(bounds.width(), bounds.height()) * .5f)
+            clipPath.addRoundRect(bounds.left.toFloat(), bounds.top.toFloat(),
+                bounds.right.toFloat(), bounds.bottom.toFloat(), clipRadius, clipRadius,
+                Path.Direction.CW)
+        }
+        val clipRestore = canvas.save()
+        canvas.clipOutPath(clipPath)
         if (metrics != null) {
             val texture = ControlShadowTextureCache.texture(metrics)
             if (texture != null) {
@@ -78,6 +95,7 @@ internal class ControlShadowDrawable(
             drawContactRing(canvas, contactOuter, contactInner.strokeWidth)
             drawContactRing(canvas, contactInner, 0f)
         }
+        canvas.restoreToCount(clipRestore)
         content?.draw(canvas)
     }
 
