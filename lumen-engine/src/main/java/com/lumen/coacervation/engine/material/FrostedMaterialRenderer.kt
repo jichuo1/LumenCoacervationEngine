@@ -574,7 +574,8 @@ private class ModernSurfaceDrawable(
         fill.color = ColorUtils.setAlphaComponent(drawColor, if (sampled) overlayAlpha else frameAlpha)
         canvas.drawRoundRect(rect, drawRadius, drawRadius, fill)
         // Motion hosts own their collapsing stroke. A second full-opacity edge would flash at handoff.
-        if (motionProvider == null) {
+        // 边缘高光默认关闭（alpha 全 0）时直接跳过描边，省一次 drawRoundRect。
+        if (motionProvider == null && (style.upperEdgeAlpha > 0 || style.lowerEdgeAlpha > 0)) {
             edgeRect.set(rect)
             edgeRect.inset(edge.strokeWidth / 2, edge.strokeWidth / 2)
             if (edgeTop != rect.top || edgeBottom != rect.bottom) {

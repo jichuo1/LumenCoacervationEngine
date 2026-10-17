@@ -5,23 +5,25 @@ import android.graphics.Canvas
 import android.graphics.ColorFilter
 import android.graphics.Outline
 import android.graphics.Paint
-import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffColorFilter
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.drawable.Drawable
+import android.view.View
+import android.view.ViewGroup
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.host.LumenControlShadowOptions
+import com.lumen.coacervation.engine.material.ControlShadowPolicy.Layer
+import kotlin.math.abs
 import kotlin.math.min
 
 /**
- * 控件软阴影绘制器：投射层（缓存模糊位图，九宫格拉伸）+ 接触环（两道同心描边，全在控件轮廓之外，
- * 不会透过半透明表面读成脏边），再绘制被包裹的内容背景。
+ * 控件软阴影绘制器：在内容背景之下绘制环境层（宽幅）与贴边接触带（窄幅）两张连续剖面纹理。
  *
- * 阴影画在 bounds 之外：宿主需保证祖先不裁剪子 View（`clipChildren=false`）或按
- * `LumenControlShadow.outsetPx` 预留间距。绘制路径稳态零分配（位图缓存在 [ControlShadowTextureCache]）。
+ * 剖面按距离场烘焙，只画在控件边界之外：内侧恒为 0，控件边缘保留自己的干净轮廓，
+ * 多个控件叠加时不会互相压出暗边。绘制路径稳态零分配（位图与度量都在构造/缓存阶段准备好）。
  */
 internal class ControlShadowDrawable(
     private val content: Drawable?,
@@ -31,29 +33,38 @@ internal class ControlShadowDrawable(
     private val dark: Boolean
 ) : Drawable() {
     private val castPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
-    private val contactInner = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
-    private val contactOuter = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE }
+    private val contactPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val srcRect = Rect()
     private val dstRect = Rect()
     private val castFrame = RectF()
-    private val ringRect = RectF()
-    private val clipPath = Path()
-    private val clipBounds = Rect()
+    private val contactFrame = RectF()
     private val alphas = ControlShadowPolicy.adaptAlphas(
         options.opacity, options.contactOpacity, dark, options.adaptToTheme)
     private val spreadPx = options.spreadDp * density
     private val offsetYPx = options.offsetYDp * density
+    // 度量在构造时算一次：绘制路径不再创建 TextureMetrics、换算纹理坐标或分配停靠点数组。
+    private val castMetrics = ControlShadowPolicy.textureMetrics(
+        Layer.CAST, cornerRadiusPx + spreadPx.coerceAtLeast(0f),
+        options.blurRadiusDp * density, density, offsetYPx)
+    private val contactMetrics = ControlShadowPolicy.textureMetrics(
+        Layer.CONTACT, cornerRadiusPx + spreadPx.coerceAtLeast(0f), 0f, density)
+    private val xStops = FloatArray(4)
+    private val yStops = FloatArray(4)
+    private val srcStops = IntArray(4)
 
     init {
-        val castColor = ColorUtils.setAlphaComponent(options.color, (alphas[0] * 255).toInt().coerceIn(0, 255))
-        @Suppress("DEPRECATION")
-        castPaint.colorFilter = PorterDuffColorFilter(castColor, PorterDuff.Mode.SRC_IN)
-        val widths = ControlShadowPolicy.contactWidths(density)
-        val ringAlphas = ControlShadowPolicy.contactAlphas(alphas[1])
-        contactInner.strokeWidth = widths[0]
-        contactInner.color = ColorUtils.setAlphaComponent(options.color, (ringAlphas[0] * 255).toInt().coerceIn(0, 255))
-        contactOuter.strokeWidth = widths[1]
-        contactOuter.color = ColorUtils.setAlphaComponent(options.color, (ringAlphas[1] * 255).toInt().coerceIn(0, 255))
+        // 颜色只保留 RGB，强度由各层的 Paint.alpha 控制；SRC_IN 保留纹理的 alpha 剖面。
+        val filter = PorterDuffColorFilter(
+            ColorUtils.setAlphaComponent(options.color, 255), PorterDuff.Mode.SRC_IN)
+        castPaint.colorFilter = filter
+        contactPaint.colorFilter = filter
+        castPaint.alpha = (alphas[0] * 255f).toInt().coerceIn(0, 255)
+        contactPaint.alpha = (alphas[1] * 255f).toInt().coerceIn(0, 255)
+    }
+
+    private companion object {
+        /** 检测到同级阴影会交叉时的投射强度倍率；保留一半以上，避免卡顿感变成\"无阴影\"。 */
+        const val OVERLAP_SOFTEN_GAIN = 0.55f
     }
 
     override fun draw(canvas: Canvas) {
@@ -65,64 +76,84 @@ internal class ControlShadowDrawable(
         // ModernSurfaceDrawable 靠 `callback as? View` 注册采样，断了它柔光透镜会静默停采。
         val content = content
         if (content != null && content.callback !== callback) content.callback = callback
-        val metrics = ControlShadowTextureCache.obtain(cornerRadiusPx + spreadPx.coerceAtLeast(0f),
-            options.blurRadiusDp * density)
-        // 阴影只存在于轮廓之外：clipOut 掉控件轮廓，内侧半圈高斯与中心灰垫一律不画。
-        // 半透明表面不会透出底灰；宿主祖先裁剪（clipChildren）时整层自然消失，
-        // 不会在内侧残留读作"矩形框"的灰带。
-        if (bounds != clipBounds) {
-            clipBounds.set(bounds)
-            clipPath.reset()
-            val clipRadius = cornerRadiusPx.coerceAtMost(
-                min(bounds.width(), bounds.height()) * .5f)
-            clipPath.addRoundRect(bounds.left.toFloat(), bounds.top.toFloat(),
-                bounds.right.toFloat(), bounds.bottom.toFloat(), clipRadius, clipRadius,
-                Path.Direction.CW)
+
+        // 重叠处的强度：同级控件落在外扩区域内时降低本控件强度，避免交叉处叠加过黑。
+        // 只在宿主显式开启时做一次同级 bounds 检测（零分配），默认仍是直接叠加。
+        val gain = if (options.softenOverlap) {
+            val view = callback as? View
+            if (view != null && siblingShadowOverlaps(view)) OVERLAP_SOFTEN_GAIN else 1f
+        } else 1f
+        castPaint.alpha = (alphas[0] * 255f * gain).toInt().coerceIn(0, 255)
+        contactPaint.alpha = (alphas[1] * 255f * gain).toInt().coerceIn(0, 255)
+
+        // 阴影画在内容之下、只在边界之外；控件边缘保持自己的干净轮廓。
+        val cast = if (castPaint.alpha > 0) ControlShadowTextureCache.obtain(castMetrics) else null
+        if (cast != null) {
+            val outset = castMetrics.padPx + spreadPx
+            castFrame.set(bounds.left - outset, bounds.top - outset,
+                bounds.right + outset, bounds.bottom + outset)
+            // 不再整体下移纹理：偏移已烘焙成"底部强、顶部弱"的竖向增益，边界不会露出亮缝。
+            drawNineSlice(canvas, cast, castMetrics, castFrame, castPaint)
         }
-        val clipRestore = canvas.save()
-        canvas.clipOutPath(clipPath)
-        if (metrics != null) {
-            val texture = ControlShadowTextureCache.texture(metrics)
-            if (texture != null) {
-                val outset = metrics.padPx + spreadPx
-                castFrame.set(bounds.left - outset, bounds.top - outset,
-                    bounds.right + outset, bounds.bottom + outset)
-                castFrame.offset(0f, offsetYPx)
-                drawNineSlice(canvas, texture, metrics, castFrame)
-            }
+
+        val contact = if (contactPaint.alpha > 0) ControlShadowTextureCache.obtain(contactMetrics) else null
+        if (contact != null) {
+            val outset = contactMetrics.padPx + spreadPx
+            contactFrame.set(bounds.left - outset, bounds.top - outset,
+                bounds.right + outset, bounds.bottom + outset)
+            // 接触带不随 offsetY 移动，始终贴着控件轮廓，避免顶部出现亮缝。
+            drawNineSlice(canvas, contact, contactMetrics, contactFrame, contactPaint)
         }
-        if (alphas[1] > 0f) {
-            drawContactRing(canvas, contactOuter, contactInner.strokeWidth)
-            drawContactRing(canvas, contactInner, 0f)
-        }
-        canvas.restoreToCount(clipRestore)
+
         content?.draw(canvas)
     }
 
-    /** 两道环各自整体外移，使描边内缘贴着上一道的外缘，整条环都在控件轮廓之外。 */
-    private fun drawContactRing(canvas: Canvas, paint: Paint, innerOffset: Float) {
-        val outset = (spreadPx * .5f + innerOffset + paint.strokeWidth * .5f)
-            .coerceAtLeast(paint.strokeWidth * .5f)
-        ringRect.set(bounds.left - outset, bounds.top - outset, bounds.right + outset, bounds.bottom + outset)
-        val radius = (cornerRadiusPx + outset).coerceAtLeast(0f)
-        canvas.drawRoundRect(ringRect, radius, radius, paint)
+    /**
+     * 同级近似重叠检测：任一可见兄弟控件与本控件的外扩阴影矩形相交，就认为阴影会叠加。
+     * 只读 bounds、不分配；RecyclerView 可见行数量有限，单次绘制成本可忽略。
+     */
+    private fun siblingShadowOverlaps(view: View): Boolean {
+        val parent = view.parent as? ViewGroup ?: return false
+        val outset = castMetrics.padPx + spreadPx + abs(offsetYPx)
+        val left = view.left - outset
+        val top = view.top - outset
+        val right = view.right + outset
+        val bottom = view.bottom + outset
+        for (i in 0 until parent.childCount) {
+            val sibling = parent.getChildAt(i)
+            if (sibling === view || sibling.visibility != View.VISIBLE) continue
+            if (sibling.right > left && sibling.left < right &&
+                sibling.bottom > top && sibling.top < bottom) return true
+        }
+        return false
     }
 
-    private fun drawNineSlice(canvas: Canvas, texture: android.graphics.Bitmap,
-                              metrics: ControlShadowPolicy.TextureMetrics, frame: RectF) {
-        val srcCorner = metrics.padPx + metrics.cornerPx
-        val side = metrics.sidePx
+    /**
+     * 九宫格：src 停靠点用纹理 px，dst 停靠点用逻辑 px。
+     * 单元格内边界是圆角本身；内侧不画，不需要额外的内侧留白。
+     */
+    private fun drawNineSlice(
+        canvas: Canvas,
+        texture: android.graphics.Bitmap,
+        metrics: ControlShadowPolicy.TextureMetrics,
+        frame: RectF,
+        paint: Paint
+    ) {
+        val srcCorner = metrics.texturePadPx + metrics.textureCornerPx
+        val side = metrics.textureSidePx
         var dstCorner = (metrics.padPx + metrics.cornerPx + spreadPx).coerceAtLeast(1f)
         val maxCorner = min(frame.width(), frame.height()) * .5f
         if (dstCorner > maxCorner) dstCorner = maxCorner
-        val xStops = floatArrayOf(frame.left, frame.left + dstCorner, frame.right - dstCorner, frame.right)
-        val yStops = floatArrayOf(frame.top, frame.top + dstCorner, frame.bottom - dstCorner, frame.bottom)
-        val srcStops = intArrayOf(0, srcCorner, side - srcCorner, side)
+        xStops[0] = frame.left; xStops[1] = frame.left + dstCorner
+        xStops[2] = frame.right - dstCorner; xStops[3] = frame.right
+        yStops[0] = frame.top; yStops[1] = frame.top + dstCorner
+        yStops[2] = frame.bottom - dstCorner; yStops[3] = frame.bottom
+        srcStops[0] = 0; srcStops[1] = srcCorner; srcStops[2] = side - srcCorner; srcStops[3] = side
         for (row in 0..2) for (col in 0..2) {
             if (xStops[col + 1] <= xStops[col] || yStops[row + 1] <= yStops[row]) continue
             srcRect.set(srcStops[col], srcStops[row], srcStops[col + 1], srcStops[row + 1])
             dstRect.set(xStops[col].toInt(), yStops[row].toInt(), xStops[col + 1].toInt(), yStops[row + 1].toInt())
-            canvas.drawBitmap(texture, srcRect, dstRect, castPaint)
+            canvas.drawBitmap(texture, srcRect, dstRect, paint)
         }
     }
 
@@ -181,6 +212,7 @@ internal class ControlShadowDrawable(
     override fun getChangingConfigurations(): Int = content?.changingConfigurations ?: 0
 
     override fun getIntrinsicWidth(): Int = content?.intrinsicWidth ?: -1
+
     override fun getIntrinsicHeight(): Int = content?.intrinsicHeight ?: -1
 
     @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")

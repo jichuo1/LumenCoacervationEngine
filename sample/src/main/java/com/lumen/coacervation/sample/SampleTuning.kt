@@ -78,6 +78,7 @@ internal class SampleTuningStore(context: Context) {
             .putFloat(KEY_SHADOW_OPACITY, value.opacity)
             .putFloat(KEY_SHADOW_CONTACT, value.contactOpacity)
             .putBoolean(KEY_SHADOW_ADAPT, value.adaptToTheme)
+            .putBoolean(KEY_SHADOW_SOFTEN, value.softenOverlap)
             .apply()
     }
 
@@ -103,8 +104,9 @@ internal class SampleTuningStore(context: Context) {
         offsetYDp = preferences.getFloat(KEY_SHADOW_OFFSET_Y, 3f).coerceIn(-8f, 16f),
         spreadDp = preferences.getFloat(KEY_SHADOW_SPREAD, 0f).coerceIn(-4f, 8f),
         opacity = preferences.getFloat(KEY_SHADOW_OPACITY, 0.14f).coerceIn(0f, 0.6f),
-        contactOpacity = preferences.getFloat(KEY_SHADOW_CONTACT, 0.10f).coerceIn(0f, 0.4f),
-        adaptToTheme = preferences.getBoolean(KEY_SHADOW_ADAPT, true)
+        contactOpacity = preferences.getFloat(KEY_SHADOW_CONTACT, 0.06f).coerceIn(0f, 0.4f),
+        adaptToTheme = preferences.getBoolean(KEY_SHADOW_ADAPT, true),
+        softenOverlap = preferences.getBoolean(KEY_SHADOW_SOFTEN, false)
     )
 
     private fun readCurve() =
@@ -124,6 +126,7 @@ internal class SampleTuningStore(context: Context) {
         const val KEY_SHADOW_OPACITY = "control_shadow_opacity"
         const val KEY_SHADOW_CONTACT = "control_shadow_contact"
         const val KEY_SHADOW_ADAPT = "control_shadow_adapt"
+        const val KEY_SHADOW_SOFTEN = "control_shadow_soften"
         const val KEY_SPRING_CUSTOM = "spring_custom"
         const val KEY_SPRING_RESPONSE = "spring_response"
         const val KEY_SPRING_BOUNCE = "spring_bounce"
@@ -135,15 +138,26 @@ internal class SampleTuningStore(context: Context) {
 }
 
 /**
- * 视效调参卡片：五个滑块与「恢复默认」。边缘高光两项松手后重建 Activity；长按形变与光晕三项拖动时即时生效。
+ * 视效调参卡片：表面立体边缘开关、边缘高光两项与长按三项滑块，以及「恢复默认」。
+ * 边缘高光在会话创建时读取，改动后重建 Activity；长按形变与光晕三项拖动时即时生效。
  * 滑块（`AbsSeekBar`）本身不参与长按弹性（§12.1）。
  */
 internal fun SampleActivity.tuningCard(palette: LumenPalette) = settingsCard(palette, "视效调参").apply {
-    addView(hint(palette, "边缘高光两项松手后重建；长按形变与光晕三项即时生效，拖完去别的页长按卡片试试。"))
-    addView(tuningSlider(palette, "边缘高光厚度", LumenEffectTuning.MIN_EDGE_WIDTH, LumenEffectTuning.MAX_EDGE_WIDTH,
-        tuning.current.edgeHighlightWidth, recreateOnRelease = true) { tuning.current.copy(edgeHighlightWidth = it) })
-    addView(tuningSlider(palette, "边缘高光亮度", 0f, LumenEffectTuning.MAX_EDGE_INTENSITY,
-        tuning.current.edgeHighlightIntensity, recreateOnRelease = true) { tuning.current.copy(edgeHighlightIntensity = it) })
+    val current = tuning.current
+    val edgeOn = current.edgeHighlightIntensity > 0f
+    addView(switchRow(palette, "表面立体边缘",
+        "贴边受光与底部立体边；默认关闭，避免拟物化边缘干扰内容", edgeOn) { _, checked ->
+        tuning.update(tuning.current.copy(edgeHighlightIntensity = if (checked) 1f else 0f))
+        recreate()
+    })
+    if (edgeOn) {
+        addView(tuningSlider(palette, "边缘高光厚度", LumenEffectTuning.MIN_EDGE_WIDTH, LumenEffectTuning.MAX_EDGE_WIDTH,
+            current.edgeHighlightWidth, recreateOnRelease = true) { tuning.current.copy(edgeHighlightWidth = it) })
+        addView(tuningSlider(palette, "边缘高光亮度", 0f, LumenEffectTuning.MAX_EDGE_INTENSITY,
+            current.edgeHighlightIntensity, recreateOnRelease = true) { tuning.current.copy(edgeHighlightIntensity = it) })
+    } else {
+        addView(hint(palette, "边缘高光已关闭；开启后可调厚度与亮度。长按形变与光晕始终即时生效。"))
+    }
     addView(tuningSlider(palette, "长按形变程度", 0f, LumenEffectTuning.MAX_DRAG_DEFORMATION,
         tuning.current.dragDeformation, recreateOnRelease = false) { tuning.current.copy(dragDeformation = it) })
     addView(tuningSlider(palette, "长按光晕强度", 0f, LumenEffectTuning.MAX_DRAG_GLOW_INTENSITY,
@@ -215,41 +229,46 @@ private fun SampleActivity.tuningSlider(
 private const val STEPS_PER_UNIT = 20f
 
 /**
- * 控件软阴影卡（§5.6）：开关、投射层/接触环参数与深色自适应。配置在委托首次读取后缓存，
+ * 控件软阴影卡（§5.6）：开关、延展/强度/重叠策略与深色自适应。配置在委托首次读取后缓存，
  * 改动一律「松手重建」。滑块（`AbsSeekBar`）本身不参与长按弹性（§12.1）。
  */
 internal fun SampleActivity.controlShadowCard(palette: LumenPalette) = settingsCard(palette, "控件阴影（重建）").apply {
     val shadow = tuning.controlShadow
-    addView(switchRow(palette, "启用软阴影", "浅色表面叠在白底内容上也能读出分界；阴影画在控件边界之外",
+    addView(switchRow(palette, "启用软阴影", "浅色表面叠在白底内容上也能读出分界；只在控件外侧宽幅衰减，边缘保持干净",
         shadow.enabled) { _, checked ->
         tuning.updateShadow(shadow.copy(enabled = checked))
         recreate()
     })
     if (!shadow.enabled) {
-        addView(hint(palette, "开启后 surface() 一族背景外包一层软阴影：投射层给浮起感，贴边接触环保证纯白底上也有分界。"))
+        addView(hint(palette, "开启后 surface() 一族背景外包一层软阴影：环境影给浮起感，贴边接触带保证纯白底上也有分界。"))
         return@apply
     }
-    addView(releaseSlider(palette, "模糊半径（dp）", 0f, 32f, 0.5f, shadow.blurRadiusDp) { value ->
+    addView(releaseSlider(palette, "延展（模糊 dp）", 0f, 32f, 0.1f, shadow.blurRadiusDp) { value ->
         tuning.updateShadow(tuning.controlShadow.copy(blurRadiusDp = value))
         recreate()
     })
-    addView(releaseSlider(palette, "向下偏移（dp）", -8f, 16f, 0.5f, shadow.offsetYDp) { value ->
+    addView(releaseSlider(palette, "向下偏移（dp）", -8f, 16f, 0.1f, shadow.offsetYDp) { value ->
         tuning.updateShadow(tuning.controlShadow.copy(offsetYDp = value))
         recreate()
     })
-    addView(releaseSlider(palette, "轮廓扩张（dp）", -4f, 8f, 0.5f, shadow.spreadDp) { value ->
+    addView(releaseSlider(palette, "轮廓扩张（dp）", -4f, 8f, 0.1f, shadow.spreadDp) { value ->
         tuning.updateShadow(tuning.controlShadow.copy(spreadDp = value))
         recreate()
     })
-    addView(releaseSlider(palette, "投射强度", 0f, 0.6f, 0.02f, shadow.opacity) { value ->
+    addView(releaseSlider(palette, "投射强度", 0f, 0.6f, 0.005f, shadow.opacity) { value ->
         tuning.updateShadow(tuning.controlShadow.copy(opacity = value))
         recreate()
     })
-    addView(releaseSlider(palette, "接触环强度", 0f, 0.4f, 0.02f, shadow.contactOpacity) { value ->
+    addView(releaseSlider(palette, "贴边接触强度", 0f, 0.4f, 0.005f, shadow.contactOpacity) { value ->
         tuning.updateShadow(tuning.controlShadow.copy(contactOpacity = value))
         recreate()
     })
-    addView(switchRow(palette, "深色主题自适应", "深色下自动加强投射、减弱接触环", shadow.adaptToTheme) { _, checked ->
+    addView(switchRow(palette, "重叠处减弱阴影",
+        "相邻控件落在外扩阴影内时降低本控件强度，避免交叉处叠加过黑；关闭则直接叠加", shadow.softenOverlap) { _, checked ->
+        tuning.updateShadow(tuning.controlShadow.copy(softenOverlap = checked))
+        recreate()
+    })
+    addView(switchRow(palette, "深色主题自适应", "深色下自动加强环境影、减弱接触带", shadow.adaptToTheme) { _, checked ->
         tuning.updateShadow(tuning.controlShadow.copy(adaptToTheme = checked))
         recreate()
     })
@@ -294,7 +313,7 @@ internal fun SampleActivity.motionCard(palette: LumenPalette) = settingsCard(pal
  * 松手后应用并重建的参数滑块：标题实时显示当前值，写入发生在 `onStopTrackingTouch`——
  * 需要重建 Activity 生效的参数不能在拖动中途落盘，否则一次滑动触发几十次重建。
  */
-private fun SampleActivity.releaseSlider(
+internal fun SampleActivity.releaseSlider(
     palette: LumenPalette,
     label: String,
     from: Float,

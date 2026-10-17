@@ -279,6 +279,11 @@ internal fun SampleActivity.buildListPage(content: LinearLayout, palette: LumenP
         layoutManager = LinearLayoutManager(context)
         this.adapter = adapter
         isNestedScrollingEnabled = false
+        // 列表行背景带控件软阴影：RecyclerView 默认在自身边界裁掉子 View 之外的绘制（§5.6）。
+        // 放行两层裁剪并留出内边距，行阴影才能完整画出，而不是在第一/最后一行和左右边缘被切一刀。
+        clipChildren = false
+        clipToPadding = false
+        setPadding(dp(16), dp(16), dp(16), dp(16))
         // 行内状态自己渐变，不整行交叉淡化一下。
         (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
     }
@@ -321,6 +326,10 @@ internal fun SampleActivity.buildListPage(content: LinearLayout, palette: LumenP
         layoutManager = GridLayoutManager(context, 3)
         this.adapter = gridAdapter
         isNestedScrollingEnabled = false
+        // 同纵向列表：网格方块也有软阴影，父级不得在自身边界裁掉。
+        clipChildren = false
+        clipToPadding = false
+        setPadding(dp(8), dp(8), dp(8), dp(8))
         (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
     }
     ItemTouchHelper(LumenReorderCallback(

@@ -69,7 +69,9 @@ class FrostedMotionSurfaceIntegrationTest {
         assertTrue(draw.contains("drawColor = motionProvider.liquidMotionFallbackColor()"))
         assertTrue(draw.indexOf("if (rect.isEmpty") > draw.indexOf("motionProvider.copyLiquidMotionBounds(rect)"))
         assertTrue(draw.contains("drawSample(canvas, rect, drawRadius, view, sampleAlpha)"))
-        assertTrue(draw.contains("if (motionProvider == null)"))
+        // 运动宿主自己的描边优先；普通宿主只在边缘高光开启时补描边（默认关闭）。
+        assertTrue(draw.contains(
+            "if (motionProvider == null && (style.upperEdgeAlpha > 0 || style.lowerEdgeAlpha > 0))"))
         assertFalse(draw.contains("LinearGradient("))
         assertFalse(draw.contains("saveLayer("))
     }
