@@ -9,7 +9,10 @@ import com.lumen.coacervation.engine.host.LumenControlShadowOptions
 import com.lumen.coacervation.engine.interaction.ElasticRubberCurve
 import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.morph.LumenMorphOptions
 import com.lumen.coacervation.engine.motion.LumenSpringSpec
+import kotlin.math.PI
+import kotlin.math.sqrt
 import java.util.Locale
 import kotlin.math.roundToInt
 
@@ -28,6 +31,10 @@ internal class SampleTuningStore(context: Context) {
 
     /** 控件软阴影配置（§5.6）：委托首次读取后缓存。 */
     var controlShadow: LumenControlShadowOptions = readShadow()
+        private set
+
+    /** 液态形变磁贴配置：Demo 动效页的专用测试控件与设置卡共用。 */
+    var morph: LumenMorphOptions = readMorph()
         private set
 
     /** 自定义弹簧开关：关闭时 [springSpec] 恒为引擎原样，与持久化的周期/弹跳无关。 */
@@ -83,6 +90,28 @@ internal class SampleTuningStore(context: Context) {
             .apply()
     }
 
+    fun updateMorph(value: LumenMorphOptions) {
+        morph = value
+        preferences.edit()
+            .putBoolean(KEY_MORPH_ENABLED, value.enabled)
+            .putFloat(KEY_MORPH_FRACTION, value.collapsedFraction)
+            .putFloat(KEY_MORPH_COLLAPSED_RADIUS, value.collapsedRadiusDp)
+            .putFloat(KEY_MORPH_EXPANDED_RADIUS, value.expandedRadiusDp)
+            .putFloat(KEY_MORPH_SMOOTHING, value.cornerSmoothing)
+            .putFloat(KEY_MORPH_CONTENT_SCALE, value.contentScale)
+            .putBoolean(KEY_MORPH_FADE, value.fadeLabel)
+            .putBoolean(KEY_MORPH_EDGE, value.edgeHighlight)
+            .putBoolean(KEY_MORPH_CONTACT, value.contactLine)
+            .putFloat(KEY_MORPH_CONTACT_ALPHA, value.contactAlpha)
+            .putFloat(KEY_MORPH_WIDTH_RESPONSE, morphResponse(value.widthSpring))
+            .putFloat(KEY_MORPH_WIDTH_BOUNCE, morphBounce(value.widthSpring))
+            .putFloat(KEY_MORPH_CORNER_RESPONSE, morphResponse(value.cornerSpring))
+            .putFloat(KEY_MORPH_CORNER_BOUNCE, morphBounce(value.cornerSpring))
+            .putFloat(KEY_MORPH_CONTENT_RESPONSE, morphResponse(value.contentSpring))
+            .putFloat(KEY_MORPH_CONTENT_BOUNCE, morphBounce(value.contentSpring))
+            .apply()
+    }
+
     fun updateSpring(customized: Boolean, responseSeconds: Float, bounce: Float) {
         springCustomized = customized
         springResponseSeconds = responseSeconds.coerceIn(0.08f, 1.5f)
@@ -111,6 +140,34 @@ internal class SampleTuningStore(context: Context) {
         overlapAttenuation = preferences.getFloat(KEY_SHADOW_ATTENUATION, 0.55f).coerceIn(0.1f, 1f)
     )
 
+    private fun readMorph() = LumenMorphOptions(
+        enabled = preferences.getBoolean(KEY_MORPH_ENABLED, true),
+        collapsedFraction = preferences.getFloat(KEY_MORPH_FRACTION, .5f).coerceIn(.2f, 1f),
+        collapsedRadiusDp = preferences.getFloat(KEY_MORPH_COLLAPSED_RADIUS, 80f).coerceIn(0f, 200f),
+        expandedRadiusDp = preferences.getFloat(KEY_MORPH_EXPANDED_RADIUS, 28f).coerceIn(0f, 200f),
+        cornerSmoothing = preferences.getFloat(KEY_MORPH_SMOOTHING, .25f).coerceIn(0f, .6f),
+        contentScale = preferences.getFloat(KEY_MORPH_CONTENT_SCALE, 1f).coerceIn(.5f, 2f),
+        fadeLabel = preferences.getBoolean(KEY_MORPH_FADE, true),
+        edgeHighlight = preferences.getBoolean(KEY_MORPH_EDGE, true),
+        contactLine = preferences.getBoolean(KEY_MORPH_CONTACT, true),
+        contactAlpha = preferences.getFloat(KEY_MORPH_CONTACT_ALPHA, .08f).coerceIn(0f, .3f),
+        widthSpring = LumenSpringSpec.ofResponseBounce(
+            preferences.getFloat(KEY_MORPH_WIDTH_RESPONSE, .36f).coerceIn(.08f, 1.5f),
+            preferences.getFloat(KEY_MORPH_WIDTH_BOUNCE, .17f).coerceIn(0f, .9f)),
+        cornerSpring = LumenSpringSpec.ofResponseBounce(
+            preferences.getFloat(KEY_MORPH_CORNER_RESPONSE, .36f).coerceIn(.08f, 1.5f),
+            preferences.getFloat(KEY_MORPH_CORNER_BOUNCE, .16f).coerceIn(0f, .9f)),
+        contentSpring = LumenSpringSpec.ofResponseBounce(
+            preferences.getFloat(KEY_MORPH_CONTENT_RESPONSE, .2f).coerceIn(.08f, 1.5f),
+            preferences.getFloat(KEY_MORPH_CONTENT_BOUNCE, 0f).coerceIn(0f, .9f))
+    )
+
+    private fun morphResponse(spec: LumenSpringSpec): Float =
+        (2.0 * PI / sqrt(spec.stiffness.toDouble())).toFloat()
+
+    private fun morphBounce(spec: LumenSpringSpec): Float =
+        (1f - spec.dampingRatio).coerceIn(0f, .9f)
+
     private fun readCurve() =
         ElasticRubberCurve.entries.firstOrNull { it.name == preferences.getString(KEY_RUBBER_CURVE, null) }
             ?: ElasticRubberCurve.TANH
@@ -130,6 +187,22 @@ internal class SampleTuningStore(context: Context) {
         const val KEY_SHADOW_ADAPT = "control_shadow_adapt"
         const val KEY_SHADOW_SOFTEN = "control_shadow_soften"
         const val KEY_SHADOW_ATTENUATION = "control_shadow_attenuation"
+        const val KEY_MORPH_ENABLED = "morph_enabled"
+        const val KEY_MORPH_FRACTION = "morph_fraction"
+        const val KEY_MORPH_COLLAPSED_RADIUS = "morph_collapsed_radius"
+        const val KEY_MORPH_EXPANDED_RADIUS = "morph_expanded_radius"
+        const val KEY_MORPH_SMOOTHING = "morph_smoothing"
+        const val KEY_MORPH_CONTENT_SCALE = "morph_content_scale"
+        const val KEY_MORPH_FADE = "morph_fade"
+        const val KEY_MORPH_EDGE = "morph_edge"
+        const val KEY_MORPH_CONTACT = "morph_contact"
+        const val KEY_MORPH_CONTACT_ALPHA = "morph_contact_alpha"
+        const val KEY_MORPH_WIDTH_RESPONSE = "morph_width_response"
+        const val KEY_MORPH_WIDTH_BOUNCE = "morph_width_bounce"
+        const val KEY_MORPH_CORNER_RESPONSE = "morph_corner_response"
+        const val KEY_MORPH_CORNER_BOUNCE = "morph_corner_bounce"
+        const val KEY_MORPH_CONTENT_RESPONSE = "morph_content_response"
+        const val KEY_MORPH_CONTENT_BOUNCE = "morph_content_bounce"
         const val KEY_SPRING_CUSTOM = "spring_custom"
         const val KEY_SPRING_RESPONSE = "spring_response"
         const val KEY_SPRING_BOUNCE = "spring_bounce"
@@ -283,6 +356,73 @@ internal fun SampleActivity.controlShadowCard(palette: LumenPalette) = settingsC
     })
     addView(hint(palette, "本 Demo 卡片间距已够阴影外扩；密集列表里相邻项会把它裁掉，通常正是想要的效果。同一控件不要再叠平台 elevation，避免双影。"))
 }
+
+/**
+ * 液态形变卡：专用测试件在「动效」页；这里控制三条弹簧、几何与贴边显示。
+ * 改动重建 Activity，便于和「表面立体边缘」等会话级参数一起生效。
+ */
+internal fun SampleActivity.morphCard(palette: LumenPalette) = settingsCard(palette, "液态形变（重建）").apply {
+    val morph = tuning.morph
+    addView(hint(palette, "专用测试件在「动效」页。宽度/圆角/内容三条弹簧独立；圆角与内容错峰时出现液滴挤出感。"))
+    fun update(block: (LumenMorphOptions) -> LumenMorphOptions) {
+        tuning.updateMorph(block(morph))
+        recreate()
+    }
+    addView(switchRow(palette, "启用弹簧动画", "关闭后状态切换直接落位，仍保留几何/内容变化", morph.enabled) { _, checked ->
+        update { it.copy(enabled = checked) }
+    })
+    addView(switchRow(palette, "贴边高光", "跟随「表面立体边缘」的厚度/亮度", morph.edgeHighlight) { _, checked ->
+        update { it.copy(edgeHighlight = checked) }
+    })
+    addView(switchRow(palette, "贴边接触线", "沿当前形变路径画一圈低 alpha 接触线", morph.contactLine) { _, checked ->
+        update { it.copy(contactLine = checked) }
+    })
+    addView(switchRow(palette, "文字淡入", "关闭后文字恒定 alpha，只被形状裁切", morph.fadeLabel) { _, checked ->
+        update { it.copy(fadeLabel = checked) }
+    })
+    addView(releaseSlider(palette, "收起宽度比例", .3f, .9f, .01f, morph.collapsedFraction) { value ->
+        update { it.copy(collapsedFraction = value) }
+    })
+    addView(releaseSlider(palette, "收起圆角（dp）", 0f, 80f, 1f, morph.collapsedRadiusDp) { value ->
+        update { it.copy(collapsedRadiusDp = value) }
+    })
+    addView(releaseSlider(palette, "展开圆角（dp）", 0f, 60f, 1f, morph.expandedRadiusDp) { value ->
+        update { it.copy(expandedRadiusDp = value) }
+    })
+    addView(releaseSlider(palette, "圆角平滑", 0f, .6f, .01f, morph.cornerSmoothing) { value ->
+        update { it.copy(cornerSmoothing = value) }
+    })
+    addView(releaseSlider(palette, "内容缩放", .8f, 1.2f, .01f, morph.contentScale) { value ->
+        update { it.copy(contentScale = value) }
+    })
+    addView(releaseSlider(palette, "接触线强度", 0f, .3f, .01f, morph.contactAlpha) { value ->
+        update { it.copy(contactAlpha = value) }
+    })
+    addView(releaseSlider(palette, "宽度 response", .1f, .8f, .01f, springResponse(morph.widthSpring)) { value ->
+        update { it.copy(widthSpring = LumenSpringSpec.ofResponseBounce(value, springBounce(morph.widthSpring))) }
+    })
+    addView(releaseSlider(palette, "宽度 bounce", 0f, .4f, .01f, springBounce(morph.widthSpring)) { value ->
+        update { it.copy(widthSpring = LumenSpringSpec.ofResponseBounce(springResponse(morph.widthSpring), value)) }
+    })
+    addView(releaseSlider(palette, "圆角 response", .1f, .8f, .01f, springResponse(morph.cornerSpring)) { value ->
+        update { it.copy(cornerSpring = LumenSpringSpec.ofResponseBounce(value, springBounce(morph.cornerSpring))) }
+    })
+    addView(releaseSlider(palette, "圆角 bounce", 0f, .3f, .01f, springBounce(morph.cornerSpring)) { value ->
+        update { it.copy(cornerSpring = LumenSpringSpec.ofResponseBounce(springResponse(morph.cornerSpring), value)) }
+    })
+    addView(releaseSlider(palette, "内容 response", .1f, .5f, .01f, springResponse(morph.contentSpring)) { value ->
+        update { it.copy(contentSpring = LumenSpringSpec.ofResponseBounce(value, springBounce(morph.contentSpring))) }
+    })
+    addView(releaseSlider(palette, "内容 bounce", 0f, .2f, .01f, springBounce(morph.contentSpring)) { value ->
+        update { it.copy(contentSpring = LumenSpringSpec.ofResponseBounce(springResponse(morph.contentSpring), value)) }
+    })
+}
+
+private fun springResponse(spec: LumenSpringSpec): Float =
+    (2.0 * PI / sqrt(spec.stiffness.toDouble())).toFloat()
+
+private fun springBounce(spec: LumenSpringSpec): Float =
+    (1f - spec.dampingRatio).coerceIn(0f, .9f)
 
 /**
  * 长按动效卡：跟手位移的橡皮筋曲线与回弹弹簧（§12，`ofResponseBounce` 设计口语换算）。

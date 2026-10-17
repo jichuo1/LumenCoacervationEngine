@@ -87,6 +87,7 @@ internal fun SampleActivity.buildSettingsPage(content: LinearLayout, palette: Lu
     content.addView(backgroundCard(palette), cardParams())
     content.addView(tuningCard(palette), cardParams())
     content.addView(controlShadowCard(palette), cardParams())
+    content.addView(morphCard(palette), cardParams())
     content.addView(motionCard(palette), cardParams())
     content.addView(diagnosticsCard(palette), cardParams())
 }

@@ -19,6 +19,7 @@ import com.lumen.coacervation.engine.interaction.ElasticInteractionController
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.motion.MicroMotion
 import com.lumen.coacervation.engine.motion.expansion.SectionExpansionController
+import com.lumen.coacervation.engine.morph.LumenMorphTile
 import com.lumen.coacervation.engine.motion.modal.ModalAnchorStyle
 import com.lumen.coacervation.engine.motion.modal.ModalSubPanelOrigin
 import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
@@ -126,6 +127,33 @@ internal fun SampleActivity.showAboutBubble(icon: View) {
 
 internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: LumenPalette) {
     content.addView(caption("左右滑动或点底栏切页：翻页可随时被新手势接住，标题与文字按离手指远近链式跟随（§13.6）。"))
+
+    // 液态形变专用测试件：固定 2 格外层，内部 1 格 ↔ 2 格；可调项在设置页「液态形变」。
+    val morphTile = LumenMorphTile(this).apply {
+        tag = ElasticInteractionController.EXCLUDED_TAG
+        configure(palette, tuning.current, tuning.morph)
+        setContent(getDrawable(android.R.drawable.ic_menu_compass), "液态形变")
+    }
+    content.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+        background = lumen.cardBackground(palette.surface)
+        clipChildren = false
+        clipToPadding = false
+        addView(TextView(context).apply {
+            text = "液态形变：点按 1 格 ↔ 2 格"
+            textSize = 16f
+            setTypeface(typeface, Typeface.BOLD)
+            setTextColor(palette.textPrimary)
+        })
+        addView(TextView(context).apply {
+            text = "宽度、圆角、内容三条弹簧独立；圆角/内容错峰形成液滴挤出感。"
+            textSize = 13f
+            setTextColor(palette.textSecondary)
+            setPadding(0, dp(4), 0, 0)
+        })
+        addView(morphTile, LinearLayout.LayoutParams(-1, dp(160)).apply { topMargin = dp(14) })
+    }, cardParams())
 
     // §13.7 手风琴：单一进度弹簧驱动卡片裁剪、行级联与兄弟滑行；展开到一半收起会从中间态倒带。
     val accordionContent = LinearLayout(this).apply {
