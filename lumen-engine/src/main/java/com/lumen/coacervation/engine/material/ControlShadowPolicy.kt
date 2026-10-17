@@ -58,6 +58,9 @@ internal object ControlShadowPolicy {
     /** 一维 alpha 查表样本数：d 从 0 到 pad，每纹理只建一次。 */
     const val LUT_SAMPLES = 512
 
+    /** 重叠减弱默认保留比例；宿主可经 [LumenControlShadowOptions.overlapAttenuation] 覆盖。 */
+    const val DEFAULT_OVERLAP_ATTENUATION = 0.55f
+
     /** 纹理层：环境影与贴边接触带分别成图，强度独立、键空间互不污染。 */
     enum class Layer { CAST, CONTACT }
 
@@ -221,6 +224,19 @@ internal object ControlShadowPolicy {
         val pad = padPx(blur * CAST_WIDE_SCALE)
         return (pad + max(0f, spreadPx) + max(0f, offsetYPx)).roundToInt()
     }
+
+    /** 两个轴对齐矩形是否相交（开区间；相切不算重叠，避免相邻项误判）。 */
+    fun rectsOverlap(
+        leftA: Float, topA: Float, rightA: Float, bottomA: Float,
+        leftB: Float, topB: Float, rightB: Float, bottomB: Float
+    ): Boolean = rightA > leftB && leftA < rightB && bottomA > topB && topA < bottomB
+
+    /**
+     * 重叠减弱时的强度倍率：未开启或未检测到重叠时为 1；开启且重叠时取
+     * [attenuation]（收进 0.1..1）。纯函数，供绘制层与 JVM 测试共用。
+     */
+    fun overlapGain(soften: Boolean, overlap: Boolean, attenuation: Float): Float =
+        if (soften && overlap) attenuation.coerceIn(0.1f, 1f) else 1f
 
     /** 深色主题下投影加强、接触带减弱；浅色系主题原样返回。 */
     fun adaptAlphas(opacity: Float, contactOpacity: Float, dark: Boolean, adaptToTheme: Boolean): FloatArray {

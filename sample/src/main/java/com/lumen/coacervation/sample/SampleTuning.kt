@@ -79,6 +79,7 @@ internal class SampleTuningStore(context: Context) {
             .putFloat(KEY_SHADOW_CONTACT, value.contactOpacity)
             .putBoolean(KEY_SHADOW_ADAPT, value.adaptToTheme)
             .putBoolean(KEY_SHADOW_SOFTEN, value.softenOverlap)
+            .putFloat(KEY_SHADOW_ATTENUATION, value.overlapAttenuation)
             .apply()
     }
 
@@ -106,7 +107,8 @@ internal class SampleTuningStore(context: Context) {
         opacity = preferences.getFloat(KEY_SHADOW_OPACITY, 0.14f).coerceIn(0f, 0.6f),
         contactOpacity = preferences.getFloat(KEY_SHADOW_CONTACT, 0.06f).coerceIn(0f, 0.4f),
         adaptToTheme = preferences.getBoolean(KEY_SHADOW_ADAPT, true),
-        softenOverlap = preferences.getBoolean(KEY_SHADOW_SOFTEN, false)
+        softenOverlap = preferences.getBoolean(KEY_SHADOW_SOFTEN, false),
+        overlapAttenuation = preferences.getFloat(KEY_SHADOW_ATTENUATION, 0.55f).coerceIn(0.1f, 1f)
     )
 
     private fun readCurve() =
@@ -127,6 +129,7 @@ internal class SampleTuningStore(context: Context) {
         const val KEY_SHADOW_CONTACT = "control_shadow_contact"
         const val KEY_SHADOW_ADAPT = "control_shadow_adapt"
         const val KEY_SHADOW_SOFTEN = "control_shadow_soften"
+        const val KEY_SHADOW_ATTENUATION = "control_shadow_attenuation"
         const val KEY_SPRING_CUSTOM = "spring_custom"
         const val KEY_SPRING_RESPONSE = "spring_response"
         const val KEY_SPRING_BOUNCE = "spring_bounce"
@@ -268,6 +271,12 @@ internal fun SampleActivity.controlShadowCard(palette: LumenPalette) = settingsC
         tuning.updateShadow(tuning.controlShadow.copy(softenOverlap = checked))
         recreate()
     })
+    if (shadow.softenOverlap) {
+        addView(releaseSlider(palette, "重叠保留比例", 0.1f, 1f, 0.01f, shadow.overlapAttenuation) { value ->
+            tuning.updateShadow(tuning.controlShadow.copy(overlapAttenuation = value))
+            recreate()
+        })
+    }
     addView(switchRow(palette, "深色主题自适应", "深色下自动加强环境影、减弱接触带", shadow.adaptToTheme) { _, checked ->
         tuning.updateShadow(tuning.controlShadow.copy(adaptToTheme = checked))
         recreate()

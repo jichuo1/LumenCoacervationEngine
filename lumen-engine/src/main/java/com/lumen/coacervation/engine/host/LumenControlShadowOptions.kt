@@ -27,6 +27,7 @@ import android.graphics.Color
  * @property adaptToTheme 深色主题下自动加强环境影、减弱接触带（深底上窄带几乎不可见）。
  * @property softenOverlap 相邻同级控件落在外扩阴影范围内时，降低本控件的阴影强度，
  *   避免两个控件的阴影交叉处叠加过黑；默认 false（叠加）。这是同级布局的近似检测，不改变纹理与缓存。
+ * @property overlapAttenuation [softenOverlap] 命中时的强度保留比例（0.1–1）；默认 0.55，越小交叉处越淡。
  */
 public data class LumenControlShadowOptions(
     val enabled: Boolean = false,
@@ -37,7 +38,8 @@ public data class LumenControlShadowOptions(
     val contactOpacity: Float = 0.06f,
     val color: Int = Color.BLACK,
     val adaptToTheme: Boolean = true,
-    val softenOverlap: Boolean = false
+    val softenOverlap: Boolean = false,
+    val overlapAttenuation: Float = 0.55f
 ) {
     init {
         bounded("blurRadiusDp", blurRadiusDp, 0f, 32f)
@@ -45,6 +47,7 @@ public data class LumenControlShadowOptions(
         bounded("spreadDp", spreadDp, -4f, 8f)
         bounded("opacity", opacity, 0f, 0.6f)
         bounded("contactOpacity", contactOpacity, 0f, 0.4f)
+        bounded("overlapAttenuation", overlapAttenuation, 0.1f, 1f)
     }
 
     public companion object {

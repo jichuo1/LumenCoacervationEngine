@@ -5,6 +5,7 @@ import com.lumen.coacervation.engine.material.ControlShadowPolicy
 import com.lumen.coacervation.engine.material.ControlShadowPolicy.Layer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -139,6 +140,22 @@ class ControlShadowPolicyTest {
         val contact = ControlShadowPolicy.textureMetrics(Layer.CONTACT, 60f, 0f, density)
         val bytes = ControlShadowPolicy.workingSetBytes(floatArrayOf(60f), 0f, density)
         assertEquals(contact.bytes.toLong(), bytes)
+    }
+
+    @Test fun overlapGainIsConfigurableAndRectanglesUseOpenIntervals() {
+        assertTrue(ControlShadowPolicy.rectsOverlap(0f, 0f, 10f, 10f, 9f, 9f, 20f, 20f))
+        assertFalse(ControlShadowPolicy.rectsOverlap(0f, 0f, 10f, 10f, 10f, 0f, 20f, 10f))
+        assertEquals(0.55f, ControlShadowPolicy.overlapGain(true, true, 0.55f), 0f)
+        assertEquals(1f, ControlShadowPolicy.overlapGain(false, true, 0.55f), 0f)
+        assertEquals(1f, ControlShadowPolicy.overlapGain(true, false, 0.55f), 0f)
+        assertEquals(0.8f, ControlShadowPolicy.overlapGain(true, true, 0.8f), 0f)
+        assertEquals(1f, ControlShadowPolicy.overlapGain(true, true, 2f), 0f)
+        assertThrows(IllegalArgumentException::class.java) {
+            LumenControlShadowOptions(enabled = true, overlapAttenuation = 0f)
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            LumenControlShadowOptions(enabled = true, overlapAttenuation = 1.1f)
+        }
     }
 
     @Test fun darkThemeStrengthensCastAndWeakensContact() {

@@ -62,10 +62,7 @@ internal class ControlShadowDrawable(
         contactPaint.alpha = (alphas[1] * 255f).toInt().coerceIn(0, 255)
     }
 
-    private companion object {
-        /** 检测到同级阴影会交叉时的投射强度倍率；保留一半以上，避免卡顿感变成\"无阴影\"。 */
-        const val OVERLAP_SOFTEN_GAIN = 0.55f
-    }
+
 
     override fun draw(canvas: Canvas) {
         if (bounds.isEmpty) {
@@ -79,10 +76,10 @@ internal class ControlShadowDrawable(
 
         // 重叠处的强度：同级控件落在外扩区域内时降低本控件强度，避免交叉处叠加过黑。
         // 只在宿主显式开启时做一次同级 bounds 检测（零分配），默认仍是直接叠加。
-        val gain = if (options.softenOverlap) {
-            val view = callback as? View
-            if (view != null && siblingShadowOverlaps(view)) OVERLAP_SOFTEN_GAIN else 1f
-        } else 1f
+        val overlap = options.softenOverlap &&
+            (callback as? View)?.let(::siblingShadowOverlaps) == true
+        val gain = ControlShadowPolicy.overlapGain(
+            options.softenOverlap, overlap, options.overlapAttenuation)
         castPaint.alpha = (alphas[0] * 255f * gain).toInt().coerceIn(0, 255)
         contactPaint.alpha = (alphas[1] * 255f * gain).toInt().coerceIn(0, 255)
 
@@ -122,8 +119,10 @@ internal class ControlShadowDrawable(
         for (i in 0 until parent.childCount) {
             val sibling = parent.getChildAt(i)
             if (sibling === view || sibling.visibility != View.VISIBLE) continue
-            if (sibling.right > left && sibling.left < right &&
-                sibling.bottom > top && sibling.top < bottom) return true
+            if (ControlShadowPolicy.rectsOverlap(
+                    left, top, right, bottom,
+                    sibling.left.toFloat(), sibling.top.toFloat(),
+                    sibling.right.toFloat(), sibling.bottom.toFloat())) return true
         }
         return false
     }

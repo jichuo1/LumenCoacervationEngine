@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.SimpleItemAnimator
 import com.lumen.coacervation.engine.controls.LumenReorderCallback
+import com.lumen.coacervation.engine.host.LumenControlShadow
 import com.lumen.coacervation.engine.interaction.ElasticInteractionController
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.motion.MicroMotion
@@ -255,6 +256,9 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
 
 internal fun SampleActivity.buildListPage(content: LinearLayout, palette: LumenPalette) {
     content.addView(caption("长按一行拾起，上下拖动排序；松手按拖动距离滑回落位（§12.5）。"))
+    // 列表放行裁剪后，顶部/底部的阴影尾段要落进内边距，避免压到说明文字或状态行。
+    val shadowOutset = LumenControlShadow.outsetPx(tuning.controlShadow, density)
+    val verticalInset = maxOf(dp(16), shadowOutset)
     val items = MutableList(8) { "条目 ${it + 1}" }
     val adapter = object : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int) = object : RecyclerView.ViewHolder(
@@ -283,7 +287,7 @@ internal fun SampleActivity.buildListPage(content: LinearLayout, palette: LumenP
         // 放行两层裁剪并留出内边距，行阴影才能完整画出，而不是在第一/最后一行和左右边缘被切一刀。
         clipChildren = false
         clipToPadding = false
-        setPadding(dp(16), dp(16), dp(16), dp(16))
+        setPadding(dp(16), verticalInset, dp(16), verticalInset)
         // 行内状态自己渐变，不整行交叉淡化一下。
         (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
     }
@@ -329,7 +333,8 @@ internal fun SampleActivity.buildListPage(content: LinearLayout, palette: LumenP
         // 同纵向列表：网格方块也有软阴影，父级不得在自身边界裁掉。
         clipChildren = false
         clipToPadding = false
-        setPadding(dp(8), dp(8), dp(8), dp(8))
+        val gridInset = maxOf(dp(8), shadowOutset)
+        setPadding(dp(8), gridInset, dp(8), gridInset)
         (itemAnimator as? SimpleItemAnimator)?.supportsChangeAnimations = false
     }
     ItemTouchHelper(LumenReorderCallback(
