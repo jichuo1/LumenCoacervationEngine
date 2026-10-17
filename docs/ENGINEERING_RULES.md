@@ -109,6 +109,7 @@ python tools/audit_checkcast.py sample/build/outputs/apk/debug/sample-debug.apk 
   - `saveLayer` 离屏层；
   - `BlurMaskFilter`。
 - 每一块位图都**必须**有写成常量的尺寸或字节预算，并由 JVM 测试守住（`INTEGRATION_STANDARD.md` §8 列出了现有预算）。超出预算时降低采样倍率或降级后端，**不得**扩容。
+- 进程级图形缓存**必须**按**真实工作集**（同屏可能并存的全部参数组合）验证，不得只验证单张上限：工作集超过预算后，LRU 在循环访问下会退化为每帧重建。纯策略里提供可断言的工作集函数（如 `ControlShadowPolicy.workingSetBytes`），由 JVM 测试守住。
 - 实时取样使用三缓冲轮转：PixelCopy 不能写入当前帧或上一帧仍可能被 RenderThread 引用的位图。
 - 静止时**不得**持续工作。实时取样有静止门控，悬浮栏探针有节流；页面静止时引擎的 GPU 帧数应接近零。
 

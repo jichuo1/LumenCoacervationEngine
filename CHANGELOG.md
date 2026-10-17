@@ -6,10 +6,19 @@
 
 ### 新增
 
-- 可选控件软阴影（`LumenControlShadowOptions` / `LumenControlShadow`，`LumenActivityDelegate.controlShadowProvider` 与 `LumenActivity.resolveControlShadow()`）：投射层高斯软影 + 贴边接触环两道独立强度，解决浅色主题下浅色表面与白底内容分不清边的问题（色罩与白色描边在浅底失效）。纯软件位图缓存、API 27+ 可用、与高级材质无关；纹理按参数量化进进程级 LRU（单张 ≤ 384×384 px，合计 ≤ 2 MiB），内存告急随 `releaseGraphics()` 清空。阴影画在控件边界之外（绘制时 `clipOut` 控件轮廓：半透明表面不透底，祖先裁剪时整层干净消失而非内侧残留灰框），宿主需按 `outsetPx` 预留间距或不裁剪子 View。吸收自 ColorOS SystemUI 的内阴影/描边分层思路，实现与参数体系为引擎自有。
+- 可选控件软阴影（`LumenControlShadowOptions` / `LumenControlShadow`，`LumenActivityDelegate.controlShadowProvider` 与 `LumenActivity.resolveControlShadow()`）：环境层（1.6× 模糊半径的宽幅高斯尾）+ 贴边接触带按到控件轮廓的距离场烘焙成连续剖面，解决浅色主题下浅色表面与白底内容分不清边的问题（色罩与白色描边在浅底失效）。纯软件位图缓存、API 27+ 可用、与高级材质无关；环境层与接触带各一张 0.4× 纹理（单张 ≤ 256×256 px，合计 ≤ 2 MiB），内存告急随 `releaseGraphics()` 清空。阴影**只画在控件边界之外**：内侧不画，边缘保留自己的干净轮廓，多个控件叠加时不会互相压出暗边。宿主需按 `outsetPx` 预留外侧间距或不裁剪子 View。吸收自 ColorOS SystemUI 的内阴影/描边分层思路，实现与参数体系为引擎自有。
 - 长按回弹弹簧规格 `LumenSpringSpec`：除直接给刚度/阻尼比外，可用 `ofResponseBounce(周期秒, 弹跳)` 以设计口语换算（与厂商弹簧库的 response/bounce 同语义）；`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `springSpec` 参数，默认引擎原样。
 - 跟手位移橡皮筋曲线族 `ElasticRubberCurve { TANH, RATIONAL }`：默认 TANH 不变；RATIONAL 初段更跟手、渐近行程上限更韧，与 TANH 共享同一径向预算与 slop 连续归零。`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `rubberCurve` 参数。
-- Demo 设置页新增「控件阴影」与「长按动效」调参卡：软阴影开关与五个参数、深色自适应、橡皮筋曲线与 response/bounce 弹簧换算；宿主侧持久化（引擎不存），改动重建页面生效。
+- Demo 设置页新增「控件阴影」与「长按动效」调参卡：软阴影开关与五个参数、深色自适应、橡皮筋曲线与 response/bounce 弹簧换算；宿主侧持久化（引擎不存），改动重建页面生效。视效调参卡新增「表面立体边缘」开关（默认开启，可关闭贴边受光/底部立体边）；外观卡新增「选中遮罩强度」连续滑块；控件阴影卡新增「重叠处减弱阴影」开关，参数步长细化到 0.1dp / 0.005。
+
+### 修复
+
+- 控件软阴影开启后在真实设备上严重掉帧：投射层纹理按圆角各存一张，密度 4.0、模糊 10dp 时同屏 6 种圆角的工作集为 2.52 MiB，超过 2 MiB 的进程级 LRU 后进入循环淘汰，每个表面每帧都重新建图并模糊（材质页 65% 掉帧、P50 42ms）。纹理改为 0.4× 采样生成（单张 ≤ 256×256 px），双层工作集约 1.05 MiB；度量与九宫格停靠点在构造时缓存，绘制路径不再分配。内存压力监听器改为强引用持有，生成失败只关闭阴影。
+- 控件软阴影的剖面美化：不再用"模糊 + 裁剪 + 两道硬描边"，改按到轮廓的距离场直出 alpha；环境项改为 1.6× 模糊半径的宽幅高斯尾、接触带权重降低，并移除矢量描边。阴影只画在控件外侧，控件边缘保持干净，多控件叠加不再出现内缘暗边。向下偏移改为"底部加强、顶部减弱"的竖向增益（不再平移纹理），卡片下缘不再露出背景亮缝。材质页掉帧保持 1.4%（关闭阴影为 0.9%）。
+- 列表与网格的 `RecyclerView` 放行 `clipChildren` 与 `clipToPadding` 并留出内边距，行阴影不再在容器边界被直线切掉（适配标准 §5.6）。
+- 底栏胶囊背景的软阴影被 `LumenNavigationBar` 自身的 `clipToOutline` 裁掉：改为只让触点光晕按胶囊轮廓裁剪，栏背景的阴影完整绘制。
+- 长按回弹在 720ms 固定上限处提前 `clear()`：低刚度/高弹跳的设计稿弹簧还没回到原位就被强制归位，动画末尾出现位置跳变。改为以弹簧静止为结束条件，12s 仅作防无限循环的安全阀；Compose 版同步。
+- Demo 底栏选中滑块改为随主题反转的对比遮罩（浅色深遮罩、深色浅遮罩），并把这条宿主建议写进适配标准 §12.4。
 
 ### 兼容性
 

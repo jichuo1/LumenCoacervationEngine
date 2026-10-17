@@ -307,10 +307,14 @@
 
 浅色主题下，浅色表面叠在白底内容上时色罩与白色描边都会失效（这就是"底栏和白色元素边缘分不清"的来源）。控件软阴影是给任意控件加的可调软影，与材质选择无关、API 27+ 可用：
 
-- 两层独立调强度：**投射层**（高斯软影，`blurRadiusDp`/`offsetYDp`/`spreadDp`/`opacity`/`color`）给浮起感；**接触环**（贴控件轮廓外缘的窄环，`contactOpacity`）保证纯白背景上也能读出分界。`adaptToTheme` 在深色主题自动加强投射、减弱接触环。
+- 两层独立调强度：**环境层**（1.6× 模糊半径的宽幅高斯尾，`blurRadiusDp`/`offsetYDp`/`spreadDp`/`opacity`/`color`）给浮起感；**贴边接触带**（轮廓外约 1dp 的软带，`contactOpacity`）提供接触感。两层都按到控件轮廓的距离场烘焙成连续剖面，没有模糊位图与矢量描边。`adaptToTheme` 在深色主题自动加强环境影、减弱接触带。
+- 阴影**只画在控件边界之外**，内侧不画：控件边缘保持自己的干净轮廓，多个控件叠加时不会互相压出暗边。环境层与接触带各一张 0.4× 纹理（单张 ≤ 256×256 px），九宫格放大回控件尺寸；同一页面上多种圆角的双层合计工作集按 §8 的缓存预算校验。内存告急随 `LumenEngine.releaseGraphics()` 清空。
 - 整 Activity 接入：给 `LumenActivityDelegate` 传 `controlShadowProvider`（或在 `LumenActivity` 子类覆盖 `resolveControlShadow()`），此后 `surface()` 一族背景自动外包阴影层；配置首次读取后缓存，改动需重建 Activity。
 - 单控件接入：`LumenControlShadow.wrap(content, cornerRadiusDp, density, options, dark)` 包住任意背景；`shadowOnly(...)` 只要阴影层。
-- 阴影画在控件边界**之外**：祖先容器需要 `clipChildren=false` 或按 `LumenControlShadow.outsetPx(options, density)` 预留间距。密集列表（卡片互相贴边）里的阴影会被相邻项裁掉——这正是想要的效果，不要在那种布局里为它腾间距。
+- 阴影画在控件边界**之外**：祖先容器需要 `clipChildren=false` 或按 `LumenControlShadow.outsetPx(options, density)` 预留外侧间距。密集列表（卡片互相贴边）里的阴影会被相邻项裁掉——这正是想要的效果，不要在那种布局里为它腾间距。
+- 列表类容器（`RecyclerView`、`ScrollView` 的内容层）要同时放行 `clipChildren=false` 与 `clipToPadding=false`，否则行阴影会在容器边界（而不是窗口边缘）被直线切掉；再按 `outsetPx` 留出内边距可保留完整尾部。
+- 重叠：`softenOverlap` 开启时，同级控件落在外扩阴影内会降低本控件强度（0.55×），避免交叉处叠加过黑；默认关闭（直接叠加）。这是同级 bounds 的近似检测，不改变纹理与缓存，宿主可按页面密度自行取舍。
+- 延展与强度是连续量：`blurRadiusDp` 控制外扩范围、`opacity` 控制环境影强度、`contactOpacity` 控制贴边接触带；Demo 滑块按 0.1dp / 0.005 步长调节。
 - 宿主职责：阴影不与平台的 `elevation` 阴影叠加管理；同一控件二选一，避免双影。
 
 ## 6. 悬浮栏
@@ -390,7 +394,7 @@ root（bindRoot）
 | 自定义背景输入 | 文件 ≤ 32 MiB；声明尺寸 ≤ 64 Mi 像素 |
 | 自定义背景存储 | 规范化后 ≤ 4 Mi 像素、≤ 16 MiB |
 | 可选云母静态背景 | 单快照 ≤ 36 KiB；预处理图像／像素缓冲 ≤ 144 KiB（不含宿主输入）；每窗口当前快照与着色副本合计 ≤ 72 KiB，切换期间旧显示列表可能仍引用前一副本。接入及完整边界见 [MICA_MATERIAL.md](MICA_MATERIAL.md) |
-| 控件软阴影纹理缓存 | 单张 ≤ 384×384 px（576 KiB），进程级 LRU 合计 ≤ 2 MiB；键按圆角/模糊量化，内存告急随 `LumenEngine.releaseGraphics()` 清空 |
+| 控件软阴影纹理缓存 | 环境层与接触带各一张，按 0.4× 生成：单张 ≤ 256×256 px（256 KiB），进程级 LRU 合计 ≤ 2 MiB；键按层/圆角/留白/模糊量化，内存告急随 `LumenEngine.releaseGraphics()` 清空 |
 
 - **后端降级**：按下表条件选后端。某一档失败后，本次会话内单向降级，不再回头尝试。
 
@@ -513,6 +517,7 @@ root（bindRoot）
   - 轻点选页；横向按住拖动时滑块跟手，松手吸附到最近一页；纵向拖动只做弹性位移，不选页；
   - 触点高光带方向；
   - 宿主在翻页器的 `onPositionChanged` 里调用 `setPageProgress(position, notifyPositionChanged = false)`，在 `onPageSelected` 里调用 `setSelectedPage(index)`，把悬浮栏可读性接到 `setLegibility(boost, palette.surface)`，销毁时 `dispose()`。
+  - 选中滑块的背景**应当**用与栏体相反的对比遮罩：浅色主题用深色半透明、深色主题用浅色半透明（例如 `palette.textPrimary` 约 20% 透明度），不要与栏体同色，否则选中态在浅底上几乎读不出来。强度由宿主按 0–1 连续调节；Demo 设置页的「选中遮罩强度」即这条策略。
 - **`LumenSegmentScrubBar`**（分段档位条）：与底栏共用手势判定、高光和弹簧；用 `configure(labels, colors, thumbBackground, trackBackground, selectedIndex, onSelect)` 配置，1～8 段（§15.1）。
 - 两者都**必须**满足 §12.1 的 `EXCLUDED_TAG` 和 §12.3 的宿主裁剪。
 
