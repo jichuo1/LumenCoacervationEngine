@@ -43,10 +43,16 @@ internal class SampleSettingsStore(context: Context) {
         get() = preferences.getBoolean(KEY_MODAL_BLUR, false)
         set(value) { preferences.edit().putBoolean(KEY_MODAL_BLUR, value).apply() }
 
+    /** 底栏选中滑块的对比遮罩强度（0 无底、1 最重）；浅色主题取深色、深色主题取浅色。 */
+    var selectionMask: Float
+        get() = preferences.getFloat(KEY_SELECTION_MASK, 0.2f).coerceIn(0f, 1f)
+        set(value) { preferences.edit().putFloat(KEY_SELECTION_MASK, value.coerceIn(0f, 1f)).apply() }
+
     companion object {
         private const val KEY_NIGHT_MODE = "night_mode"
         private const val KEY_ACCENT = "accent"
         private const val KEY_MODAL_BLUR = "modal_backdrop_blur"
+        private const val KEY_SELECTION_MASK = "selection_mask"
         val NIGHT_MODES = listOf(
             AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM,
             AppCompatDelegate.MODE_NIGHT_NO,
@@ -117,6 +123,11 @@ private fun SampleActivity.appearanceCard(palette: LumenPalette) = settingsCard(
         settings.accent = accent
         recreate()
     })
+    addView(releaseSlider(palette, "选中遮罩强度", 0f, 1f, 0.01f, settings.selectionMask) { value ->
+        settings.selectionMask = value
+        recreate()
+    })
+    addView(hint(palette, "浅色主题用深色、深色主题用浅色；0 不显示选中底，1 最重。"))
     addView(switchRow(palette, "弹窗背景模糊（重建）",
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "柔光材质下弹窗背后做跨窗口模糊；代价是动画掉帧率上升"
         else "需要 API 31+，本机不生效",

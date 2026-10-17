@@ -296,7 +296,11 @@ class SampleActivity : AppCompatActivity() {
         backgroundFactory = { surface, radius ->
             when (surface) {
                 NavigationBarSurface.BAR -> lumen.floatingBackground(palette.surface, radius)
-                NavigationBarSurface.SELECTION -> lumen.chromeOverlayBackground(palette.surface, radius, selected = true)
+                // 选中滑块的对比遮罩：浅色主题用深色、深色主题用浅色，强度由设置页无极调节。
+                NavigationBarSurface.SELECTION -> lumen.chromeOverlayBackground(
+                    ColorUtils.setAlphaComponent(palette.textPrimary,
+                        (settings.selectionMask * 255f).toInt().coerceIn(0, 255)),
+                    radius, selected = true)
             }
         },
         onSelect = { pager.selectPage(it) },

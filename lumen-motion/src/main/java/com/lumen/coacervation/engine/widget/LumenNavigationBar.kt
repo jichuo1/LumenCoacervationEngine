@@ -116,7 +116,9 @@ public class LumenNavigationBar(
         background = backgroundFactory(NavigationBarSurface.BAR, 32f)
         clipChildren = false
         clipToPadding = false
-        clipToOutline = true
+        // 背景里裹着控件软阴影：本 View 的 clipToOutline 会连背景一起裁掉外侧阴影，
+        // 因此只让触点光晕按胶囊轮廓裁剪，栏本身不再裁。
+        clipToOutline = false
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         outlineProvider = object : ViewOutlineProvider() {
             override fun getOutline(view: View, outline: Outline) {
@@ -124,6 +126,8 @@ public class LumenNavigationBar(
             }
         }
         addView(selection)
+        glow.outlineProvider = outlineProvider
+        glow.clipToOutline = true
         addView(glow)
         repeat(count) { index ->
             val item = NavigationItem(context, index).apply {
