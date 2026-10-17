@@ -30,6 +30,7 @@ GlowEngine（契约 / SPI）─────────────── glow/
    LiquidBackgroundStore ──────────────────── background/ 自定义背景图
    LumenFluentControl / FluentControlDrawable ─ host/ fluent/ Fluent 亚克力与层级（控件效果）
    LumenMicaBackdrop / LumenMicaImage ───────── host/ fluent/ 可选云母窗口基础层、静态背景与内容分层
+   LumenControlShadow ──────────────────────── host/ material/ 可选控件软阴影（投射层 + 接触环，进程级位图缓存）
 
 进程级：
    LumenEngine ── 配置、材质选择、实时取样开关、内存压力
@@ -48,7 +49,7 @@ GlowEngine（契约 / SPI）─────────────── glow/
 | `runtime` | 会话、材质状态机、偏好编解码、内存压力、令牌解析、来源图与时间线、图形计数 | 仅 `SkinSessionDiagnostics` 公开 |
 | `glow` | `GlowEngine` 契约、悬浮栏可读性、内容探针、内容节点玻璃 | 契约与悬浮栏组件公开 |
 | `liquid` | 高级材质：渲染器、后端、实时取样、反馈抑制、刷新率/热/ADPF、回弹视口、控件样式 | 少数宿主可实现的接口公开 |
-| `material` | 柔光：渲染器、环境磨砂策略、软件透镜 | 内部 |
+| `material` | 柔光：渲染器、环境磨砂策略、软件透镜；控件软阴影 Drawable、纯几何策略与进程级纹理缓存 | 内部 |
 | `background` | 环境底图场景、自定义背景的导入/存储/解码 | 存储入口公开 |
 | `geometry` | 视图之间的采样矩阵、滚动采样几何、按局部坐标录制 View（`LocalViewDrawing`） | 内部 |
 | `model` | `SkinId`、`SurfaceRole`、`LumenPalette`、`LumenEffectTuning`、令牌与参数 | 前四个公开 |

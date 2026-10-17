@@ -8,6 +8,7 @@ import android.view.Window
 import androidx.annotation.MainThread
 import com.lumen.coacervation.engine.host.LumenActivityDelegate
 import com.lumen.coacervation.engine.model.LumenEffectTuning
+import com.lumen.coacervation.engine.motion.LumenSpringSpec
 
 /**
  * 一个 Activity（及其弹窗窗口）的全局长按弹性交互：长按控件后拖动，控件跟手形变位移、触点高光流动，
@@ -22,6 +23,10 @@ import com.lumen.coacervation.engine.model.LumenEffectTuning
  *
  * 形变程度与触点光晕的亮度、半径取自 [effectTuning]，**每次按下时**读取一次（拖动中途不变）：默认跟随委托的
  * [LumenActivityDelegate.effectTuning]（Activity 内固定）；需要设置页滑块即时预览时，传入读取宿主当前值的 lambda。
+ *
+ * @param springSpec 按压/拖动/回弹的弹簧规格，默认 [LumenSpringSpec.DEFAULT]；设计稿的"周期+弹跳"经
+ *   [LumenSpringSpec.ofResponseBounce] 换算。
+ * @param rubberCurve 跟手位移的橡皮筋曲线，默认 [ElasticRubberCurve.TANH]。
  */
 @MainThread
 public class LumenElasticInteraction(
@@ -30,7 +35,9 @@ public class LumenElasticInteraction(
     /** 判定某个 View 不参与弹性（默认看 [ElasticInteractionController.EXCLUDED_TAG]）。 */
     private val isExcluded: (View) -> Boolean = { it.tag == ElasticInteractionController.EXCLUDED_TAG },
     /** 长按拖动形变与光晕的调参来源，见类说明。 */
-    private val effectTuning: () -> LumenEffectTuning = { lumen.effectTuning }
+    private val effectTuning: () -> LumenEffectTuning = { lumen.effectTuning },
+    private val springSpec: LumenSpringSpec = LumenSpringSpec.DEFAULT,
+    private val rubberCurve: ElasticRubberCurve = ElasticRubberCurve.TANH
 ) {
     private data class DialogInteraction(val controller: ElasticInteractionController, val release: () -> Unit)
 
@@ -57,7 +64,9 @@ public class LumenElasticInteraction(
             notifyPositionChanged = { lumen.notifyPositionChanged() },
             isExcluded = isExcluded,
             highlightColor = lumen.palette.primary,
-            effectTuning = effectTuning
+            effectTuning = effectTuning,
+            springSpec = springSpec,
+            rubberCurve = rubberCurve
         ).also {
             it.travelPolicy = travelPolicy
             windowController = it
@@ -84,7 +93,9 @@ public class LumenElasticInteraction(
             notifyPositionChanged = { lumen.notifyPositionChanged() },
             isExcluded = isExcluded,
             highlightColor = lumen.palette.primary,
-            effectTuning = effectTuning).also { it.travelPolicy = travelPolicy }
+            effectTuning = effectTuning,
+            springSpec = springSpec,
+            rubberCurve = rubberCurve).also { it.travelPolicy = travelPolicy }
         val callback = object : Window.Callback by original {
             override fun dispatchTouchEvent(event: MotionEvent): Boolean =
                 controller.dispatch(event) { forwarded -> original.dispatchTouchEvent(forwarded) }

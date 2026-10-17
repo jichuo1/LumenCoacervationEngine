@@ -19,7 +19,7 @@ public abstract class LumenActivity : Activity() {
 
     /** 本 Activity 的视效委托。 */
     public val lumen: LumenActivityDelegate by lazy(LazyThreadSafetyMode.NONE) {
-        LumenActivityDelegate(this, ::resolvePalette, ::resolveEffectTuning)
+        LumenActivityDelegate(this, ::resolvePalette, ::resolveControlShadow, ::resolveEffectTuning)
     }
 
     /**
@@ -35,6 +35,12 @@ public abstract class LumenActivity : Activity() {
      * 改动后重建 Activity 生效。
      */
     protected open fun resolveEffectTuning(): LumenEffectTuning = LumenEffectTuning.DEFAULT
+
+    /**
+     * 本 Activity 的控件软阴影配置（自未发布版本）。默认关闭；覆盖返回开启的配置后，
+     * `lumen.surface()` 一族背景外包软阴影层，改动后重建 Activity 生效。
+     */
+    protected open fun resolveControlShadow(): LumenControlShadowOptions = LumenControlShadowOptions.DISABLED
 
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         lumen.onDispatchTouchEvent(event)

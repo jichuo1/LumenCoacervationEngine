@@ -2,6 +2,19 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
+## [未发布]
+
+### 新增
+
+- 可选控件软阴影（`LumenControlShadowOptions` / `LumenControlShadow`，`LumenActivityDelegate.controlShadowProvider` 与 `LumenActivity.resolveControlShadow()`）：投射层高斯软影 + 贴边接触环两道独立强度，解决浅色主题下浅色表面与白底内容分不清边的问题（色罩与白色描边在浅底失效）。纯软件位图缓存、API 27+ 可用、与高级材质无关；纹理按参数量化进进程级 LRU（单张 ≤ 384×384 px，合计 ≤ 2 MiB），内存告急随 `releaseGraphics()` 清空。阴影画在控件边界之外，宿主需按 `outsetPx` 预留间距或不裁剪子 View。吸收自 ColorOS SystemUI 的内阴影/描边分层思路，实现与参数体系为引擎自有。
+- 长按回弹弹簧规格 `LumenSpringSpec`：除直接给刚度/阻尼比外，可用 `ofResponseBounce(周期秒, 弹跳)` 以设计口语换算（与厂商弹簧库的 response/bounce 同语义）；`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `springSpec` 参数，默认引擎原样。
+- 跟手位移橡皮筋曲线族 `ElasticRubberCurve { TANH, RATIONAL }`：默认 TANH 不变；RATIONAL 初段更跟手、渐近行程上限更韧，与 TANH 共享同一径向预算与 slop 连续归零。`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `rubberCurve` 参数。
+
+### 兼容性
+
+- `LumenActivityDelegate` 构造新增 `controlShadowProvider` 参数，插在 `effectTuningProvider` 之前；两参数构造与既有尾随 lambda 写法不变。
+- `LumenElasticInteraction` / `ElasticInteractionController` 构造新增带默认值的可选参数，既有命名参数与位置参数调用不变。
+
 ## [1.4.6] - 2026-10-16
 
 ### 新增与修复

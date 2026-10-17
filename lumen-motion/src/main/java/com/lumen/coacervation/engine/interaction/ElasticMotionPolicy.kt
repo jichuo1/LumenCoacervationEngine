@@ -14,6 +14,17 @@ public enum class ElasticGestureDecision { OBSERVE, YIELD, CAPTURE, DRAG }
 
 public enum class ElasticNodeRole { BLOCKED, TRAVERSE, TARGET }
 
+/**
+ * 跟手位移的橡皮筋曲线族（行程上限之内的距离压缩）。
+ *
+ * - [TANH]：默认，`limit · tanh(0.22 · x)`，初段平缓、后段快速收紧；
+ * - [RATIONAL]：`limit · c·x / (1 + c·x)`（c = 0.55），初段更跟手、渐近上限更"韧"，
+ *   来自 ColorOS `COUISpringDragHelper.getSpringApproximateOffset` 的同族曲线。
+ *
+ * 两者都以 [ElasticMotionPolicy.positionLimit] 为渐近上限、在 touchSlop 处连续归零，可互换。
+ */
+public enum class ElasticRubberCurve { TANH, RATIONAL }
+
 /** Static opacity belongs to visual styling; only animation/state changes make a hit unstable. */
 public object ElasticEligibilityPolicy {
     fun stableOpacity(alpha: Float, transientState: Boolean, animationActive: Boolean): Boolean =
@@ -88,6 +99,7 @@ public object ElasticMotionPolicy {
     const val MAX_SETTLE_MILLIS = 720L
     const val PRESS_DEPTH = .016f
     private const val DRAG_RESPONSE = .22f
+    private const val DRAG_RESPONSE_RATIONAL = .55f
 
     fun positionLimit(width: Int, height: Int, density: Float): Float {
         if (width <= 0 || height <= 0 || !density.isFinite() || density <= 0f) return 0f
@@ -95,7 +107,8 @@ public object ElasticMotionPolicy {
     }
 
     /** A single radial budget makes diagonal and axial drags rotation-equivalent. */
-    fun drag(dx: Float, dy: Float, slop: Float, limit: Float, out: ElasticVector) {
+    fun drag(dx: Float, dy: Float, slop: Float, limit: Float, out: ElasticVector,
+             curve: ElasticRubberCurve = ElasticRubberCurve.TANH) {
         if (!dx.isFinite() || !dy.isFinite() || !slop.isFinite() || !limit.isFinite() ||
             slop < 0f || limit <= 0f
         ) {
@@ -104,16 +117,22 @@ public object ElasticMotionPolicy {
             return
         }
         val distance = sqrt(dx.toDouble() * dx + dy.toDouble() * dy)
-        val amount = if (distance > slop)
-            limit * tanh(DRAG_RESPONSE * (distance - slop) / limit) / distance else 0.0
+        val amount = if (distance > slop) when (curve) {
+            ElasticRubberCurve.TANH -> limit * tanh(DRAG_RESPONSE * (distance - slop) / limit) / distance
+            ElasticRubberCurve.RATIONAL -> {
+                val x = DRAG_RESPONSE_RATIONAL * (distance - slop) / limit
+                limit * (x / (1.0 + x)) / distance
+            }
+        } else 0.0
         out.x = (dx * amount).toFloat()
         out.y = (dy * amount).toFloat()
     }
 
     /** Regrabbing keeps the rendered position; an existing spring overshoot cannot grow further. */
     fun dragFrom(originX: Float, originY: Float, dx: Float, dy: Float,
-                 slop: Float, limit: Float, out: ElasticVector) {
-        drag(dx, dy, slop, limit, out)
+                 slop: Float, limit: Float, out: ElasticVector,
+                 curve: ElasticRubberCurve = ElasticRubberCurve.TANH) {
+        drag(dx, dy, slop, limit, out, curve)
         if (!originX.isFinite() || !originY.isFinite() || !dx.isFinite() || !dy.isFinite() ||
             !slop.isFinite() || slop < 0f || !limit.isFinite() || limit <= 0f) return
         val originLength = sqrt(originX.toDouble() * originX + originY.toDouble() * originY)

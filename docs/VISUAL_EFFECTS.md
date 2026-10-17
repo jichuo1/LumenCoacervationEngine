@@ -5,6 +5,9 @@
 新增配置使用独立的 `LumenSurfaceEnhancements`，旧 `LumenSurfaceOptions`、采样配置及会话构造保持兼容。
 增强默认关闭；旧材质ID、持久化选择、热策略和Activity接管方式不变。
 
+> 阴影有两套互不相同的设施：本文 `geometry.shadow*` 是局部增强会话里由 AGSL 直接绘制的外发光式软影；
+> 不依赖采样会话、可在任意控件复用的可调软阴影见 `LumenControlShadow`（`INTEGRATION_STANDARD.md` §5.6）。
+
 ## 最小接线
 
 ```kotlin

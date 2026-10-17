@@ -27,6 +27,7 @@ import android.widget.RadioButton
 import android.widget.TextView
 import androidx.annotation.MainThread
 import com.lumen.coacervation.engine.model.LumenEffectTuning
+import com.lumen.coacervation.engine.motion.LumenSpringSpec
 import com.lumen.coacervation.engine.touch.GlowConfig
 import com.lumen.coacervation.engine.touch.GlowFrame
 import com.lumen.coacervation.engine.touch.GlowState
@@ -57,7 +58,14 @@ public class ElasticInteractionController(
      * 每次按下新控件时读取一次：形变程度与触点光晕的倍率（[LumenEffectTuning.dragDeformation]、
      * [LumenEffectTuning.dragGlowIntensity]、[LumenEffectTuning.dragGlowRadius]）。
      */
-    private val effectTuning: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
+    private val effectTuning: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT },
+    /**
+     * 按压/拖动/回弹三条弹簧轴共用的规格，默认 [LumenSpringSpec.DEFAULT]（引擎原样）。
+     * 设计稿以"周期+弹跳"给参数时用 [LumenSpringSpec.ofResponseBounce] 换算。
+     */
+    private val springSpec: LumenSpringSpec = LumenSpringSpec.DEFAULT,
+    /** 跟手位移的橡皮筋曲线，默认 [ElasticRubberCurve.TANH]（引擎原样）。 */
+    private val rubberCurve: ElasticRubberCurve = ElasticRubberCurve.TANH
 ) {
     /** 下次按下时使用的行程规则；修改不影响已经开始的拖动和回弹。 */
     public var travelPolicy: ElasticTravelPolicy = ElasticTravelPolicy.AVOID_NEIGHBORS
@@ -401,7 +409,7 @@ public class ElasticInteractionController(
     }
 
     private fun dragTo(dx: Float, dy: Float, eventTime: Long) {
-        ElasticMotionPolicy.dragFrom(grabbedX, grabbedY, dx, dy, touchSlop, limit, drag)
+        ElasticMotionPolicy.dragFrom(grabbedX, grabbedY, dx, dy, touchSlop, limit, drag, rubberCurve)
         // 全向可拖：把行程上限同时作为每个方向的最低预算传给钳制——否则 WRAP_CONTENT
         // 父容器里最后一个子元素的尾边间隙为 0，该方向（典型如向下）被整体钳死。
         // 朝相邻卡片的方向不越过邻居（网格、瀑布流、横向轮播），见 captureGroupGaps。
@@ -428,10 +436,10 @@ public class ElasticInteractionController(
         else ((timeNanos - lastFrameNanos).coerceAtLeast(0L) / 1_000_000_000.0).toFloat()
         lastFrameNanos = timeNanos
         val pressed = if (motion == Motion.RELEASE) 0f else 1f
-        pressAxis.advance(seconds, pressed)
+        pressAxis.advance(seconds, pressed, springSpec.stiffness, springSpec.dampingRatio)
         if (motion == Motion.RELEASE) {
-            xAxis.advance(seconds, 0f)
-            yAxis.advance(seconds, 0f)
+            xAxis.advance(seconds, 0f, springSpec.stiffness, springSpec.dampingRatio)
+            yAxis.advance(seconds, 0f, springSpec.stiffness, springSpec.dampingRatio)
         }
         val rest = pressAxis.atRest(pressed, .0003f) &&
             (motion != Motion.RELEASE || (xAxis.atRest(0f, .025f * density) &&

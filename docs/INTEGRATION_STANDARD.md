@@ -303,6 +303,16 @@
 - `importFromUri` 要做文件 IO 和解码，**不得**在主线程调用。`restoreAutomatic` 会删除不再引用的背景图文件，**应当**在后台线程调用。`read` 只读偏好，可以在主线程调用。
 - 渲染器在创建时读取一次背景配置。所以写入之后，**必须**重建 Activity 才会生效。
 
+### 5.6 控件软阴影
+
+浅色主题下，浅色表面叠在白底内容上时色罩与白色描边都会失效（这就是"底栏和白色元素边缘分不清"的来源）。控件软阴影是给任意控件加的可调软影，与材质选择无关、API 27+ 可用：
+
+- 两层独立调强度：**投射层**（高斯软影，`blurRadiusDp`/`offsetYDp`/`spreadDp`/`opacity`/`color`）给浮起感；**接触环**（贴控件轮廓外缘的窄环，`contactOpacity`）保证纯白背景上也能读出分界。`adaptToTheme` 在深色主题自动加强投射、减弱接触环。
+- 整 Activity 接入：给 `LumenActivityDelegate` 传 `controlShadowProvider`（或在 `LumenActivity` 子类覆盖 `resolveControlShadow()`），此后 `surface()` 一族背景自动外包阴影层；配置首次读取后缓存，改动需重建 Activity。
+- 单控件接入：`LumenControlShadow.wrap(content, cornerRadiusDp, density, options, dark)` 包住任意背景；`shadowOnly(...)` 只要阴影层。
+- 阴影画在控件边界**之外**：祖先容器需要 `clipChildren=false` 或按 `LumenControlShadow.outsetPx(options, density)` 预留间距。密集列表（卡片互相贴边）里的阴影会被相邻项裁掉——这正是想要的效果，不要在那种布局里为它腾间距。
+- 宿主职责：阴影不与平台的 `elevation` 阴影叠加管理；同一控件二选一，避免双影。
+
 ## 6. 悬浮栏
 
 `GlowFloatingChrome` 把三项能力接到同一组悬浮栏上：
@@ -380,6 +390,7 @@ root（bindRoot）
 | 自定义背景输入 | 文件 ≤ 32 MiB；声明尺寸 ≤ 64 Mi 像素 |
 | 自定义背景存储 | 规范化后 ≤ 4 Mi 像素、≤ 16 MiB |
 | 可选云母静态背景 | 单快照 ≤ 36 KiB；预处理图像／像素缓冲 ≤ 144 KiB（不含宿主输入）；每窗口当前快照与着色副本合计 ≤ 72 KiB，切换期间旧显示列表可能仍引用前一副本。接入及完整边界见 [MICA_MATERIAL.md](MICA_MATERIAL.md) |
+| 控件软阴影纹理缓存 | 单张 ≤ 384×384 px（576 KiB），进程级 LRU 合计 ≤ 2 MiB；键按圆角/模糊量化，内存告急随 `LumenEngine.releaseGraphics()` 清空 |
 
 - **后端降级**：按下表条件选后端。某一档失败后，本次会话内单向降级，不再回头尝试。
 

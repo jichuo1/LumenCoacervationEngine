@@ -41,17 +41,18 @@
 
 ## 2. Activity 接入（`com.lumen.coacervation.engine.host`）
 
-### `LumenActivityDelegate(activity: Activity, paletteProvider: () -> LumenPalette, effectTuningProvider: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT })`
+### `LumenActivityDelegate(activity: Activity, paletteProvider: () -> LumenPalette, controlShadowProvider: () -> LumenControlShadowOptions = { LumenControlShadowOptions.DISABLED }, effectTuningProvider: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT })`
 
-第三个参数自 1.1.0；构造函数带 `@JvmOverloads`，两参数的写法与旧二进制保持可用。
+`effectTuningProvider` 自 1.1.0；`controlShadowProvider` 自未发布版本，插在 `effectTuningProvider` **前面**，既有尾随 lambda 写法不变。构造函数带 `@JvmOverloads`，两参数的写法与旧二进制保持可用。
 
 | 分组 | 成员 | 标准 |
 |---|---|---|
 | 状态 | `val palette: LumenPalette`、`val isPrepared: Boolean`、`val engine: GlowEngine?`（每次现取，**不得缓存**） | §2.2、§6 |
 | | `val effectTuning: LumenEffectTuning`（自 1.1.0；首次读取后缓存） | §2.5 |
+| | `val controlShadow: LumenControlShadowOptions`（自未发布版本；首次读取后缓存，改动重建 Activity 生效） | §5.6 |
 | 会话 | `fun prepare()`、`fun bindRoot(root: View, onFailure: (() -> Unit)? = null): Boolean` | §2.3、§2.4 |
 | 通知 | `fun onDispatchTouchEvent(event: MotionEvent)`、`fun notifyPositionChanged()`、`fun notifyScrollPositionChanged(scrollHost: View)`、`fun bindContentSource(view: View)` | §4、§6.1 |
-| 表面 | `fun surface(color, radiusDp, role: SurfaceRole): Drawable` | §5 |
+| 表面 | `fun surface(color, radiusDp, role: SurfaceRole): Drawable`（控件阴影开启时外包软阴影层） | §5、§5.6 |
 | | `cardBackground` / `floatingBackground` / `topBarBackground` / `selectionBackground` / `modalBackground`（`color = palette.surface`，`radiusDp` 有默认值） | §5 |
 | | `motionSurfaceBackground(color, radiusDp)`、`liquidMotionSurfaceBackgroundOrNull(color, radiusDp): Drawable?` | §5.2 |
 | | `chromeOverlayBackground(color, radiusDp, selected = false)`、`neutralWindowBackground()` | §5、§5.5 |
@@ -60,11 +61,23 @@
 | 诊断 | `val isLiquidRequested`、`val isLiquidEffective`、`val backendName: String?`、`fun diagnostics(): SkinSessionDiagnostics?` | §3.2 |
 | 生命周期 | `onStart()`、`onStop()`、`onTrimMemory(level)`、`onLowMemory()`、`onDestroy()` | §2.1 |
 
+### 控件软阴影（自未发布版本）
+
+浅色主题下浅色表面与白底内容分不清边时启用；色罩与白色描边在浅底上会消失，阴影不依赖它们。投射层高斯软影 + 贴边接触环两道强度独立；纯软件位图缓存，API 27+ 可用，与高级材质无关。阴影画在控件边界之外：祖先容器需 `clipChildren=false` 或按 `outsetPx` 预留间距（密集列表项天然会被裁掉，通常正是想要的效果）。
+
+| 声明 | 说明 | 标准 |
+|---|---|---|
+| `LumenControlShadowOptions(enabled, blurRadiusDp, offsetYDp, spreadDp, opacity, contactOpacity, color, adaptToTheme)`；`LumenControlShadowOptions.DISABLED` | 配置构造时校验范围；`adaptToTheme` 使深色主题自动加强投射、减弱接触环 | §5.6 |
+| `LumenControlShadow.wrap(content, cornerRadiusDp, density, options, dark): Drawable` | 给任意背景包一层阴影；`enabled = false` 原样返回内容 | §5.6 |
+| `LumenControlShadow.shadowOnly(cornerRadiusDp, density, options, dark): Drawable` | 只要阴影层，叠在宿主自有背景之下 | §5.6 |
+| `LumenControlShadow.outsetPx(options, density): Int` | 阴影在控件边界外的最大外扩像素 | §5.6 |
+
 ### `abstract class LumenActivity : android.app.Activity`
 
 - `val lumen: LumenActivityDelegate`：懒创建。
 - `protected open fun resolvePalette(): LumenPalette`：默认返回 `LumenPalette.neutral(系统深浅色)`。
 - `protected open fun resolveEffectTuning(): LumenEffectTuning`：默认 `LumenEffectTuning.DEFAULT`（自 1.1.0）。
+- `protected open fun resolveControlShadow(): LumenControlShadowOptions`：默认 `LumenControlShadowOptions.DISABLED`（自未发布版本）。
 - 已接好 §2.1 的全部转发。
 
 ## 3. 数据类型（`com.lumen.coacervation.engine.model`）
@@ -184,10 +197,12 @@
 
 | 声明 | 说明 | 标准 |
 |---|---|---|
-| `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning })` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取 | §12、§2.5 |
+| `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning }, springSpec = LumenSpringSpec.DEFAULT, rubberCurve = ElasticRubberCurve.TANH)` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取；`springSpec`/`rubberCurve` 自未发布版本 | §12、§2.5 |
 | `ElasticInteractionController.EXCLUDED_TAG` / `CONTAINER_TAG` | 不参与弹性 / 只承载、自己不形变 | §12.1 |
-| `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT })` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0 | §12 |
+| `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT }, springSpec = LumenSpringSpec.DEFAULT, rubberCurve = ElasticRubberCurve.TANH)` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0；`springSpec`/`rubberCurve` 自未发布版本 | §12 |
 | `ElasticTravelPolicy { AVOID_NEIGHBORS, PARENT_BOUNDS }`；`LumenElasticInteraction.travelPolicy` / `ElasticInteractionController.travelPolicy`（自 1.1.0） | 默认避让相邻控件；父容器模式保留原列表交叠行程。下次按下时生效，已开始的拖动/回弹不改变；Activity 封装同时传给其弹窗 | §14.7 |
+| `LumenSpringSpec(stiffness, dampingRatio)`、`LumenSpringSpec.DEFAULT`、`LumenSpringSpec.ofResponseBounce(responseSeconds, bounce)`（自未发布版本） | 长按回弹的弹簧规格；`ofResponseBounce` 用"周期+弹跳"设计口语换算（`stiffness=(2π/response)²`、`dampingRatio=1−bounce`，与厂商弹簧库同语义）。范围校验；恒欠阻尼 | §12 |
+| `ElasticRubberCurve { TANH, RATIONAL }`（自未发布版本） | 跟手位移的橡皮筋曲线族：默认 TANH 为引擎原样；RATIONAL 初段更跟手、渐近上限更韧。两者都以同一行程上限渐近、在 touchSlop 处连续归零 | §12 |
 
 ### 11.2 可打断动画内核（`com.lumen.coacervation.engine.motion`）
 

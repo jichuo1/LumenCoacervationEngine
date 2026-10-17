@@ -42,18 +42,22 @@ import com.lumen.coacervation.engine.runtime.SkinSessionDiagnostics
  * 线程：全部在主线程调用。
  *
  * @param paletteProvider 首次需要配色时调用一次，结果在本 Activity 生命周期内缓存。
+ * @param controlShadowProvider 首次需要控件阴影配置时调用一次并缓存；默认 [LumenControlShadowOptions.DISABLED]。
+ *   开启后 [surface] 一族背景外包一层软阴影（含未准备会话的静态路径），见 [LumenControlShadow]。
  * @param effectTuningProvider 首次需要视效调参时调用一次，结果在本 Activity 生命周期内缓存；改动后重建 Activity 生效。
- *   默认 [LumenEffectTuning.DEFAULT]（引擎原样）。
+ *   默认 [LumenEffectTuning.DEFAULT]（引擎原样）。保持在末位参数，既有尾随 lambda 写法不变。
  */
 @MainThread
 public class LumenActivityDelegate @JvmOverloads constructor(
     private val activity: Activity,
     private val paletteProvider: () -> LumenPalette,
+    private val controlShadowProvider: () -> LumenControlShadowOptions = { LumenControlShadowOptions.DISABLED },
     private val effectTuningProvider: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT }
 ) {
     private var session: ActivitySkinSession? = null
     private var paletteOrNull: LumenPalette? = null
     private var effectTuningOrNull: LumenEffectTuning? = null
+    private var controlShadowOrNull: LumenControlShadowOptions? = null
     private var lifecycleEnded = false
     private val density: Float get() = activity.resources.displayMetrics.density
 
@@ -67,6 +71,10 @@ public class LumenActivityDelegate @JvmOverloads constructor(
      */
     public val effectTuning: LumenEffectTuning
         get() = effectTuningOrNull ?: effectTuningProvider().also { effectTuningOrNull = it }
+
+    /** 本 Activity 的控件阴影配置；首次读取后缓存，改动后重建 Activity 生效。 */
+    public val controlShadow: LumenControlShadowOptions
+        get() = controlShadowOrNull ?: controlShadowProvider().also { controlShadowOrNull = it }
 
     /** 是否已准备会话。 */
     public val isPrepared: Boolean get() = session != null && !lifecycleEnded
@@ -140,11 +148,14 @@ public class LumenActivityDelegate @JvmOverloads constructor(
 
     // ---------------- 表面（适配标准 §5） ----------------
 
-    /** 按语义角色取表面背景。未准备会话时返回等价的静态材质，调用方无需判断。 */
-    public fun surface(color: Int, radiusDp: Float, role: SurfaceRole): Drawable =
-        session?.surfaceBackground(color, radiusDp, role)
+    /** 按语义角色取表面背景。未准备会话时返回等价的静态材质，调用方无需判断。
+     *  控件阴影开启时（[controlShadow]）外包一层软阴影；阴影在边界外绘制，宿主需保证祖先不裁剪。 */
+    public fun surface(color: Int, radiusDp: Float, role: SurfaceRole): Drawable {
+        val base = session?.surfaceBackground(color, radiusDp, role)
             ?: ModernMaterialDrawables.fallback(color, radiusDp.coerceAtLeast(0f) * density, density, role, isDark,
                 effectTuning)
+        return LumenControlShadow.wrap(base, radiusDp, density, controlShadow, isDark)
+    }
 
     public fun cardBackground(color: Int = palette.surface, radiusDp: Float = 15f): Drawable =
         surface(color, radiusDp, SurfaceRole.CARD)
