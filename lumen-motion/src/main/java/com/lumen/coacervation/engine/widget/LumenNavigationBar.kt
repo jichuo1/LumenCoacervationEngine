@@ -81,6 +81,12 @@ public class LumenNavigationBar(
         background = backgroundFactory(NavigationBarSurface.SELECTION, 28f)
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
+    /** Optional liquid-glass selection (see [setPrismSelection]); null keeps the classic selection box. */
+    private var prism: PrismSelectionRenderer? = null
+    private var prismFrames: ValueAnimator? = null
+    /** Last target handed to [animatePress]; prism springs retarget to it when options change mid-press. */
+    private var pressTarget = 0f
+    private var appliedRestAlpha = 255
     private val glow = GlowView(context)
     private val gesture = NavigationBarGesture()
     private var selected = 0
@@ -194,6 +200,33 @@ public class LumenNavigationBar(
         applyVisuals()
     }
 
+    /**
+     * 选中框的棱镜（液态玻璃）效果；null 恢复经典选中框（与未调用时逐帧一致）。
+     * 可随时切换或改参，不影响选中状态、手势与无障碍。详见 [LumenPrismSelectionOptions]。
+     */
+    fun setPrismSelection(options: LumenPrismSelectionOptions?) {
+        if (disposed) return
+        if (options == null) {
+            val renderer = prism ?: return
+            stopPrismFrames()
+            renderer.release()
+            prism = null
+            selection.background?.alpha = 255
+            appliedRestAlpha = 255
+            renderedTint.fill(-1)
+            applyVisuals(notifyPositionChanged = false)
+            invalidate()
+            return
+        }
+        val renderer = prism ?: PrismSelectionRenderer(density).also { prism = it }
+        renderer.configure(options, tintSteps[tintSteps.size - 1].defaultColor, pressTarget)
+        renderedTint.fill(-1)
+        applyVisuals(notifyPositionChanged = false)
+        invalidate()
+    }
+
+    val isPrismSelectionEnabled: Boolean get() = prism != null
+
     /** Continuous pager progress is authoritative except while the user owns a scrub preview. */
     fun setPageProgress(value: Float, notifyPositionChanged: Boolean = true) {
         if (disposed) return
@@ -263,6 +296,27 @@ public class LumenNavigationBar(
         super.onSizeChanged(w, h, oldw, oldh)
         if (w != oldw || h != oldh) resetInteraction()
         invalidateOutline()
+    }
+
+    override fun dispatchDraw(canvas: Canvas) {
+        val renderer = prism
+        // Rebuilds the selected-colour copy only when item geometry or label scroll changed; steady frames skip it.
+        if (renderer != null && width > 0 && height > 0) {
+            renderer.prepare(width, height, items, iconViews, labelViews, selection.width, selection.height)
+        }
+        super.dispatchDraw(canvas)
+        renderer?.draw(canvas)
+    }
+
+    override fun drawChild(canvas: Canvas, child: View, drawingTime: Long): Boolean {
+        val renderer = prism
+        if (renderer == null || !renderer.ready || child !is NavigationItem) return super.drawChild(canvas, child, drawingTime)
+        // Inside the pill the selected-colour copy replaces the real item, as the reference's tinted tab row does.
+        val save = canvas.save()
+        canvas.clipOutPath(renderer.pillPath)
+        val result = super.drawChild(canvas, child, drawingTime)
+        canvas.restoreToCount(save)
+        return result
     }
 
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean = true
@@ -369,6 +423,8 @@ public class LumenNavigationBar(
     }
 
     private fun animatePress(target: Float, after: (() -> Unit)? = null) {
+        pressTarget = target
+        prism?.setPressTarget(target)
         pressGeneration++
         pressAnimator?.cancel(); pressAnimator = null
         if (disposed) return
@@ -454,14 +510,19 @@ public class LumenNavigationBar(
         val y = offsetY * travel
         if (translationX != x) { translationX = x; moved = true }
         if (translationY != y) { translationY = y; moved = true }
-        val lensX = NavigationBarMotion.physicalSlot(displayedPosition, count, rtl) * slotWidth
-        val scaleX = NavigationBarMotion.lensScaleX(press)
-        val scaleY = NavigationBarMotion.lensScaleY(press)
-        if (selection.translationX != lensX) { selection.translationX = lensX; moved = true }
-        if (selection.scaleX != scaleX) { selection.scaleX = scaleX; moved = true }
-        if (selection.scaleY != scaleY) { selection.scaleY = scaleY; moved = true }
+        val slot = NavigationBarMotion.physicalSlot(displayedPosition, count, rtl)
+        val lensX = slot * slotWidth
+        val renderer = prism
+        if (renderer == null) {
+            val scaleX = NavigationBarMotion.lensScaleX(press)
+            val scaleY = NavigationBarMotion.lensScaleY(press)
+            if (selection.translationX != lensX) { selection.translationX = lensX; moved = true }
+            if (selection.scaleX != scaleX) { selection.scaleX = scaleX; moved = true }
+            if (selection.scaleY != scaleY) { selection.scaleY = scaleY; moved = true }
+        } else if (applyPrism(renderer, lensX)) moved = true
         for (i in 0 until count) {
-            val step = ((1f - abs(displayedPosition - i)).coerceIn(0f, 1f) * 32f).roundToInt()
+            // Prism mode: every real item keeps the plain colour; the pill's copy carries the selected colour.
+            val step = if (renderer != null) 0 else ((1f - abs(displayedPosition - i)).coerceIn(0f, 1f) * 32f).roundToInt()
             if (renderedTint[i] != step && i < iconViews.size) {
                 renderedTint[i] = step
                 iconViews[i].imageTintList = tintSteps[step]
@@ -479,7 +540,67 @@ public class LumenNavigationBar(
             viewShiftX = x - initialOffsetX,
             viewShiftY = y - initialOffsetY
         )
+        if (renderer != null) {
+            if (renderer.needsFrames()) startPrismFrames() else stopPrismFrames()
+        }
         if (moved && notifyPositionChanged) onVisualMovement()
+    }
+
+    /**
+     * Lays out the prism pill and the selection View's transform for this frame. The bar re-records (pill copy and
+     * item clip live in its display list) only when the pill changed. Returns true when the selection View moved.
+     */
+    private fun applyPrism(renderer: PrismSelectionRenderer, lensX: Float): Boolean {
+        val left = renderer.pill.left; val top = renderer.pill.top; val right = renderer.pill.right; val bottom = renderer.pill.bottom
+        val progress = renderer.progress
+        renderer.layoutPill(selection.left + lensX, selection.top.toFloat(), selection.width.toFloat(), selection.height.toFloat(),
+            displayedPosition, press, count,
+            // Only the user's own motion squashes the pill: scrubbing or the rebound after it, not pager swipes.
+            trackVelocity = (touchActive && gesture.intent == NavigationBarIntent.SCRUB) || indicatorSettling,
+            still = !isAttachedToWindow || !ValueAnimator.areAnimatorsEnabled())
+        if (renderer.pill.left != left || renderer.pill.top != top || renderer.pill.right != right ||
+            renderer.pill.bottom != bottom || renderer.progress != progress) invalidate()
+        var moved = false
+        if (selection.translationX != lensX) { selection.translationX = lensX; moved = true }
+        if (selection.scaleX != renderer.scaleX) { selection.scaleX = renderer.scaleX; moved = true }
+        if (selection.scaleY != renderer.scaleY) { selection.scaleY = renderer.scaleY; moved = true }
+        // The rest fill fades through the drawable's own alpha: no offscreen layer, no doubled rim.
+        val restAlpha = ((1f - renderer.progress) * 255f).roundToInt()
+        if (restAlpha != appliedRestAlpha) { appliedRestAlpha = restAlpha; selection.background?.alpha = restAlpha }
+        return moved
+    }
+
+    /** Prism frame source tick: advances only the pill. No glow update and no host movement callback. */
+    private fun prismFrame() {
+        val renderer = prism ?: run { stopPrismFrames(); return }
+        // The press and rebound animators already drive applyVisuals this frame.
+        if (pressAnimator?.isRunning == true || reboundAnimator?.isRunning == true) return
+        applyPrism(renderer, NavigationBarMotion.physicalSlot(displayedPosition, count, rtl) * slotWidth)
+        if (!renderer.needsFrames()) stopPrismFrames()
+    }
+
+    /** Keeps the jelly springs and velocity decay ticking after the press and rebound animators have ended. */
+    private fun startPrismFrames() {
+        if (prismFrames != null || disposed || !isAttachedToWindow || !ValueAnimator.areAnimatorsEnabled()) return
+        val frames = ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = NavigationBarMotion.SPRING_DURATION_MS
+            repeatCount = ValueAnimator.INFINITE
+            interpolator = LinearInterpolator()
+            addUpdateListener { prismFrame() }
+            // Animator scale dropping to 0 ends it from outside: forget it so the next motion can start a new one.
+            addListener(object : AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: Animator) { if (prismFrames === animation) prismFrames = null }
+            })
+        }
+        // start() delivers the first update synchronously: publish the animator first, or applyVisuals re-enters here.
+        prismFrames = frames
+        frames.start()
+    }
+
+    private fun stopPrismFrames() {
+        val frames = prismFrames ?: return
+        prismFrames = null
+        frames.cancel()
     }
 
     /**
@@ -500,6 +621,8 @@ public class LumenNavigationBar(
             tintSteps[i] = ColorStateList.valueOf(ColorUtils.blendARGB(text, selectedText, i / 32f))
         }
         renderedTint.fill(-1)
+        // The copy is a coverage mask: a colour change needs only the new paint colour and one re-record.
+        prism?.let { it.setColor(tintSteps[tintSteps.size - 1].defaultColor); invalidate() }
         // 光晕半径固定、只调 alpha：半径逐帧变会让文字阴影的模糊核反复重建。
         val halo = ColorUtils.setAlphaComponent(haloColor, (LABEL_HALO_ALPHA * amount * 255f).roundToInt())
         for (label in labelViews) {
@@ -516,6 +639,8 @@ public class LumenNavigationBar(
         pressGeneration++; pressAnimator?.cancel(); pressAnimator = null
         stopRebound()
         press = 0f; pressVelocity = 0f
+        stopPrismFrames()
+        prism?.resetMotion()
         offsetX = 0f; offsetY = 0f; offsetVelocityX = 0f; offsetVelocityY = 0f
         displayedPosition = pagerPosition
         parent?.requestDisallowInterceptTouchEvent(false)
@@ -526,6 +651,7 @@ public class LumenNavigationBar(
 
     fun dispose() {
         resetInteraction()
+        prism?.release()
         disposed = true
     }
 

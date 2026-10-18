@@ -1,5 +1,7 @@
 package com.lumen.coacervation.sample
 
+import androidx.core.content.edit
+import com.lumen.coacervation.engine.widget.LumenPrismSelectionOptions
 import android.content.Context
 import android.graphics.Typeface
 import android.net.Uri
@@ -48,7 +50,35 @@ internal class SampleSettingsStore(context: Context) {
         get() = preferences.getFloat(KEY_SELECTION_MASK, 0.2f).coerceIn(0f, 1f)
         set(value) { preferences.edit().putFloat(KEY_SELECTION_MASK, value.coerceIn(0f, 1f)).apply() }
 
+    /** 底栏选中框的棱镜（液态玻璃）效果；关闭为经典选中框。参数收进 `LumenPrismSelectionOptions` 的范围。 */
+    var prismSelection: Boolean
+        get() = preferences.getBoolean(KEY_PRISM_SELECTION, false)
+        set(value) { preferences.edit { putBoolean(KEY_PRISM_SELECTION, value) } }
+
+    var prismSelectionOptions: LumenPrismSelectionOptions
+        get() {
+            val d = LumenPrismSelectionOptions.DEFAULT
+            return LumenPrismSelectionOptions(
+                pressedScale = preferences.getFloat(KEY_PRISM_SCALE, d.pressedScale).coerceIn(1f, 1.8f),
+                contentMagnification = preferences.getFloat(KEY_PRISM_MAGNIFICATION, d.contentMagnification).coerceIn(1f, 1.6f),
+                dispersion = preferences.getFloat(KEY_PRISM_DISPERSION, d.dispersion).coerceIn(0f, 1f),
+                velocityDeformation = preferences.getFloat(KEY_PRISM_DEFORMATION, d.velocityDeformation).coerceIn(0f, 2f))
+        }
+        set(value) {
+            preferences.edit {
+                putFloat(KEY_PRISM_SCALE, value.pressedScale)
+                putFloat(KEY_PRISM_MAGNIFICATION, value.contentMagnification)
+                putFloat(KEY_PRISM_DISPERSION, value.dispersion)
+                putFloat(KEY_PRISM_DEFORMATION, value.velocityDeformation)
+            }
+        }
+
     companion object {
+        private const val KEY_PRISM_SELECTION = "prism_selection"
+        private const val KEY_PRISM_SCALE = "prism_selection_scale"
+        private const val KEY_PRISM_MAGNIFICATION = "prism_selection_magnification"
+        private const val KEY_PRISM_DISPERSION = "prism_selection_dispersion"
+        private const val KEY_PRISM_DEFORMATION = "prism_selection_deformation"
         private const val KEY_NIGHT_MODE = "night_mode"
         private const val KEY_ACCENT = "accent"
         private const val KEY_MODAL_BLUR = "modal_backdrop_blur"
@@ -129,6 +159,23 @@ private fun SampleActivity.appearanceCard(palette: LumenPalette) = settingsCard(
         recreate()
     })
     addView(hint(palette, "浅色主题用深色、深色主题用浅色；0 不显示选中底，1 最重。"))
+    addView(switchRow(palette, "棱镜选中框（重建）", "液态玻璃选中框：框内选中色、按下膨胀与果冻回弹、放大折射（API 33+）",
+        settings.prismSelection) { _, checked ->
+        settings.prismSelection = checked
+        recreate()
+    })
+    if (settings.prismSelection) {
+        val current = settings.prismSelectionOptions
+        addView(releaseSlider(palette, "按下缩放", 1f, 1.8f, 0.01f, current.pressedScale) { value ->
+            settings.prismSelectionOptions = settings.prismSelectionOptions.copy(pressedScale = value); recreate() })
+        addView(releaseSlider(palette, "内容放大", 1f, 1.6f, 0.01f, current.contentMagnification) { value ->
+            settings.prismSelectionOptions = settings.prismSelectionOptions.copy(contentMagnification = value); recreate() })
+        addView(releaseSlider(palette, "色散", 0f, 1f, 0.01f, current.dispersion) { value ->
+            settings.prismSelectionOptions = settings.prismSelectionOptions.copy(dispersion = value); recreate() })
+        addView(releaseSlider(palette, "速度形变", 0f, 2f, 0.01f, current.velocityDeformation) { value ->
+            settings.prismSelectionOptions = settings.prismSelectionOptions.copy(velocityDeformation = value); recreate() })
+        addView(hint(palette, "选中遮罩强度仍决定静止时的选中底；完整的玻璃参数在「排布 → 局部视效调节实验室 → Prism」。"))
+    }
     addView(switchRow(palette, "弹窗背景模糊（重建）",
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) "柔光材质下弹窗背后做跨窗口模糊；代价是动画掉帧率上升"
         else "需要 API 31+，本机不生效",

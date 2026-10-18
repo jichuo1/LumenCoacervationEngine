@@ -309,6 +309,8 @@ class SampleActivity : AppCompatActivity() {
     ).also {
         // 底栏自己处理按压/拖动/高光，不参与全局长按弹性（§12.1）。
         it.tag = ElasticInteractionController.EXCLUDED_TAG
+        // 选中框效果可插拔：棱镜只换选中框的画法，栏背景仍是当前材质。
+        if (settings.prismSelection) it.setPrismSelection(settings.prismSelectionOptions)
         navigation = it
     }
 

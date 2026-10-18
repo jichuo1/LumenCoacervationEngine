@@ -2,10 +2,13 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
-## [未发布]
+## [1.5.0] - 2026-10-18
 
 ### 新增
 
+- Prism 棱镜玻璃（`LumenPrismGlass` / `LumenPrismOptions`，lumen-engine）：可插拔的控件级液态玻璃，配方取自 Kyant0/AndroidLiquidGlass——饱和度 → 模糊 → 圆角矩形边缘折射（可选色散、纵深）→ 表面色 → 按压光晕 → 内阴影 → 角度分布的边缘高光，外加高斯外阴影；每层可单独开关与调参，深浅色按 `palette.background` 取参考库默认（#FAFAFA / #121212 @ 40%），`updatePalette` 即时生效。背景复用宿主的 `LumenSurfaceSession`（新增内部棱镜效果链，既有材质与 Fluent 的链不变）。API 33+ 完整配方，31–32 无折射，27–30 走软件模糊。不新增 `SkinId`，与高级材质（liquid_v1）命名与持久化互不冲突。
+- 底栏液态选中框（`LumenNavigationBar.setPrismSelection` / `LumenPrismSelectionOptions`，lumen-motion）：对应参考库 LiquidBottomTabs 的选中胶囊——框内选中色、框外常规色并以选中框边缘为界；按下膨胀、X/Y 不同阻尼的果冻弹簧、拖动速度挤压拉伸、框内放大与边缘折射/色散（API 33+）、高光、内外阴影。`null` 回到经典选中框且逐帧不变；与栏背景材质独立。
+- Demo：「排布 → 局部视效调节实验室 → Prism」全部开关与滑块、深浅色与浅色内容切换；设置页「棱镜选中框（重建）」及按下缩放、内容放大、色散、速度形变滑块。
 - 可选控件软阴影（`LumenControlShadowOptions` / `LumenControlShadow`，`LumenActivityDelegate.controlShadowProvider` 与 `LumenActivity.resolveControlShadow()`）：环境层（1.6× 模糊半径的宽幅高斯尾）+ 贴边接触带按到控件轮廓的距离场烘焙成连续剖面，解决浅色主题下浅色表面与白底内容分不清边的问题（色罩与白色描边在浅底失效）。纯软件位图缓存、API 27+ 可用、与高级材质无关；环境层与接触带各一张 0.4× 纹理（单张 ≤ 256×256 px，合计 ≤ 2 MiB），内存告急随 `releaseGraphics()` 清空。阴影**只画在控件边界之外**：内侧不画，边缘保留自己的干净轮廓，多个控件叠加时不会互相压出暗边。宿主需按 `outsetPx` 预留外侧间距或不裁剪子 View。吸收自 ColorOS SystemUI 的内阴影/描边分层思路，实现与参数体系为引擎自有。
 - 长按回弹弹簧规格 `LumenSpringSpec`：除直接给刚度/阻尼比外，可用 `ofResponseBounce(周期秒, 弹跳)` 以设计口语换算（与厂商弹簧库的 response/bounce 同语义）；`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `springSpec` 参数，默认引擎原样。
 - 跟手位移橡皮筋曲线族 `ElasticRubberCurve { TANH, RATIONAL }`：默认 TANH 不变；RATIONAL 初段更跟手、渐近行程上限更韧，与 TANH 共享同一径向预算与 slop 连续归零。`LumenElasticInteraction` 与 `ElasticInteractionController` 新增可选 `rubberCurve` 参数。
@@ -15,6 +18,8 @@
 - 新增设备像素契约 `ControlShadowPixelTest`：外侧连续衰减、内侧干净、遮罩强度单调、重叠减弱、底栏背景阴影不被自身胶囊裁剪。
 
 ### 修复
+
+- 手风琴（`SectionExpansionController`）进度弹簧在低帧率下发散：半隐式欧拉的步长被钳到 0.05s，在该刚度/阻尼下迭代不稳定（特征值约 −1.006），低于约 20fps 的设备上展开/收起越摆越大、持续出帧，最终溢出为 NaN 并在 `roundToInt` 处崩溃（1.4.6 已存在；发布前在 API 31 模拟器上复现）。长帧改为按 1/60s 子步积分；60fps 及以上仍恰好一步，与此前逐位一致。
 
 - 控件软阴影开启后在真实设备上严重掉帧：投射层纹理按圆角各存一张，密度 4.0、模糊 10dp 时同屏 6 种圆角的工作集为 2.52 MiB，超过 2 MiB 的进程级 LRU 后进入循环淘汰，每个表面每帧都重新建图并模糊（材质页 65% 掉帧、P50 42ms）。纹理改为 0.4× 采样生成（单张 ≤ 256×256 px），双层工作集约 1.05 MiB；度量与九宫格停靠点在构造时缓存，绘制路径不再分配。内存压力监听器改为强引用持有，生成失败只关闭阴影。
 - 控件软阴影的剖面美化：不再用"模糊 + 裁剪 + 两道硬描边"，改按到轮廓的距离场直出 alpha；环境项改为 1.6× 模糊半径的宽幅高斯尾、接触带权重降低，并移除矢量描边。阴影只画在控件外侧，控件边缘保持干净，多控件叠加不再出现内缘暗边。向下偏移改为"底部加强、顶部减弱"的竖向增益（不再平移纹理），卡片下缘不再露出背景亮缝。材质页掉帧保持 1.4%（关闭阴影为 0.9%）。
@@ -27,8 +32,10 @@
 ### 兼容性
 
 - `ElasticMotionPolicy.MAX_SETTLE_MILLIS` 更名为 `SAFETY_SETTLE_MILLIS`；旧名保留为 `@Deprecated` 别名，源码兼容。语义由固定 720ms 改为自适应安全阀（默认弹簧仍为 720ms）。
-- `LumenControlShadowOptions` 追加 `softenOverlap` 与 `overlapAttenuation` 两个带默认值字段；该 API 尚未发布，宿主重新编译即可。
+- `LumenControlShadowOptions` 追加 `softenOverlap` 与 `overlapAttenuation` 两个带默认值字段；该 API 在本版首次发布，没有既有二进制需要兼容。
 - `LumenActivityDelegate` 构造新增 `controlShadowProvider` 参数，插在 `effectTuningProvider` 之前；两参数构造与既有尾随 lambda 写法不变。
+- Prism 不新增 `SkinId`、不改变持久化协议；`LumenSurfaceSession` 只增加内部成员，既有材质与 Fluent 的效果链不变；`LumenNavigationBar` 不调用 `setPrismSelection` 时与此前逐帧一致。
+- 新增公开 API，按 `docs/VERSIONING.md` 升为次版本 1.5.0；契约版本仍为 1，minSdk 27。
 - `LumenElasticInteraction` / `ElasticInteractionController` 构造新增带默认值的可选参数，既有命名参数与位置参数调用不变。
 
 ## [1.4.6] - 2026-10-16

@@ -39,6 +39,8 @@
 
 1.4.6 新增可选 `LumenViewportContentSource` 与 `LumenDrawableScene`，并修正裁剪来源坐标与可读性探针定位。新增公开 API 通常属于次版本，本次按用户明确指定发布为 1.4.6，作为编号例外；既有公开入口、`GlowEngine`、持久化协议和契约版本 1 保持兼容，minSdk 仍为 27。
 
+1.5.0 为次版本：新增可选控件软阴影、长按弹簧规格与橡皮筋曲线、液态形变磁贴，以及 Prism 棱镜玻璃（`LumenPrismGlass`）与底栏液态选中框（`LumenNavigationBar.setPrismSelection`）。按本节规则，新增公开 API 升次版本，不是编号例外；既有公开入口、`GlowEngine`、`SkinId` 与持久化协议、契约版本 1 保持兼容，minSdk 仍为 27。
+
 - 兼容承诺**只**覆盖 `API.md` 列出的声明，以及 `INTEGRATION_STANDARD.md` 的条款。
 - `internal` 声明、未列入 `API.md` 的公开辅助成员、源码契约测试，都不在承诺范围内。
 - 视觉调参（颜色、模糊半径、光学强度）属于修订：同一宿主在修订版本之间的画面允许有细微差异，但不得出现结构性变化，例如表面缺失、层级错乱。

@@ -23,6 +23,7 @@ import android.view.ViewTreeObserver
 import androidx.annotation.MainThread
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.glow.FilteredLayerRefresh
+import com.lumen.coacervation.engine.prism.PrismRecipe
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.geometry.SamplingMatrixMath
 import com.lumen.coacervation.engine.geometry.ScrollSamplingGeometry
@@ -166,7 +167,11 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         bindViewDrawOnly(view, surface, source, false)
 
     internal fun bindViewDrawOnly(view: View, surface: LumenSurfaceOptions, source: View,
-        preserveBackdropColors: Boolean): LumenSurfaceBinding {
+        preserveBackdropColors: Boolean): LumenSurfaceBinding = bindViewDrawOnly(view, surface, source, preserveBackdropColors, null)
+
+    /** Prism glass: the GPU node chain is blur → saturation → refraction from [prism] instead of the surface material. */
+    internal fun bindViewDrawOnly(view: View, surface: LumenSurfaceOptions, source: View,
+        preserveBackdropColors: Boolean, prism: PrismRecipe?): LumenSurfaceBinding {
         if (closed) return LumenSurfaceBinding(null, -1L)
         checkMain()
         require(entries.size < options.maxSurfaces) { "Surface count exceeds session budget" }
@@ -174,6 +179,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             ?: Group(ViewContentSource(source)).also(groups::add)
         val entry = Entry(nextId++, view, surface, group, ViewSurfaceTarget(view, matrices), false).apply {
             this.preserveBackdropColors = preserveBackdropColors
+            this.prism = prism
         }
         entries.add(entry)
         group.refreshCounterOptions()
@@ -181,6 +187,31 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         registerTrim()
         view.addOnAttachStateChangeListener(entry)
         return LumenSurfaceBinding(this, entry.id)
+    }
+
+    /**
+     * Replaces a draw-only binding's prism recipe and, optionally, its surface options in one step: the GPU glass
+     * is rebuilt at most once, on the next draw.
+     */
+    internal fun updatePrism(id: Long, prism: PrismRecipe?, surface: LumenSurfaceOptions? = null) {
+        if (closed) return
+        checkMain()
+        val entry = entries.firstOrNull { it.id == id } ?: return
+        val surfaceChanged = surface != null && entry.config != surface
+        if (!surfaceChanged && entry.prism == prism) return
+        entry.prism = prism
+        if (surface != null && surfaceChanged) entry.config = surface
+        entry.rebuild()
+    }
+
+    /** True when the binding's current GPU glass carries prism refraction. */
+    internal fun prismLensActiveOf(id: Long): Boolean {
+        if (closed) return false
+        for (entry in entries) if (entry.id == id) {
+            return Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && entry.stateBackend == LumenSurfaceBackend.GPU &&
+                entry.gpu?.prismLensActive == true
+        }
+        return false
     }
 
     /** Backend of the binding's latest draw; allocation-free for per-frame reads. */
@@ -807,6 +838,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         var direct: DirectSurfaceProgramApi33?=null
         // Composite acrylic applies its own luminosity recipe after the sampled backdrop.
         var preserveBackdropColors = false
+        /** Prism glass recipe for draw-only bindings; null keeps the surface material's chain. */
+        var prism: PrismRecipe? = null
         var rawProfile=LumenRawSampleProfile(1f)
         var rawSampling=config.sampling
         var rawDetail: LumenDetailMode?=null
@@ -1081,7 +1114,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     } else {
                                     entry.gpuPixels = pixels
                                     val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics,
-                                        preserveBackdropColors = entry.preserveBackdropColors).also { entry.gpu = it }
+                                        preserveBackdropColors = entry.preserveBackdropColors, prism = entry.prism).also { entry.gpu = it }
                                     group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, alpha * c.backdropOpacity)
                                     backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(entry.target)
                                     }
@@ -1198,5 +1231,7 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
     public fun diagnostics(): LumenSurfaceState? = session.get()?.state(id)
     internal fun lastBackend(): LumenSurfaceBackend = session.get()?.backendOf(id) ?: LumenSurfaceBackend.STATIC
     internal val isRecordingContent: Boolean get() = session.get()?.isRecordingContent == true
+    internal fun updatePrism(prism: PrismRecipe?, surface: LumenSurfaceOptions? = null) { session.get()?.updatePrism(id, prism, surface) }
+    internal fun prismLensActive(): Boolean = session.get()?.prismLensActiveOf(id) == true
     override fun close() { session.get()?.detach(id) }
 }

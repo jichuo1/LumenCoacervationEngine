@@ -161,4 +161,41 @@ class ExpansionMotionPolicyTest {
         val tightFrames = stepUntilRest(tight)
         assertTrue("收紧后仍必须收敛", tightFrames in (looseFrames + 1)..(looseFrames * 2 + 12))
     }
+
+    /**
+     * 设备教训（1.5.0 发布前，API 31 模拟器约 20fps）：dt 被钳到 0.05s 时半隐式欧拉发散，
+     * 手风琴越摆越大、持续出帧，约 35 分钟后溢出为 NaN 并在 roundToInt 处崩溃。长帧拆成子步后必须收敛。
+     */
+    @Test
+    fun longFramesStillConvergeWithoutOverflow() {
+        for (dt in floatArrayOf(0.05f, 0.03f, 0.1f)) {
+            val spring = ExpansionMotionPolicy.Spring(p = 0f, target = 1f)
+            var frames = 0
+            while (!spring.step(if (frames == 0) 0f else dt) && frames < 2000) {
+                assertTrue("dt=$dt diverged at frame $frames: p=${spring.p}", spring.p.isFinite() && abs(spring.p) < 2f)
+                frames++
+            }
+            assertTrue("dt=$dt never settled", frames < 2000)
+            assertEquals(1f, spring.p, 0f)
+        }
+    }
+
+    /** dt ≤ 1/60 时恰好一步：与修正前的单步积分逐位一致，正常帧率下的观感不变。 */
+    @Test
+    fun normalFramesKeepTheSingleStepIntegration() {
+        val damping = 2f * ExpansionMotionPolicy.DAMPING_RATIO * kotlin.math.sqrt(ExpansionMotionPolicy.STIFFNESS)
+        for (dt in floatArrayOf(1f / 60f, 1f / 90f, 1f / 120f)) {
+            val spring = ExpansionMotionPolicy.Spring(p = 0f, target = 1f)
+            var p = 0f
+            var v = 0f
+            repeat(20) {
+                v += (-ExpansionMotionPolicy.STIFFNESS * (p - 1f) - damping * v) * dt
+                p += v * dt
+                spring.step(dt)
+                if (spring.p == 1f && spring.v == 0f) return@repeat
+                assertEquals("dt=$dt", p, spring.p, 0f)
+                assertEquals("dt=$dt", v, spring.v, 0f)
+            }
+        }
+    }
 }

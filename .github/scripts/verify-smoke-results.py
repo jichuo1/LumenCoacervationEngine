@@ -137,6 +137,11 @@ REQUIRED = {
         "selectedBackgroundRerecordsDuringRowTransformAndStaysIdleAfterwards",
         "bitmapSamplingTransformMatchesNativeWarpAtSurfaceEndpoints",
     },
+    PREFIX + "PrismIntegrationTest": {
+        "fallbackFollowsTheShadeAndCloseRestoresTheBackground",
+        "classicSelectionIsPixelIdenticalAfterAPrismRoundTrip",
+        "prismSelectionShowsTheSelectedColourOnlyInsideThePill",
+    },
 }
 FRAME_CLIP_GPU_TEST = (PREFIX + "SurfaceSourceFrameClipTest",
                        "gpuHaloIgnoresPixelsOutsideDeclaredSourceFrame")
@@ -148,6 +153,7 @@ SCENE_PRE29_TEST = (PREFIX + "DrawableSceneInstrumentedTest",
                     "pre29HardwareRequestsUseAFullResolutionSoftwareRecording")
 GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "gpuFadeUsesTheCurrentSourceAndDoesNotTintTheWholeWindow")
 LINEAR_GPU_TEST = (PREFIX + "LocalSurfaceIntegrationTest", "linearGpuFadeHasUniformPixelCoverage")
+PRISM_GPU_TEST = (PREFIX + "PrismIntegrationTest", "tintCompositesOverTheSampledBackdropInBothShades")
 PANEL_STRETCH_TESTS = {
     (PREFIX + "PanelInlineScrollTest", "platformFlingReboundsInTheNearestViewportWithoutMovingTheOuterScroll"),
     (PREFIX + "PanelInlineScrollTest", "idleAndFinishingInlineViewportsPreserveAnActiveOuterRebound"),
@@ -181,6 +187,7 @@ def required_tests(api):
         required.add(ACRYLIC_GPU_TEST)
         required.add(GPU_TEST)
         required.add(LINEAR_GPU_TEST)
+        required.add(PRISM_GPU_TEST)
         required.update(PANEL_STRETCH_TESTS)
     if api >= 33:
         required.update(ENHANCED_GPU_TESTS)

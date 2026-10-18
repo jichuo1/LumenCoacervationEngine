@@ -43,13 +43,13 @@
 
 ### `LumenActivityDelegate(activity: Activity, paletteProvider: () -> LumenPalette, controlShadowProvider: () -> LumenControlShadowOptions = { LumenControlShadowOptions.DISABLED }, effectTuningProvider: () -> LumenEffectTuning = { LumenEffectTuning.DEFAULT })`
 
-`effectTuningProvider` 自 1.1.0；`controlShadowProvider` 自未发布版本，插在 `effectTuningProvider` **前面**，既有尾随 lambda 写法不变。构造函数带 `@JvmOverloads`，两参数的写法与旧二进制保持可用。
+`effectTuningProvider` 自 1.1.0；`controlShadowProvider` 自 1.5.0，插在 `effectTuningProvider` **前面**，既有尾随 lambda 写法不变。构造函数带 `@JvmOverloads`，两参数的写法与旧二进制保持可用。
 
 | 分组 | 成员 | 标准 |
 |---|---|---|
 | 状态 | `val palette: LumenPalette`、`val isPrepared: Boolean`、`val engine: GlowEngine?`（每次现取，**不得缓存**） | §2.2、§6 |
 | | `val effectTuning: LumenEffectTuning`（自 1.1.0；首次读取后缓存） | §2.5 |
-| | `val controlShadow: LumenControlShadowOptions`（自未发布版本；首次读取后缓存，改动重建 Activity 生效） | §5.6 |
+| | `val controlShadow: LumenControlShadowOptions`（自 1.5.0；首次读取后缓存，改动重建 Activity 生效） | §5.6 |
 | 会话 | `fun prepare()`、`fun bindRoot(root: View, onFailure: (() -> Unit)? = null): Boolean` | §2.3、§2.4 |
 | 通知 | `fun onDispatchTouchEvent(event: MotionEvent)`、`fun notifyPositionChanged()`、`fun notifyScrollPositionChanged(scrollHost: View)`、`fun bindContentSource(view: View)` | §4、§6.1 |
 | 表面 | `fun surface(color, radiusDp, role: SurfaceRole): Drawable`（控件阴影开启时外包软阴影层） | §5、§5.6 |
@@ -61,7 +61,7 @@
 | 诊断 | `val isLiquidRequested`、`val isLiquidEffective`、`val backendName: String?`、`fun diagnostics(): SkinSessionDiagnostics?` | §3.2 |
 | 生命周期 | `onStart()`、`onStop()`、`onTrimMemory(level)`、`onLowMemory()`、`onDestroy()` | §2.1 |
 
-### 控件软阴影（自未发布版本）
+### 控件软阴影（自 1.5.0）
 
 浅色主题下浅色表面与白底内容分不清边时启用；色罩与白色描边在浅底上会消失，阴影不依赖它们。环境层（1.6× 模糊半径的宽幅高斯尾）与贴边接触带按到控件轮廓的距离场烘焙成连续剖面，**只画在控件边界之外**，控件边缘保持自己的干净轮廓；纯软件位图缓存，API 27+ 可用，与高级材质无关。祖先容器需 `clipChildren=false` 或按 `outsetPx` 预留外侧间距（密集列表项天然会被裁掉，通常正是想要的效果）。
 
@@ -73,7 +73,7 @@
 | `LumenControlShadow.outsetPx(options, density): Int` | 阴影在控件边界外的最大外扩像素 | §5.6 |
 | `NavigationBarSelectionMask.color(palette, strength): Int` | 底栏选中滑块的对比遮罩：浅色用深色、深色用浅色，`strength` 0–1 连续；结果交给 `chromeOverlayBackground(..., selected = true)` | §12.4 |
 
-### 液态形变（自未发布版本）
+### 液态形变（自 1.5.0）
 
 `LumenMorphTile` 是 1 格 ↔ 2 格的独立磁贴：外层固定 2 格，内部用连续曲率路径 + 三条独立弹簧（宽度/圆角/内容）在收起/展开之间形变。它不叠加控件软阴影或液态折射表面（动态半径会让预烘焙阴影纹理每帧失效），只提供跟随 `LumenEffectTuning` 的贴边高光与接触线。详细耦合见适配标准 §13.12。
 
@@ -88,7 +88,7 @@
 - `val lumen: LumenActivityDelegate`：懒创建。
 - `protected open fun resolvePalette(): LumenPalette`：默认返回 `LumenPalette.neutral(系统深浅色)`。
 - `protected open fun resolveEffectTuning(): LumenEffectTuning`：默认 `LumenEffectTuning.DEFAULT`（自 1.1.0）。
-- `protected open fun resolveControlShadow(): LumenControlShadowOptions`：默认 `LumenControlShadowOptions.DISABLED`（自未发布版本）。
+- `protected open fun resolveControlShadow(): LumenControlShadowOptions`：默认 `LumenControlShadowOptions.DISABLED`（自 1.5.0）。
 - 已接好 §2.1 的全部转发。
 
 ## 3. 数据类型（`com.lumen.coacervation.engine.model`）
@@ -208,12 +208,12 @@
 
 | 声明 | 说明 | 标准 |
 |---|---|---|
-| `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning }, springSpec = LumenSpringSpec.DEFAULT, rubberCurve = ElasticRubberCurve.TANH)` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取；`springSpec`/`rubberCurve` 自未发布版本 | §12、§2.5 |
+| `LumenElasticInteraction(activity, lumen, isExcluded = { tag == EXCLUDED_TAG }, effectTuning = { lumen.effectTuning }, springSpec = LumenSpringSpec.DEFAULT, rubberCurve = ElasticRubberCurve.TANH)` | `dispatch(event, superDispatch)`、`clear()`、`installDialog(dialog): () -> Unit`、`dispose()`；`effectTuning` 自 1.1.0，每次按下时读取；`springSpec`/`rubberCurve` 自 1.5.0 | §12、§2.5 |
 | `ElasticInteractionController.EXCLUDED_TAG` / `CONTAINER_TAG` | 不参与弹性 / 只承载、自己不形变 | §12.1 |
-| `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT }, springSpec = LumenSpringSpec.DEFAULT, rubberCurve = ElasticRubberCurve.TANH)` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0；`springSpec`/`rubberCurve` 自未发布版本 | §12 |
+| `ElasticInteractionController(root, notifyPositionChanged, isExcluded, highlightColor, effectTuning = { LumenEffectTuning.DEFAULT }, springSpec = LumenSpringSpec.DEFAULT, rubberCurve = ElasticRubberCurve.TANH)` | 底层控制器（一个窗口一个）；宿主通常用上面的封装。`effectTuning` 自 1.1.0；`springSpec`/`rubberCurve` 自 1.5.0 | §12 |
 | `ElasticTravelPolicy { AVOID_NEIGHBORS, PARENT_BOUNDS }`；`LumenElasticInteraction.travelPolicy` / `ElasticInteractionController.travelPolicy`（自 1.1.0） | 默认避让相邻控件；父容器模式保留原列表交叠行程。下次按下时生效，已开始的拖动/回弹不改变；Activity 封装同时传给其弹窗 | §14.7 |
-| `LumenSpringSpec(stiffness, dampingRatio)`、`LumenSpringSpec.DEFAULT`、`LumenSpringSpec.ofResponseBounce(responseSeconds, bounce)`（自未发布版本） | 长按回弹的弹簧规格；`ofResponseBounce` 用"周期+弹跳"设计口语换算（`stiffness=(2π/response)²`、`dampingRatio=1−bounce`，与厂商弹簧库同语义）。范围校验；恒欠阻尼 | §12 |
-| `ElasticRubberCurve { TANH, RATIONAL }`（自未发布版本） | 跟手位移的橡皮筋曲线族：默认 TANH 为引擎原样；RATIONAL 初段更跟手、渐近上限更韧。两者都以同一行程上限渐近、在 touchSlop 处连续归零 | §12 |
+| `LumenSpringSpec(stiffness, dampingRatio)`、`LumenSpringSpec.DEFAULT`、`LumenSpringSpec.ofResponseBounce(responseSeconds, bounce)`（自 1.5.0） | 长按回弹的弹簧规格；`ofResponseBounce` 用"周期+弹跳"设计口语换算（`stiffness=(2π/response)²`、`dampingRatio=1−bounce`，与厂商弹簧库同语义）。范围校验；恒欠阻尼 | §12 |
+| `ElasticRubberCurve { TANH, RATIONAL }`（自 1.5.0） | 跟手位移的橡皮筋曲线族：默认 TANH 为引擎原样；RATIONAL 初段更跟手、渐近上限更韧。两者都以同一行程上限渐近、在 touchSlop 处连续归零 | §12 |
 
 ### 11.2 可打断动画内核（`com.lumen.coacervation.engine.motion`）
 
@@ -455,3 +455,23 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 | `LumenDrawableScene.draw(canvas: Canvas)` / `close()` | 回放最近完成的录制；硬件实例只接受硬件 Canvas，软件采样须持有独立实例。RenderNode 在重新录制与尺寸变化时保持身份；不自动安排刷新。close 释放录制资源且幂等，关闭后的 record/draw/close 均为空操作 |
 
 小视口的原生前景探针独立于自定义源的像素配方。可读性控制器按完整 source/target 相对矩阵映射探针，过滤无效区域时保持结果与绑定身份一致；这些修正不改变原有公开签名。
+
+## 22. Prism 棱镜玻璃与液态选中框（自 1.5.0）
+
+玻璃位于 **lumen-engine** 包 `com.lumen.coacervation.engine.host`；选中框位于 **lumen-motion** 包 `com.lumen.coacervation.engine.widget`。配方、默认值、深浅色与接入见 [PRISM_MATERIAL.md](PRISM_MATERIAL.md)。全部入口只能在主线程调用，关闭后为空操作。不改变 `SkinId`。
+
+| 声明 | 公开成员 |
+|---|---|
+| `LumenPrismGlass(view, palette, options = LumenPrismOptions(), session: LumenSurfaceSession? = null, source: View? = null)` | `update(options)` / `updatePalette(palette)` / `notifyPositionChanged()` / `diagnostics(): LumenPrismDiagnostics` / `isClosed` / `close()`；直接作为 View 背景安装，只恢复仍由自己持有的背景；来源不得包含 `view` |
+| `LumenPrismOptions` | enabled / cornerRadiusDp（null = 胶囊，0–128）/ blur / lens / surface / highlight / innerShadow / press / shadow / reduceTransparency / reduceMotion / fallbackOnLowRamDevice / fallbackOnPowerSave |
+| `LumenPrismBlurOptions` | enabled（只控制模糊）/ radiusDp（0–48，默认 8）/ saturation（0–2，默认 1.5） |
+| `LumenPrismLensOptions` | enabled / refractionHeightDp（0–64，默认 24）/ refractionAmountDp（0–64，默认 24）/ depthEffect（0–1）/ dispersion（0–1） |
+| `LumenPrismSurfaceOptions` | tintColor / tintOpacity（null = 深浅色默认 #FAFAFA / #121212 @ 40%）/ fallbackColor / fallbackOpacity（0–1，默认 0.86）；颜色只取 RGB |
+| `LumenPrismHighlightOptions` | enabled / widthDp（0–4）/ opacity（0–1）/ angleDegrees（±360）/ falloff（0–8）/ color（只取 RGB） |
+| `LumenPrismInnerShadowOptions` | enabled（默认关）/ radiusDp（0–48）/ opacity（0–0.6）/ color |
+| `LumenPrismShadowOptions` | enabled / radiusDp（0–48，默认 24）/ offsetYDp（±16，默认 4）/ opacity（0–0.5，默认 0.1）/ color |
+| `LumenPrismPressOptions` | enabled / glowOpacity（0–0.5）/ washOpacity（0–0.3） |
+| `LumenPrismFallbackReason` | NONE / DISABLED / REDUCE_TRANSPARENCY / LOW_RAM_DEVICE / POWER_SAVE / NO_BACKDROP / BUDGET_EXCEEDED / BACKDROP_UNAVAILABLE / CLOSED |
+| `LumenPrismDiagnostics` | closed / glassVisible / fallbackReason / backdropBackend / lensActive / dark / draws |
+| `LumenNavigationBar.setPrismSelection(options: LumenPrismSelectionOptions?)` / `isPrismSelectionEnabled` | null 为经典选中框（逐帧不变）；可随时切换或改参 |
+| `LumenPrismSelectionOptions` | pressedScale（1–1.8）/ contentMagnification（1–1.6）/ lensHeightDp、lensAmountDp（0–32）/ dispersion（0–1）/ velocityDeformation（0–2）/ highlightOpacity（0–1）/ shadowOpacity（0–0.4）/ innerShadowOpacity（0–0.6）/ pressedWashOpacity（0–0.2）/ scaleXSpring、scaleYSpring（`LumenSpringSpec`）；`DEFAULT` |

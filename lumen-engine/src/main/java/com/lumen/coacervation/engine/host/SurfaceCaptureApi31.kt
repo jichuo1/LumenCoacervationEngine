@@ -19,6 +19,9 @@ import com.lumen.coacervation.engine.liquid.LiquidChromeLensApi33
 import com.lumen.coacervation.engine.liquid.LiquidTokenResolver
 import com.lumen.coacervation.engine.liquid.LiquidVisualTuningPolicy
 import com.lumen.coacervation.engine.material.FrostedChromeLensApi33
+import com.lumen.coacervation.engine.prism.PrismLensApi33
+import com.lumen.coacervation.engine.prism.PrismPolicy
+import com.lumen.coacervation.engine.prism.PrismRecipe
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -72,6 +75,11 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
     class LensCache {
         private var frosted: Any? = null
         private var liquid: Any? = null
+        private var prism: Any? = null
+        fun prism(counters: LumenGraphicsCounters? = null): Any? {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
+            return prism ?: PrismLensApi33.create().also { prism = it; counters?.shaderCompiled() }
+        }
         fun lens(material: LumenSurfaceMaterial, parameters: com.lumen.coacervation.engine.model.LiquidParameters, density: Float, strength: Float, counters: LumenGraphicsCounters? = null): Any? {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) return null
             return if (material == LumenSurfaceMaterial.LIQUID) {
@@ -86,9 +94,11 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
 
     @RequiresApi(31)
     class Glass(options: LumenSurfaceOptions, density: Float, dark: Boolean, cache: LensCache,
-        counters: LumenGraphicsCounters? = null, preserveBackdropColors: Boolean = false) : AutoCloseable {
+        counters: LumenGraphicsCounters? = null, preserveBackdropColors: Boolean = false,
+        prism: PrismRecipe? = null) : AutoCloseable {
         private val sampling = options.sampling
-        private val pad = (maxOf(20f * sampling.refractionStrength, (if (sampling.blurEnabled) sampling.blurRadiusDp else 0f) * 2f) * density).roundToInt() + 2
+        private val pad = if (prism != null) PrismPolicy.paddingPx(prism, density)
+            else (maxOf(20f * sampling.refractionStrength, (if (sampling.blurEnabled) sampling.blurRadiusDp else 0f) * 2f) * density).roundToInt() + 2
         private val blur = if (!sampling.blurEnabled || sampling.blurRadiusDp == 0f) RenderEffect.createOffsetEffect(0f, 0f)
             else GlowChromeBlurApi31.create(sampling.blurRadiusDp * density)
         private val liquidParameters = LiquidTokenResolver.resolve(LiquidVisualTuningPolicy.resolve(dark)).let {
@@ -98,12 +108,24 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         private val lensStrength = if (sampling.refractionEnabled) sampling.refractionStrength else 0f
         // ColorMatrix can retain extended-range RGB through the following alpha blend. The existing
         // frosted shader clamps RGB to premultiplied alpha before fading, including when the lens is off.
-        private val lens: Any? = if (!preserveBackdropColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        private val lens: Any? = if (prism == null && !preserveBackdropColors && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             (options.material == LumenSurfaceMaterial.FROSTED || lensStrength > 0f)) {
             cache.lens(options.material, liquidParameters, density, lensStrength, counters)
         } else null
+        private val prismLens: Any? = if (prism != null && prism.lensEnabled) cache.prism(counters) else null
+        /** Prism refraction is in this glass's effect chain (API 33+ with a non-zero lens). */
+        val prismLensActive: Boolean get() = prismLens != null
+        private val prismSaturation = if (prism != null && prism.saturation != 1f)
+            ColorMatrixColorFilter(ColorMatrix(PrismPolicy.saturationMatrix(prism.saturation))) else null
         val renderer = GlowChromeGlassApi31(pad) { width, height, padding, radius, intensity, direction ->
             var effect = blur
+            if (prism != null) {
+                // Prism: blur → saturation → rounded-rect refraction. No frosted gain, no fade.
+                if (prismSaturation != null) effect = RenderEffect.createColorFilterEffect(prismSaturation, effect)
+                if (prismLens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
+                    effect = PrismLensApi33.effect(prismLens, effect, width, height, padding, radius, prism, density)
+                return@GlowChromeGlassApi31 effect
+            }
             if(options.material==LumenSurfaceMaterial.FROSTED&&lens==null&&!preserveBackdropColors) {
                 val gain=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_GAIN
                 val bias=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_BIAS

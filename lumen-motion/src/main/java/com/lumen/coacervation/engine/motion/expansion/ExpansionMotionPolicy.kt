@@ -1,6 +1,7 @@
 package com.lumen.coacervation.engine.motion.expansion
 
 import kotlin.math.abs
+import kotlin.math.ceil
 import kotlin.math.sqrt
 
 /**
@@ -80,6 +81,12 @@ public object ExpansionMotionPolicy {
     /** 单帧最大步长（秒）：掉帧/后台恢复时钳制 dt，防止弹簧爆发。 */
     const val MAX_STEP_SECONDS = 0.05f
 
+    /** 单个积分子步上限（秒）：本刚度/阻尼下半隐式欧拉稳定，正常 60fps 帧恰好一步。 */
+    const val MAX_SUBSTEP_SECONDS = 1f / 60f
+
+    /** 浮点余量：dt 恰为 1/60 时不因舍入多拆一步。 */
+    private const val SUBSTEP_EPSILON = 1e-4f
+
     /**
      * 归一化进度上的阻尼弹簧。p 为位置、v 为速度（p/秒）、target 为目标值。
      * 半隐式欧拉积分：先更新速度再更新位置，帧率不稳时也保持能量形态。
@@ -102,13 +109,20 @@ public object ExpansionMotionPolicy {
 
         fun step(dtSeconds: Float): Boolean {
             val dt = dtSeconds.coerceIn(0f, MAX_STEP_SECONDS)
+            // 长帧拆成不超过 MAX_SUBSTEP_SECONDS 的子步：半隐式欧拉在本刚度/阻尼下 dt≈0.05 时发散
+            // （迭代矩阵特征值约 −1.006），低于 20fps 的设备上弹簧会越摆越大直至 NaN。
+            // dt ≤ 1/60 时恰好一步，与修正前逐位一致。
+            val steps = ceil(dt / MAX_SUBSTEP_SECONDS - SUBSTEP_EPSILON).toInt().coerceAtLeast(1)
+            val h = dt / steps
             val damping = 2f * DAMPING_RATIO * sqrt(STIFFNESS)
-            v += (-STIFFNESS * (p - target) - damping * v) * dt
-            p += v * dt
-            if (abs(p - target) < restP && abs(v) < restV) {
-                p = target
-                v = 0f
-                return true
+            repeat(steps) {
+                v += (-STIFFNESS * (p - target) - damping * v) * h
+                p += v * h
+                if (abs(p - target) < restP && abs(v) < restV) {
+                    p = target
+                    v = 0f
+                    return true
+                }
             }
             return false
         }

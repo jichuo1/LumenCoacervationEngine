@@ -56,6 +56,7 @@ GlowEngine（契约 / SPI）─────────────── glow/
 | `touch` | 触摸光晕：纯几何状态机 + 绘制器 | 公开 |
 | `interaction` | `ElasticGestureClaim`：手势归属声明 | 公开 |
 | `fluent` | Fluent 亚克力配方、层级描边与状态令牌、共享噪点、API 29 混合隔离类、控件 Drawable（入口 `host.LumenFluentControl`） | 内部 |
+| `prism` | 棱镜玻璃：配方与默认值、AGSL 折射与高光（API 33 隔离类）、控件 Drawable（入口 `host.LumenPrismGlass`；液态选中框在 lumen-motion `widget`） | 内部 |
 
 可选 `host.LumenMicaBackdrop` 不进入 `ActivitySkinSession` 或持久化皮肤状态机。它仅持有窗口根背景、焦点／省电监听和内存回收登记；`LumenMicaImage.prepare` 在宿主后台生成有常量预算的静态模糊快照，`fluent.MicaPolicy` 负责纯配方与状态，`MicaBackdropDrawable` 只绘制预着色结果。子层使用低透明度 Drawable，不重复采样；接入与来源依据见 [MICA_MATERIAL.md](MICA_MATERIAL.md)。
 

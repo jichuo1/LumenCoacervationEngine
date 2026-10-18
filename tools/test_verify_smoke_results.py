@@ -14,7 +14,8 @@ VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 
 VISUAL_HELPER_CLASSES = ("DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
-                         "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest", "SurfaceSourceFrameClipTest")
+                         "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest", "SurfaceSourceFrameClipTest",
+                         "PrismIntegrationTest")
 
 
 class SmokeResultsTest(unittest.TestCase):
@@ -30,6 +31,7 @@ class SmokeResultsTest(unittest.TestCase):
                 keys.add(VERIFIER.ACRYLIC_GPU_TEST)
                 keys.add(VERIFIER.GPU_TEST)
                 keys.add(VERIFIER.LINEAR_GPU_TEST)
+                keys.add(VERIFIER.PRISM_GPU_TEST)
                 keys.update(VERIFIER.PANEL_STRETCH_TESTS)
             if api >= 33:
                 keys.update(VERIFIER.ENHANCED_GPU_TESTS)
@@ -69,6 +71,8 @@ class SmokeResultsTest(unittest.TestCase):
                 registered.add(VERIFIER.ACRYLIC_GPU_TEST[1])
             elif owner == "SurfaceSourceFrameClipTest":
                 registered.add(VERIFIER.FRAME_CLIP_GPU_TEST[1])
+            elif owner == "PrismIntegrationTest":
+                registered.add(VERIFIER.PRISM_GPU_TEST[1])
             with self.subTest(owner=owner):
                 self.assertTrue(actual)
                 self.assertEqual(actual, registered)

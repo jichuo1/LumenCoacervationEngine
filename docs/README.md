@@ -23,6 +23,7 @@
 | [P2_EFFECTS_AND_ASSETS.md](P2_EFFECTS_AND_ASSETS.md) | 传感器光源、程序化效果与粒子、Lottie / PAG / Rive 资产 |
 | [NATIVE_COMPOSE.md](NATIVE_COMPOSE.md) | 原生 Compose 接入原型与待验收项 |
 | [FLUENT_MATERIAL.md](FLUENT_MATERIAL.md) | Fluent 亚克力与层级：配方来源、回退规则、接入与验证 |
+| [PRISM_MATERIAL.md](PRISM_MATERIAL.md) | Prism 棱镜玻璃与液态选中框：配方与默认值、深浅色、接入与验证 |
 | [MICA_MATERIAL.md](MICA_MATERIAL.md) | 可选云母背景：Mica / Mica Alt、静态背景预算、内容分层、状态回退与资料依据 |
 
 ## 参考

@@ -519,6 +519,7 @@ root（bindRoot）
   - 宿主在翻页器的 `onPositionChanged` 里调用 `setPageProgress(position, notifyPositionChanged = false)`，在 `onPageSelected` 里调用 `setSelectedPage(index)`，把悬浮栏可读性接到 `setLegibility(boost, palette.surface)`，销毁时 `dispose()`。
   - 选中滑块的背景**应当**用与栏体相反的对比遮罩：浅色主题用深色半透明、深色主题用浅色半透明（例如 `palette.textPrimary` 约 20% 透明度），不要与栏体同色，否则选中态在浅底上几乎读不出来。强度由宿主按 0–1 连续调节；可直接用 `NavigationBarSelectionMask.color(palette, strength)`，Demo 设置页的「选中遮罩强度」即这条策略。
   - 底栏背景的可选软阴影画在胶囊**之外**，因此承载 `LumenNavigationBar` 的父容器也必须 `clipChildren=false`；栏自身的 `clipToOutline` 已关闭，只给触点光晕单独按胶囊轮廓裁剪。
+  - 选中框**可以**用 `setPrismSelection(LumenPrismSelectionOptions())` 换成液态选中胶囊（§13.13）；`null` 恢复经典选中框，逐帧不变。
 - **`LumenSegmentScrubBar`**（分段档位条）：与底栏共用手势判定、高光和弹簧；用 `configure(labels, colors, thumbBackground, trackBackground, selectedIndex, onSelect)` 配置，1～8 段（§15.1）。
 - 两者都**必须**满足 §12.1 的 `EXCLUDED_TAG` 和 §12.3 的宿主裁剪。
 
@@ -705,7 +706,7 @@ API 33+ 读取进程当前的公开动画倍率；API 27–32 通过公开系统
 - 选中的行被长按拖动形变时，选中框跟随行的位移与缩放；横向分段控件把表面设在控件自身时，整条控件是一个形变单位（§12.2）。
 - 引擎在选中框位置、尺寸或跟随变换改变后重录背景；静止帧不反复通知。已有宿主自绘选择器**可以**改接本控件，保留自己的标题与业务回调。
 
-### 13.12 液态形变（`LumenMorphTile`，自未发布版本）
+### 13.12 液态形变（`LumenMorphTile`，自 1.5.0）
 
 一个固定 2 格外层、内部 1 格 ↔ 2 格的磁贴。宽度、圆角、内容三条弹簧独立推进；宽度/圆角的响应与回弹错开时，胶囊会先被“挤出去”、圆角再追上，形成液滴挤出感。圆角是连续曲率近似（`cornerSmoothing`），不是普通圆角矩形。
 
@@ -717,6 +718,18 @@ API 33+ 读取进程当前的公开动画倍率；API 27–32 通过公开系统
 - 颜色默认取 `palette.primary/onPrimary`；需要自有表面色时用 `setColors(fill, content)`。深色主题直接传当前 `palette` 即可。
 - 不改变布局参数：外层宿主尺寸固定，逐帧只更新路径/内容变换，因此不会触发布局；三条弹簧都走 `ElasticSpringAxis`，可随时打断。
 - Demo：动效页有专用测试件；设置页「液态形变（重建）」暴露开关、宽度/圆角/内容 response/bounce、收起比例、圆角/平滑/内容缩放与贴边显示。
+
+### 13.13 棱镜玻璃与液态选中框（Prism，自 1.5.0）
+
+`LumenPrismGlass` 给任意 View 装棱镜（液态）玻璃背景，`LumenNavigationBar.setPrismSelection` 把底栏选中框换成液态选中胶囊。配方与默认值见 [PRISM_MATERIAL.md](PRISM_MATERIAL.md)。
+
+- 玻璃的 `source` **不得**包含玻璃 View；没有会话时显示不透明回退色。
+- 外阴影画在边界之外：祖先**必须** `clipChildren = false`；**不得**再包 `LumenControlShadow`，也**不得**与 `LumenFluentControl` 装在同一 View 上。
+- 主题切换**应当**调用 `session.updatePalette` 与 `glass.updatePalette`；深浅色以 `palette.background` 亮度判定。
+- 内容滚动、移动时与局部会话相同：`session.notifyScrollPositionChanged` / `glass.notifyPositionChanged`。
+- 销毁顺序：先 `glass.close()`，再 `session.close()`；底栏 `dispose()`。
+- 选中框效果与栏背景材质相互独立：可以放在柔光、高级材质或棱镜玻璃的栏上；静止时的选中底仍是宿主的 SELECTION 背景，强度沿用 §12.4 的选中遮罩。
+- 棱镜选中框运动时栏会逐帧重录显示列表；静止时零工作。只有拖动和回弹的速度挤压选中框。
 
 ## 14. 尺寸与排布适配（`lumen-motion`）
 
