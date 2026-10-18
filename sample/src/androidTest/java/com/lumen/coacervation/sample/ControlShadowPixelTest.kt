@@ -86,7 +86,10 @@ class ControlShadowPixelTest {
                 }
                 val near = previous
                 assertTrue("shadow must be visible near the contour ($far -> $near)", near < far - 10.0)
-                assertTrue("adjacent pixels must stay continuous, step=$maxStep", maxStep <= 8.0)
+                // Continuity is per dp, not per pixel: on the CI mdpi emulators (160 dpi) the ~1dp contact band
+                // is one pixel wide, so its full drop lands in one step. 16 per dp, never looser than 8 per pixel.
+                val allowed = maxOf(8.0, 16.0 / density)
+                assertTrue("adjacent pixels must stay continuous, step=$maxStep allowed=$allowed", maxStep <= allowed)
             } finally {
                 bitmap.recycle()
             }

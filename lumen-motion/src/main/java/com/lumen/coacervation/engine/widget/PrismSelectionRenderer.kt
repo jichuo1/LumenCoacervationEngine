@@ -5,7 +5,6 @@ import androidx.core.graphics.withScale
 import androidx.core.graphics.withSave
 import androidx.core.graphics.createBitmap
 import android.graphics.Bitmap
-import android.graphics.BitmapShader
 import android.graphics.BlurMaskFilter
 import android.graphics.Canvas
 import android.graphics.Color
@@ -53,7 +52,7 @@ internal class PrismSelectionRenderer(private val density: Float) {
     private val barToMask = Matrix()
     private var shaderApi33: Any? = null
     private var shaderFailed = false
-    private var maskShader: BitmapShader? = null
+    private val maskPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private var shaderBitmap: Bitmap? = null
     private val maskMatrix = Matrix()
     private var iconCopies: Array<Drawable?> = emptyArray()
@@ -128,6 +127,7 @@ internal class PrismSelectionRenderer(private val density: Float) {
         color = selectedColor
         // The API 33 shader applies the colour (and its alpha) itself; the bitmap path uses the paint colour.
         copyPaint.color = if (shaderApi33 != null) Color.WHITE else selectedColor
+        maskPaint.color = selectedColor
     }
 
     fun invalidateMask() { maskDirty = true }
@@ -201,9 +201,6 @@ internal class PrismSelectionRenderer(private val density: Float) {
         if (Build.VERSION.SDK_INT >= 33 && shader is PrismSelectionShaderApi33) {
             if (shaderBitmap !== bitmap) { shader.setMask(bitmap, barToMask); shaderBitmap = bitmap }
             shader.install(copyPaint)
-        } else if (maskShader == null || shaderBitmap !== bitmap) {
-            maskShader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).also { copyPaint.shader = it }
-            shaderBitmap = bitmap
         }
     }
 
@@ -365,13 +362,20 @@ internal class PrismSelectionRenderer(private val density: Float) {
         if (Build.VERSION.SDK_INT >= 33 && shader is PrismSelectionShaderApi33) {
             shader.configure(pill.centerX(), pill.centerY(), pill.width() / 2f, pill.height() / 2f, radius,
                 options.lensHeightDp * density * p, options.lensAmountDp * density * p, options.dispersion, magnification, color)
+            canvas.drawRoundRect(pill, radius, radius, copyPaint)
         } else {
-            val fallback = maskShader ?: return
+            // Below API 33: the alpha mask drawn with the paint colour, clipped to the pill. A drawBitmap of an
+            // ALPHA_8 bitmap takes the paint colour on every pipeline; as a BitmapShader it does not on the
+            // API 27 OpenGL renderer (CI smoke: the selected copy stayed uncoloured).
+            val bitmap = mask ?: return
             maskMatrix.set(barToMask)
             maskMatrix.postScale(magnification, magnification, pill.centerX(), pill.centerY())
-            fallback.setLocalMatrix(maskMatrix)
+            canvas.withSave {
+                clipPath(pillPath)
+                concat(maskMatrix)
+                drawBitmap(bitmap, 0f, 0f, maskPaint)
+            }
         }
-        canvas.drawRoundRect(pill, radius, radius, copyPaint)
         if (p > 0f && options.innerShadowOpacity > 0f) {
             innerPaint.alpha = (options.innerShadowOpacity * p * 255f).roundToInt()
             innerMatrix.setScale(1f, (NavigationBarPrismPolicy.INNER_SHADOW_RADIUS_DP * density * p).coerceAtLeast(1f))
@@ -406,7 +410,6 @@ internal class PrismSelectionRenderer(private val density: Float) {
         shadow = null
         maskDirty = true
         shaderApi33 = null
-        maskShader = null
         shaderBitmap = null
         copyPaint.shader = null
         iconCopies = emptyArray()

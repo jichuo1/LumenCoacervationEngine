@@ -34,6 +34,9 @@
   - API 35：168 项，166 通过；`DrawableSceneInstrumentedTest.pre29…` 为 API 29 以下专用的预期 assumption 跳过；`MotionOwnershipRegressionTest` 的横向揭示取消用例在本模拟器上时序不稳（复跑通过，干净 1.4.6 同样失败）。
   - API 31：153 项，149 通过；除同一 assumption 跳过外，`MotionOwnershipRegressionTest` 两项与 `EnhancedSurfaceIntegrationTest.fusedSelector…` 一项在本模拟器上失败，干净 1.4.6 源码在同一模拟器上同样失败（API 35 与 CI 冒烟通过），不是本次回归。
   - 手风琴修正前 API 31 套件在第 20 项崩溃中止；修正后完整执行。
+- 第一次 1.5.0 提交（`728737a`）的 CI 冒烟（模拟器 320×640、160 dpi）发现两处并修正：
+  - API 27（OpenGL 渲染管线）上棱镜选中框框内副本未着色：ALPHA_8 `BitmapShader` 在该管线不取画笔颜色。API 33 以下改为按选中框裁剪后 `drawBitmap` 遮罩（各管线都取画笔颜色）。
+  - `ControlShadowPixelTest.shadowFadesOutside…` 自 `2009057` 起在全部 CI API 上失败（main 的 Demo 冒烟已连续失败）：约 1dp 的贴边接触带在 mdpi 上只有 1 像素，连续性阈值按像素写死为 8。改为按 dp 计（`max(8, 16 / density)`），高密度设备上阈值不变，阴影实现未改。
 - 发布状态与产物校验以对应 Release 的 `VERIFICATION_1.5.0.json` 与 `SHA256SUMS.txt` 为准；本文不预先声明远端测试、附件上传或 JitPack 已成功。
 
 ## 验证边界
