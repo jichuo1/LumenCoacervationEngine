@@ -358,7 +358,14 @@ public class LiquidStretchViewport private constructor(
         type: Int
     ) {
         nestedParentHelper.onNestedScrollAccepted(child, target, axes, type)
-        if (type == ViewCompat.TYPE_TOUCH) parent?.requestDisallowInterceptTouchEvent(true)
+        // NestedScrollView starts TYPE_TOUCH on DOWN, before an axis is known. A top-level
+        // viewport must leave that stream available to a horizontal pager. The scroll view
+        // will disallow interception itself once a vertical drag actually starts. Inline
+        // viewports still protect their nearest vertical scroll owner, and catching an
+        // existing rebound continues to claim the whole stream (including DOWN).
+        if (type == ViewCompat.TYPE_TOUCH && (catchingStretch || ancestorViewport?.get() != null)) {
+            parent?.requestDisallowInterceptTouchEvent(true)
+        }
         if (type == ViewCompat.TYPE_NON_TOUCH) {
             nonTouchAbsorbed = false
             nonTouchAdjusted = false

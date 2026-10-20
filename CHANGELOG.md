@@ -2,6 +2,10 @@
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，版本号遵循 `docs/VERSIONING.md`。
 
+## 未发布
+
+- 修复顶层回弹视口在按下时提前禁止父级拦截，导致 `LumenPagePager` 无法横向翻页；保留内联竖向滚动及接住回弹时的整段手势保护。
+
 ## [1.5.0] - 2026-10-18
 
 ### 新增
