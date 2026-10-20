@@ -137,7 +137,8 @@ class MicaSandboxActivity : Activity() {
                     Canvas(bitmap).drawRect(0f, 0f, 192f, 256f, paint)
                     LumenMicaImage.prepare(bitmap)
                 } finally { bitmap.recycle() }
-                root.post {
+                // Worker completion can precede root attachment; View.post would defer delivery.
+                runOnUiThread {
                     if (!destroyed && request == generation) {
                         currentImage = image
                         mica.setImage(image)
@@ -155,7 +156,7 @@ class MicaSandboxActivity : Activity() {
     }
 
     private fun publishImageFailure(request: Int) {
-        root.post {
+        runOnUiThread {
             if (!destroyed && request == generation) {
                 currentImage = null
                 mica.setImage(null)

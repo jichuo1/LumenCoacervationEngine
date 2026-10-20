@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.PixelCopy
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -54,6 +55,39 @@ class MicaIntegrationTest {
         val pixel = bitmap.getPixel(16, 16)
         bitmap.recycle()
         return pixel
+    }
+
+    @Test fun preparedWallpaperReachesTheActivityWhileItsRootIsDetached() {
+        ActivityScenario.launch(MicaSandboxActivity::class.java).use { scenario ->
+            ready(scenario)
+            lateinit var parent: ViewGroup
+            lateinit var params: ViewGroup.LayoutParams
+            var index = 0
+            var previous: LumenMicaImage? = null
+            var detached = false
+            var delivered = false
+            try {
+                scenario.onActivity { activity ->
+                    parent = activity.root.parent as ViewGroup
+                    params = activity.root.layoutParams
+                    index = parent.indexOfChild(activity.root)
+                    previous = activity.currentImage
+                    parent.removeView(activity.root)
+                    detached = true
+                    val actions = ArrayList<View>()
+                    activity.root.findViewsWithText(actions, "切换背景配色", View.FIND_VIEWS_WITH_TEXT)
+                    assertTrue(actions.single().performClick())
+                }
+                val deadline = SystemClock.uptimeMillis() + 5_000
+                while (!delivered && SystemClock.uptimeMillis() < deadline) {
+                    scenario.onActivity { delivered = it.currentImage != null && it.currentImage !== previous }
+                    if (!delivered) SystemClock.sleep(30)
+                }
+            } finally {
+                if (detached) scenario.onActivity { parent.addView(it.root, index, params) }
+            }
+            assertTrue("Image delivery must use the main thread independently of root attachment", delivered)
+        }
     }
 
     @Test fun backgroundPreparationIsBoundedBorrowedAndMainThreadGuarded() {
