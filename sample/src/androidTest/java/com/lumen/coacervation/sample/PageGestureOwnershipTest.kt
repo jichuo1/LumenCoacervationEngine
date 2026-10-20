@@ -51,7 +51,7 @@ class PageGestureOwnershipTest {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             lateinit var f: Fixture
             scenario.onActivity { f = Fixture(it) }
-            frames(scenario, f.root)
+            frames(f.root)
             scenario.onActivity {
                 swipe(f.pager, .8f, .45f, .15f, .45f)
                 assertEquals(1, f.pager.selectedPage)
@@ -70,7 +70,7 @@ class PageGestureOwnershipTest {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             lateinit var f: Fixture
             scenario.onActivity { f = Fixture(it) }
-            frames(scenario, f.root)
+            frames(f.root)
             scenario.onActivity {
                 val bounds = f.toggle.thumbDrawable.bounds
                 val x = f.toggle.left + bounds.exactCenterX()
@@ -101,26 +101,35 @@ class PageGestureOwnershipTest {
             lateinit var f: Fixture
             var down = 0L
             scenario.onActivity { f = Fixture(it) }
-            frames(scenario, f.root)
+            frames(f.root)
             scenario.onActivity {
                 down = SystemClock.uptimeMillis()
                 send(f.pager, down, 0, MotionEvent.ACTION_DOWN, f.pager.width * .5f, f.pager.height * .35f)
                 repeat(10) { step -> send(f.pager, down, step + 1, MotionEvent.ACTION_MOVE,
                     f.pager.width * .5f, f.pager.height * (.35f + .025f * (step + 1))) }
             }
-            frames(scenario, f.root)
-            scenario.onActivity {
-                assertTrue("A real edge pull must create native stretch", f.peak > 0f)
-                send(f.pager, down, 12, MotionEvent.ACTION_UP, f.pager.width * .5f, f.pager.height * .6f)
-                val thumb = f.toggle.thumbDrawable.bounds
-                val x = thumb.exactCenterX()
-                val y = thumb.exactCenterY()
-                val next = SystemClock.uptimeMillis()
-                send(f.pager, next, 0, MotionEvent.ACTION_DOWN, x, y)
-                assertTrue("DOWN must catch the active rebound", f.viewports[0].claimsCurrentGesture)
-                send(f.pager, next, 1, MotionEvent.ACTION_UP, x, y)
-                assertFalse("A caught rebound must not click through", f.toggle.isChecked)
-                assertEquals(0, f.pager.selectedPage)
+            try {
+                frames(f.root)
+                // onActivity() waits for global idleness; held native stretch on API 31
+                // keeps drawing. Continue the gesture on a UI turn without that wait.
+                onMain {
+                    assertTrue("A real edge pull must create native stretch", f.peak > 0f)
+                    send(f.pager, down, 12, MotionEvent.ACTION_UP, f.pager.width * .5f, f.pager.height * .6f)
+                    val thumb = f.toggle.thumbDrawable.bounds
+                    val x = thumb.exactCenterX()
+                    val y = thumb.exactCenterY()
+                    val next = SystemClock.uptimeMillis()
+                    send(f.pager, next, 0, MotionEvent.ACTION_DOWN, x, y)
+                    assertTrue("DOWN must catch the active rebound", f.viewports[0].claimsCurrentGesture)
+                    send(f.pager, next, 1, MotionEvent.ACTION_UP, x, y)
+                    assertFalse("A caught rebound must not click through", f.toggle.isChecked)
+                    assertEquals(0, f.pager.selectedPage)
+                }
+            } finally {
+                onMain {
+                    send(f.pager, SystemClock.uptimeMillis(), 0, MotionEvent.ACTION_CANCEL, 0f, 0f)
+                    f.viewports.forEach { it.finishStretch() }
+                }
             }
         }
     }
@@ -153,10 +162,17 @@ class PageGestureOwnershipTest {
         try { view.dispatchTouchEvent(event) } finally { event.recycle() }
     }
 
-    private fun <T : android.app.Activity> frames(scenario: ActivityScenario<T>, view: View) {
+    private fun frames(view: View) {
         val done = java.util.concurrent.CountDownLatch(1)
-        scenario.onActivity { view.postOnAnimation { view.postOnAnimation { done.countDown() } }; view.invalidate() }
-        assertTrue(done.await(5, java.util.concurrent.TimeUnit.SECONDS))
-        InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+        onMain { view.postOnAnimation { view.postOnAnimation { done.countDown() } }; view.invalidate() }
+        assertTrue("Two draw frames must arrive within five seconds", done.await(5, java.util.concurrent.TimeUnit.SECONDS))
+    }
+
+    private fun onMain(action: () -> Unit) {
+        var failure: Throwable? = null
+        InstrumentationRegistry.getInstrumentation().runOnMainSync {
+            try { action() } catch (error: Throwable) { failure = error }
+        }
+        failure?.let { throw it }
     }
 }
