@@ -56,7 +56,7 @@
 | | `cardBackground` / `floatingBackground` / `topBarBackground` / `selectionBackground` / `modalBackground`（`color = palette.surface`，`radiusDp` 有默认值） | §5 |
 | | `motionSurfaceBackground(color, radiusDp)`、`liquidMotionSurfaceBackgroundOrNull(color, radiusDp): Drawable?` | §5.2 |
 | | `chromeOverlayBackground(color, radiusDp, selected = false)`、`neutralWindowBackground()` | §5、§5.5 |
-| 控件 | `styleActionButton(view: TextView, filled: Boolean, radiusDp = 20f)`、`styleSelectionControl(view, radiusDp, selected)`、`styleStatusChip(view: TextView, accent, radiusDp = 9f)`、`controlOutline(radiusDp, emphasized = false): Drawable` | §5.3 |
+| 控件 | `styleActionButton(view: TextView, filled: Boolean, radiusDp = 20f)`、`styleSelectionControl(view, radiusDp, selected)`、`styleStatusChip(view: TextView, accent, radiusDp = 9f)`、`controlOutline(radiusDp, emphasized = false): Drawable`；描边作为前景使用时固定于控件视口，文本自身滚动不移动边框 | §5.3 |
 | 回弹 | `installStretch(scrollTarget: View, isStretchAllowed: () -> Boolean = { true }): View?`、`finishStretch(view: View?)` | §5.4 |
 | 诊断 | `val isLiquidRequested`、`val isLiquidEffective`、`val backendName: String?`、`fun diagnostics(): SkinSessionDiagnostics?` | §3.2 |
 | 生命周期 | `onStart()`、`onStop()`、`onTrimMemory(level)`、`onLowMemory()`、`onDestroy()` | §2.1 |

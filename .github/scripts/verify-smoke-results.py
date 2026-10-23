@@ -6,6 +6,15 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "InputOutlineScrollTest": {
+        "longSingleLineInputKeepsItsOutlineAtBothSignedScrollOffsets",
+        "longMultilineInputKeepsItsOutlineWhileTheCursorScrollsVertically",
+    },
+    PREFIX + "ExpandedAccordionGestureTest": {
+        "expandedRowsKeepFourDirectionsWithoutRevealingHiddenSiblings",
+        "expandedEntryStillAllowsBothPageSwipesAndNativeVerticalScrolling",
+        "leavingThePageReleasesTheHeldTransformAndCannotReviveItsOverflow",
+    },
     PREFIX + "CustomSkinBackdropContinuityTest": {
         "motionReadinessNeverExposesAPaletteOnlyReadyFrame",
         "customBackdropOwnersKeepTheirPixelsOnResumeAndFirstDrawInBothThemes",

@@ -45,6 +45,8 @@
 
 1.5.2 新增可选屏幕圆角适配、异步 Mica 预处理和背景就绪握手，并修正自定义背景下的动画交接。新增公开 API 通常属于次版本，本轮按用户明确指定使用 1.5.2，作为编号例外；现有构造、同步借用接口、默认关闭的圆角路径、契约版本 1、持久化协议和 minSdk 27 保持兼容。
 
+1.5.3 为修订版本：修复可滚动输入框的前景描边坐标、长按形变的反向裁剪补偿，并将既有局部外溢接入静止当前页。公开 API、契约版本 1、持久化协议与 minSdk 27 保持兼容。
+
 - 兼容承诺**只**覆盖 `API.md` 列出的声明，以及 `INTEGRATION_STANDARD.md` 的条款。
 - `internal` 声明、未列入 `API.md` 的公开辅助成员、源码契约测试，都不在承诺范围内。
 - 视觉调参（颜色、模糊半径、光学强度）属于修订：同一宿主在修订版本之间的画面允许有细微差异，但不得出现结构性变化，例如表面缺失、层级错乱。
@@ -89,7 +91,7 @@ check(LumenEngine.CONTRACT_VERSION == 1) { "凝光视效引擎契约已变化，
 3. 跑构建门禁（`ENGINEERING_RULES.md` §11）和 DEX 审计（§2.4）。
 4. `./gradlew publishAllPublicationsToProjectLocalRepository --no-daemon`，产物在 `build/repo`。
 5. 提交并推送，然后**打与 `lumen.version` 同名的 tag**：
-   `git tag x.y.z && git push origin x.y.z`，再 `gh release create x.y.z`。
+   `git tag x.y.z && git push origin x.y.z`，再 `gh release create x.y.z --title "LumenCoacervationEngine x.y.z"`。
    - JitPack 按 tag 构建，`com.github.jichuo1.LumenCoacervationEngine:<模块>:x.y.z` 即坐标。
    - **tag 必须等于 `lumen.version`**：不一致时产物会装进 `lumen.version` 的目录，按 tag 拉取会失败。
    - **tag 推送后不可删除或移动**：移动后的 tag 不会被重新构建（已构建的产物会继续提供）。下文
