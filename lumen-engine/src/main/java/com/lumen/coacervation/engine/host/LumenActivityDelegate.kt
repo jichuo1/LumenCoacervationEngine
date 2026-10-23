@@ -237,11 +237,11 @@ public class LumenActivityDelegate @JvmOverloads constructor(
             setStroke(((if (active) 2f else 1f) * density).toInt().coerceAtLeast(1),
                 ColorUtils.setAlphaComponent(palette.primary, if (active || emphasized) 0x72 else 0x22))
         }
-        return StateListDrawable().apply {
+        return ViewportForegroundDrawable(StateListDrawable().apply {
             addState(intArrayOf(android.R.attr.state_focused), border(true))
             addState(intArrayOf(android.R.attr.state_pressed), border(true))
             addState(intArrayOf(), border(false))
-        }
+        })
     }
 
     // ---------------- 回弹（适配标准 §5.4） ----------------
