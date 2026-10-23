@@ -56,6 +56,7 @@
 - 长按拖动形变与触点高光
 - 可打断翻页、文字链与选中框滑动
 - 锚定气泡、弹窗及全屏页形变、标题迁移、预测返回
+- 可选全屏形变跟随屏幕圆角、自定义皮肤跨页与面板的连续交接
 - 手风琴、定位高亮、微动效
 - 列表、网格、轮播及嵌套面板接入
 
@@ -99,7 +100,7 @@
 
 | 项 | 说明 |
 |:---|:---|
-| **引擎版本** | 1.5.1 |
+| **引擎版本** | 1.5.2 |
 | **运行系统** | Android 8.1+（`minSdk 27`） |
 | **编译环境** | `compileSdk 37`；源码构建使用 JDK 17+ |
 | **基础依赖** | 引擎本体依赖 AndroidX core；motion 不要求 AppCompat |
@@ -149,10 +150,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.5.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.5.2")
     // 按需添加，版本保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.5.1")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.5.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.5.2")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.5.2")
 }
 ```
 

@@ -38,7 +38,7 @@ Mica 是窗口的基础层：将背景图的低频色彩融入不透明表面，
 
 - 单张快照不超过 **36 KiB**；预处理期间图像和像素缓冲累计不超过 **144 KiB**（不含宿主输入和图形驱动开销）。每个窗口正常持有原始模糊快照和着色副本，合计不超过 **72 KiB**，快照可在多个窗口共享。
 - 切换主题时旧显示列表可能仍引用上一张着色位图，因此只丢引用，不能主动 `recycle()` 已发布的像素；上述 72 KiB 是当前持有量，不是切换瞬间的进程峰值或显存承诺。
-- 无新增生产依赖、采样线程、逐帧分配、离屏层、程序化动画或轮询。CPU 预处理由宿主管理，示例使用自己的单线程守护 executor。
+- 无新增生产依赖、逐帧分配、离屏层、程序化动画或轮询。同步 CPU 预处理由宿主管理；可选 `LumenMicaPreparer`（自 1.5.2） 使用随 owner 关闭的独立工作线程，示例已接入该接口。
 - `LumenEngine.releaseGraphics()` 清除该窗口对快照和着色副本的引用，回退为 `MEMORY_PRESSURE`。之后 `updatePalette()` 不会自动恢复背景；宿主用 `setImage()` 显式恢复。宿主自己缓存的 `LumenMicaImage` 由宿主释放引用。
 
 ## 3. 接入与可选性
@@ -74,6 +74,34 @@ mica.close()
 - 文字、图标、点击、焦点及无障碍语义仍由宿主负责。高对比度使用 `palette.background`，不让自定义回退色覆盖辅助功能配色；Android 的高对比度与降低透明度偏好由宿主显式转发。
 - `fallbackColor` 只改变回退底色，不改变完全活动时的背景色调或亮度；活动材质使用独立的 `tintColor`、`tintOpacity` 和 `luminosityOpacity`。
 
+### 3.1 可选异步预处理（自 1.5.2）
+
+```kotlin
+// 在主线程创建，随本页面/窗口关闭；创建对象本身不启动工作线程。
+val preparer = LumenMicaPreparer()
+preparer.prepare(
+    source = LumenMicaImageSource {
+        // 示例为自行生成的独占输入。实际静态背景的有界解码也应放在此工厂中。
+        Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888).apply { eraseColor(backgroundColor) }
+    },
+    listener = LumenMicaPreparationListener { image, failure ->
+        // 总是异步主线程执行；image 为 null 时由现有 Mica 控制器显示安全回退。
+        mica.setImage(image)
+    }
+)
+// 不再需要当前结果，但仍会继续使用本 preparer。
+preparer.cancel()
+// onDestroy：丢弃待处理来源/结果，抑制迟到回调，并中断、关闭自己的工作线程。
+preparer.close()
+```
+
+- **同步接口借用输入，异步接口接收独占输入的所有权。** `load()` 只在真正开始工作时调用；被替换或取消的待处理工厂不会执行。不要在工厂外提前打开文件流、创建需要关闭的资源或解码位图。工厂抛异常前仍拥有已获取的资源，负责自行清理；成功返回后由引擎在 finally 中回收输入。
+- 每实例至多一个执行中的预处理、一个最新待处理工厂和一个最新未交付结果；结果通知同样合并，避免主线程暂时繁忙时积压快照。预处理复用原 `prepare()` 的 96px、模糊配方和工作集上限，不改像素效果；待交付快照不超过 36 KiB，源图解码大小仍须由宿主有界控制。
+- 新 `prepare()` 抑制旧代次回调；`cancel()` 清空待处理请求和未交付结果，允许之后重用。正在执行的工厂不会被强行回收输入，可以完成后释放；`close()` 另外中断工作线程。工厂必须有界且响应中断，不能承诺停止一个自行忽略中断的阻塞宿主操作。
+- 主线程通知使用 Handler，不依赖目标 View 的 attach 状态。supersede、cancel、close 后，旧工厂不再持有旧宿主回调；只有尚未交付的快照允许回收，已经交给 listener 的快照永不由 preparer 回收。
+- listener 抛出的普通异常隔离在该次通知；后续准备仍可使用。来源和预处理失败分别为 SOURCE_FAILED / PREPARATION_FAILED，执行器拒绝工作为 WORKER_UNAVAILABLE；不把异常原文、背景路径或 Uri 传入诊断。
+- 这是 1.5.2 的兼容新增 API；现有同步接口和 `CONTRACT_VERSION` 保持不变，版本编号按用户明确指定记录在 `VERSIONING.md`。
+
 ## 4. 状态回退
 
 按优先级依次为：禁用 → 高对比度 → 降低透明度 → 低内存设备 → 省电 → 内存释放 → 窗口失焦 → 无图像 → 渲染不可用。`NONE` 表示可显示云母。所有失败只影响本背景，不更改皮肤健康状态、不通知宿主重建。
@@ -85,5 +113,6 @@ mica.close()
 - `MicaPolicyTest` 覆盖官方颜色、输入边界、极端纵横比预算、纯色合成端点、Alt 的色彩差异、始终不透明及回退优先级。
 - `MicaContractTest` 覆盖绘制路径无采集／模糊／分配、后台准备、输入归属、监听释放、内存回收和无隐藏 API。
 - `MicaIntegrationTest` 覆盖真实 Bitmap 输出、输入回收后快照独立性、主线程拒绝预处理、明暗主题回退、内容层令牌、资源释放与恢复、根背景归属、真实 Dialog 失焦与恢复、PixelCopy 窗口 GPU 输出。
+- `LatestPreparationTest` 验证有界任务/结果队列、取消、关闭、跨线程代次、执行器拒绝与回调失败；`MicaPreparerIntegrationTest` 在设备侧验证输入所有权、同步/异步像素一致、关闭后快照可用、失败回调与重用，三项均登记为各 API smoke 必测用例。编译通过不等于设备执行通过。
 - Demo 入口：**表面沙盒 → Mica 云母与内容分层**。可以开关材质、BaseAlt、深色、高对比度、降低透明度、降低动态效果、失焦回退，并更换静态背景。
 - 本地构建、JVM、设备及跨版本结果须分别记录；添加测试不等于所有 API 或厂商设备已经通过。功耗、不同壁纸可读性和目标 ROM 视觉观感仍需要目标场景验收。

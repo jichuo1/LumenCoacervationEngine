@@ -622,6 +622,7 @@ API 33+ 读取进程当前的公开动画倍率；API 27–32 通过公开系统
 - 业务上暂时不能返回时（导出中、选择器打开、页内弹窗开着），通过 `isBusinessBlocked` 告诉控制器。
 - 形变期间到达的新内容，**应当**延后到 `onExpanded` 再渲染。
 - 回弹视口**应当**在 `onExpanded` 里安装、在 `onMotionStarted` 里结束，`isStretchAllowed` 用 `controller.isSettledExpanded`。
+- 自 1.5.2，目标页**可以**设置 `host.followScreenCorners = true`，让展开端跟随 API 31+ 当前窗口覆盖到的屏幕四角；默认关闭。无需宿主查询圆角或逐帧更新半径，具体回退和皮肤交接见 [SKIN_MOTION.md](SKIN_MOTION.md)。
 
 ### 13.6 翻页与文字链
 

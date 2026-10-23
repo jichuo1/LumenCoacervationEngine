@@ -31,6 +31,7 @@ import androidx.core.graphics.ColorUtils
 import androidx.core.graphics.createBitmap
 import com.lumen.coacervation.engine.background.AmbientBackdropScene
 import com.lumen.coacervation.engine.background.LiquidBackgroundMode
+import com.lumen.coacervation.engine.background.LiquidBackgroundConfig
 import com.lumen.coacervation.engine.background.LiquidBackgroundStore
 import com.lumen.coacervation.engine.glow.GlowEngine
 import com.lumen.coacervation.engine.glow.GlowEngineCallbacks
@@ -42,6 +43,8 @@ import com.lumen.coacervation.engine.geometry.ScrollSurfaceScope
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.runtime.PreparedBackdropCache
+import com.lumen.coacervation.engine.host.LumenBackdropReadiness
 import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 import java.util.concurrent.Executors
@@ -100,6 +103,12 @@ internal class FrostedMaterialRenderer(
     private var failedWidth = 0
     private var failedHeight = 0
     private var workerStarted = false
+    private data class BackdropKey(val palette: LumenPalette, val config: LiquidBackgroundConfig,
+        val width: Int, val height: Int, val density: Float)
+    private var pendingBackdropKey: BackdropKey? = null
+    private companion object {
+        val preparedBackdrops = PreparedBackdropCache<BackdropKey, ModernBackdropFrame>()
+    }
     private var work: Future<*>? = null
     private val worker by lazy { Executors.newSingleThreadExecutor { task -> Thread(task, "Lumen-SoftFrost").apply { isDaemon = true } } }
     private val handler = Handler(Looper.getMainLooper())
@@ -134,7 +143,9 @@ internal class FrostedMaterialRenderer(
         if (root === view) return true
         root = view
         view.addOnLayoutChangeListener(layoutListener)
-        view.background = object : Drawable() {
+        view.background = object : Drawable(), LumenBackdropReadiness {
+            override val isReadyForMotion: Boolean
+                get() = closed || pendingBackdropKey == null || frame != null || failedWidth > 0
             private var drawingAlpha = 255
             override fun draw(canvas: Canvas) {
                 val current = rootBackdrop
@@ -172,6 +183,15 @@ internal class FrostedMaterialRenderer(
         val context = backgroundContext
         // 返回已有页面或改变尺寸时重读配置；后台只接收本次不可变快照。
         val config = context?.let { LiquidBackgroundStore.read(it).config }
+        val key = config?.takeIf { it.mode == LiquidBackgroundMode.CUSTOM }
+            ?.let { BackdropKey(colors, it, newWidth, newHeight, scale) }
+        pendingBackdropKey = key
+        if (key == null) preparedBackdrops.clear()
+        val prepared = key?.let(preparedBackdrops::get)
+        if (prepared != null) {
+            acceptBackdrop(token, prepared, animateReveal = false)
+            return
+        }
         val isDark = dark
         workerStarted = true
         work = worker.submit {
@@ -186,7 +206,7 @@ internal class FrostedMaterialRenderer(
         }
     }
 
-    private fun acceptBackdrop(token: Long, result: ModernBackdropFrame?) {
+    private fun acceptBackdrop(token: Long, result: ModernBackdropFrame?, animateReveal: Boolean = true) {
         if (!lifecycle.accepts(token)) return
         work = null
         if (result == null) {
@@ -194,11 +214,15 @@ internal class FrostedMaterialRenderer(
             return // A readable neutral surface remains; retry only on resize or a later foreground session.
         }
         frame = result
+        pendingBackdropKey?.takeIf { result.custom }?.let { key ->
+            preparedBackdrops.put(key, result,
+                result.original.allocationByteCount.toLong() + result.blurred.allocationByteCount)
+        }
         rootBackdrop = result.original
         sampleShader = BitmapShader(result.blurred, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         samplePaint.shader = sampleShader
         revealAnimator?.cancel()
-        revealFraction = if (ValueAnimator.areAnimatorsEnabled()) 0f else 1f
+        revealFraction = if (animateReveal && ValueAnimator.areAnimatorsEnabled()) 0f else 1f
         if (revealFraction == 0f) {
             revealAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 160L
@@ -441,10 +465,12 @@ internal class FrostedMaterialRenderer(
     // 阈值沿用会话层原实现；API 34 起平台不再下发 RUNNING_* 级别，更高的级别照样满足条件。
     @Suppress("DEPRECATION")
     override fun onTrimMemory(level: Int) {
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) releaseMemory()
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            preparedBackdrops.clear(); releaseMemory()
+        }
     }
 
-    override fun onLowMemory() = releaseMemory()
+    override fun onLowMemory() { preparedBackdrops.clear(); releaseMemory() }
 
     override fun close() {
         if (closed) return
@@ -487,7 +513,7 @@ internal class FrostedMaterialLifecycle {
     fun close() { isClosed = true; stopped = true; invalidate() }
 }
 
-private data class ModernBackdropFrame(val original: Bitmap, val blurred: Bitmap)
+private data class ModernBackdropFrame(val original: Bitmap, val blurred: Bitmap, val custom: Boolean)
 
 private object ModernBackdropFactory {
     fun create(
@@ -496,8 +522,8 @@ private object ModernBackdropFactory {
     ): ModernBackdropFrame {
         val (w, h) = ModernMaterialPolicy.sampleSize(width, height)
         // 自定义资产解码/哈希只在已有后台线程执行；失败只回退自动背景。
-        val original = runCatching { customBackground?.invoke(w, h) }.getOrNull()
-            ?: createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap ->
+        val custom = runCatching { customBackground?.invoke(w, h) }.getOrNull()
+        val original = custom ?: createBitmap(w, h, Bitmap.Config.ARGB_8888).also { bitmap ->
                 val dark = ColorUtils.calculateLuminance(palette.background) < .5
                 val canvas = Canvas(bitmap)
                 AmbientBackdropScene.paint(canvas, palette, w, h, dark)
@@ -509,7 +535,7 @@ private object ModernBackdropFactory {
         blurred.setPixels(blurredPixels, 0, w, 0, 0, w, h)
         // 低分辨率背景放大后不再带颗粒斑块；磨砂采样仍使用独立的模糊副本。
         original.prepareToDraw(); blurred.prepareToDraw()
-        return ModernBackdropFrame(original, blurred)
+        return ModernBackdropFrame(original, blurred, custom != null)
     }
 }
 

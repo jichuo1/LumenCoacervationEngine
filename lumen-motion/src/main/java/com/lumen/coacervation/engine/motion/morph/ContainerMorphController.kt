@@ -185,37 +185,51 @@ public class ContainerMorphController @JvmOverloads constructor(
         val canResolveOrigin = hasLaunchOrigin() || registry.snapshot() != null
         val shouldAnimate = isFreshLaunch && canResolveOrigin && ValueAnimator.areAnimatorsEnabled()
         if (shouldAnimate) host.prepareFirstFrameForEntry()
-        host.doOnPreDraw {
-            if (activity.isFinishing || activity.isDestroyed || !motionSession.owns(entryToken) ||
-                motionState != MotionState.PREPARING_ENTRY) return@doOnPreDraw
-            if (!shouldAnimate) {
-                completeExpandedMotion()
-                return@doOnPreDraw
-            }
-            val geometry = resolveMotionGeometry()
-            if (geometry == null) {
-                completeExpandedMotion()
-                return@doOnPreDraw
-            }
-            motionGeometry = geometry
-            motionContentTiming = ContainerMorphContentTiming.TIMED
-            motionTitleMode = if (geometry.titleMotionEnabled) {
-                ContainerMorphTitleMode.SOURCE_TITLE
-            } else {
-                ContainerMorphTitleMode.HIDDEN
-            }
-            onMotionStarted()
-            motionState = MotionState.ENTERING
-            host.beginMotion()
-            host.applyExpansion(geometry = geometry, value = 0f, titleMode = motionTitleMode,
-                contentTiming = motionContentTiming)
-            host.post {
+        val preparationDeadline = SystemClock.uptimeMillis() + 250L
+        fun scheduleEntryFrame() {
+            host.doOnPreDraw {
                 if (activity.isFinishing || activity.isDestroyed || !motionSession.owns(entryToken) ||
-                    motionState != MotionState.ENTERING) return@post
-                animateMotionTo(targetExpansion = 1f, durationMs = ENTER_DURATION_MS,
-                    interpolator = enterInterpolator, onEnd = ::completeExpandedMotion)
+                    motionState != MotionState.PREPARING_ENTRY) return@doOnPreDraw
+                if (!shouldAnimate) {
+                    completeExpandedMotion()
+                    return@doOnPreDraw
+                }
+                // Keep the source page visible while a cold custom background finishes. The normal
+                // same-background path is already ready from the bounded published-pixel cache.
+                if (!host.isBackdropReadyForMotion && SystemClock.uptimeMillis() < preparationDeadline) {
+                    host.postOnAnimation {
+                        if (motionSession.owns(entryToken) && !closed && !activity.isDestroyed) {
+                            scheduleEntryFrame(); host.invalidate()
+                        }
+                    }
+                    return@doOnPreDraw
+                }
+                val geometry = resolveMotionGeometry()
+                if (geometry == null) {
+                    completeExpandedMotion()
+                    return@doOnPreDraw
+                }
+                motionGeometry = geometry
+                motionContentTiming = ContainerMorphContentTiming.TIMED
+                motionTitleMode = if (geometry.titleMotionEnabled) {
+                    ContainerMorphTitleMode.SOURCE_TITLE
+                } else {
+                    ContainerMorphTitleMode.HIDDEN
+                }
+                onMotionStarted()
+                motionState = MotionState.ENTERING
+                host.beginMotion()
+                host.applyExpansion(geometry = geometry, value = 0f, titleMode = motionTitleMode,
+                    contentTiming = motionContentTiming)
+                host.post {
+                    if (activity.isFinishing || activity.isDestroyed || !motionSession.owns(entryToken) ||
+                        motionState != MotionState.ENTERING) return@post
+                    animateMotionTo(targetExpansion = 1f, durationMs = ENTER_DURATION_MS,
+                        interpolator = enterInterpolator, onEnd = ::completeExpandedMotion)
+                }
             }
         }
+        scheduleEntryFrame()
     }
 
     // ---------------- 返回 ----------------

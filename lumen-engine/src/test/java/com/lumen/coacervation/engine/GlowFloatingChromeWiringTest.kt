@@ -44,9 +44,11 @@ class GlowFloatingChromeWiringTest {
     @Test fun everyBackdropReplacementAdvancesTheGeneration() {
         val renderer = source("liquid/LiquidActivityRenderer.kt")
         val assignments = Regex("\\bbackdropSource = (created|source)\\b").findAll(renderer).count()
-        assertEquals(2, assignments)
-        // 两次换源 + 同尺寸位图的窗口映射更新（updateFullSize）。
-        assertEquals(3, Regex("backdropGeneration\\+\\+").findAll(renderer).count())
+        assertEquals(3, assignments)
+        // 自动、后台自定义、已发布像素缓存换源 + 同尺寸位图的窗口映射更新。
+        assertEquals(4, Regex("backdropGeneration\\+\\+").findAll(renderer).count())
+        val cached = renderer.after("private fun restorePreparedCustomBackdrop(").before("internal fun registerSurfaceView(")
+        assertTrue(cached.after("backdropSource = source").trimStart().startsWith("backdropGeneration++"))
         assertTrue(renderer.after("existing.updateFullSize(width, height)").trimStart()
             .startsWith("backdropGeneration++"))
     }

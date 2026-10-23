@@ -1,6 +1,7 @@
 package com.lumen.coacervation.engine.contract
 
 import java.io.File
+import java.util.concurrent.ConcurrentHashMap
 
 /**
  * lumen-motion 源码的契约扫描器（移植自来源工程的 `SettingsUiSource`）：按文件名或函数名切出生产源码，
@@ -11,34 +12,49 @@ internal object MotionSource {
 
     private val root: File by lazy { SourceContract.file("${SourceContract.JAVA_ROOT}/motion/InterruptibleMotion.kt").parentFile.parentFile }
 
+    // Gradle tracks both source trees as Test inputs. Each test JVM sees one frozen snapshot;
+    // repeated contracts must not walk/read/mask every file again for the same declaration.
+    private class Source(file: File) {
+        val name = file.name
+        val text by lazy { SourceContract.normalize(file.readText()) }
+        val masked by lazy { mask(text) }
+    }
+    private fun snapshot(directory: File): List<Source> = directory.walkTopDown()
+        .filter { it.isFile && it.name.endsWith(".kt") }.sortedBy { it.path }
+        .map(::Source).toList()
+    private val sources by lazy { snapshot(root) }
+    private val byName by lazy { sources.groupBy { it.name } }
+    private val fileSnapshot by lazy { sources.map { it.name to it.text } }
+    private val combined by lazy { fileSnapshot.joinToString("\n") { it.second } }
+    private val declarations = ConcurrentHashMap<String, String>()
+    private val engineByName by lazy {
+        val directory = listOf("../lumen-engine/${SourceContract.JAVA_ROOT}", "lumen-engine/${SourceContract.JAVA_ROOT}")
+            .map(::File).firstOrNull(File::isDirectory)
+            ?: throw AssertionError("lumen-engine sources not found (cwd ${File(".").absolutePath})")
+        snapshot(directory).groupBy { it.name }
+    }
+
     /** 文件名（不含路径）→ 源码。 */
-    fun files(): List<Pair<String, String>> = root.walkTopDown()
-        .filter { it.isFile && it.name.endsWith(".kt") }
-        .sortedBy { it.path }
-        .map { it.name to SourceContract.normalize(it.readText()) }
-        .toList()
+    fun files(): List<Pair<String, String>> = fileSnapshot
 
     /** 按简单文件名取源码（在所有子包里找，必须唯一）。 */
     fun file(name: String): String {
         val fileName = if (name.endsWith(".kt")) name else "$name.kt"
-        val hits = root.walkTopDown().filter { it.isFile && it.name == fileName }.toList()
+        val hits = byName[fileName].orEmpty()
         require(hits.size == 1) { "source $fileName found ${hits.size} times" }
-        return SourceContract.normalize(hits.single().readText())
+        return hits.single().text
     }
 
     /** 引擎本体（lumen-engine）的源码，按简单文件名找；用于"动效与引擎采样配合"的跨模块契约。 */
     fun engineFile(name: String): String {
         val fileName = if (name.endsWith(".kt")) name else "$name.kt"
-        val engineRoot = listOf("../lumen-engine/${SourceContract.JAVA_ROOT}", "lumen-engine/${SourceContract.JAVA_ROOT}")
-            .map(::File).firstOrNull(File::isDirectory)
-            ?: throw AssertionError("lumen-engine sources not found (cwd ${File(".").absolutePath})")
-        val hits = engineRoot.walkTopDown().filter { it.isFile && it.name == fileName }.toList()
+        val hits = engineByName[fileName].orEmpty()
         require(hits.size == 1) { "engine source $fileName found ${hits.size} times" }
-        return SourceContract.normalize(hits.single().readText())
+        return hits.single().text
     }
 
     /** 全部源码拼在一起，供"整体存在性"断言使用。 */
-    fun all(): String = files().joinToString("\n") { it.second }
+    fun all(): String = combined
 
     /**
      * 切出名为 [name] 的函数（**含签名**，从 `fun` 到配对的右花括号）。
@@ -46,9 +62,9 @@ internal object MotionSource {
      * 在 lumen-motion 的全部源码里查找，命中必须**恰好一处**：
      * 找不到或重名都直接失败，避免退化成"在空串上通过"。
      */
-    fun function(name: String): String {
-        val hits = files().flatMap { (file, text) ->
-            functions(text, name).map { file to it }
+    fun function(name: String): String = declarations.getOrPut(name) {
+        val hits = sources.flatMap { source ->
+            functions(source.text, source.masked, name).map { source.name to it }
         }
         check(hits.isNotEmpty()) {
             "function `$name` not found in lumen-motion sources; it was probably renamed"
@@ -57,7 +73,7 @@ internal object MotionSource {
             "function `$name` is declared ${hits.size} times (${hits.map { it.first }}); " +
                 "use functions() and assert on the intended overload"
         }
-        return hits.single().second
+        hits.single().second
     }
 
     /**
@@ -76,8 +92,9 @@ internal object MotionSource {
     fun code(source: String): String = scan(source, blankStrings = false)
 
     /** [source] 里所有名为 [name] 的函数声明（含签名），按出现顺序。 */
-    fun functions(source: String, name: String): List<String> {
-        val masked = mask(source)
+    fun functions(source: String, name: String): List<String> = functions(source, mask(source), name)
+
+    private fun functions(source: String, masked: String, name: String): List<String> {
         val pattern = Regex(
             """\bfun\s+(?:<[^>]*>\s*)?(?:[A-Za-z_][\w.<>?,\s]*\.)?""" +
                 Regex.escape(name) + """\s*\("""

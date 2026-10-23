@@ -8,6 +8,7 @@
 - CI 将原有 Debug 构建、JVM 测试、Sample release 单测、Lint、AAR／源码包和 Sample R8 放入同一个任务图。R8 仍显式设置 `-Plumen.verifySampleR8=true`；Demo 使用默认的可读 release 包。
 - 许可证检查读取刚构建的七组 AAR／源码包，不再次调用 Gradle。
 - `Test.sourceContractInputs` 包含本模块 `src/main`。core 的跨模块契约额外包含 controls，motion 额外包含 core。纯源码文本改变、字节码未变时，契约测试也必须失效重跑。
+- `MotionSource` 在每次测试 JVM 内只建立一份有序源码快照、文件名索引和字符串/注释掩码；同名函数再次读取复用已验证声明。缺失、文件重名、函数重名和词法边界仍失败。缓存不跨测试进程或 Gradle 调用，源码/跨模块文本改变继续由上述输入触发新测试进程。
 - Gradle User Home 缓存由既有 `setup-gradle` 管理，不叠加同目录缓存、不上传未加密的项目配置缓存。`--no-configuration-cache` 仅供问题定位；正式门禁保留严格失败行为。
 
 ## 2. 一次构建，四版本测试，相同字节发布

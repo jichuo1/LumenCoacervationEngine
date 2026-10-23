@@ -13,7 +13,7 @@ SPEC = importlib.util.spec_from_file_location("verify_smoke_results", SCRIPT)
 VERIFIER = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(VERIFIER)
 
-VISUAL_HELPER_CLASSES = ("DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
+VISUAL_HELPER_CLASSES = ("MicaPreparerIntegrationTest", "DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
                          "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest", "SurfaceSourceFrameClipTest",
                          "PrismIntegrationTest")
 

@@ -327,7 +327,9 @@ class ModalTitleHandoffTest {
         assertFalse("must not touch the row's View alpha", code.contains("source.alpha ="))
         assertTrue(code.contains("sourceTextColors.withAlpha("))
         // 还原必须交还原始 CSL，而不是再写一个降过 alpha 的单色副本。
-        assertTrue(code.contains("sourceColors.release(source, sourceOwner)?.let(source::setTextColor)"))
+        assertTrue(code.contains("val restored = sourceColors.release(source, sourceOwner)"))
+        assertTrue(code.contains("if (restored != null) source.setTextColor(restored)"))
+        assertTrue(code.contains("sourceColors.weight(source)"))
         val expanded = MotionSource.functions(code, "expanded").single()
         assertFalse("source belongs to the panel while expanded", expanded.contains("restoreSourceText()"))
         for (fn in listOf("closed", "dispose")) {

@@ -71,6 +71,7 @@ class DetailActivity : AppCompatActivity() {
             titleColor = palette.textPrimary,
             sourceTitle = title
         )
+        host.followScreenCorners = true
         host.setMotionSurfaceBackground(lumen.motionSurfaceBackground(palette.surfaceVariant, SOURCE_CORNER_RADIUS_DP))
         val page = buildPage(palette)
         setContentView(host)

@@ -6,6 +6,20 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "CustomSkinBackdropContinuityTest": {
+        "customBackdropOwnersKeepTheirPixelsOnResumeAndFirstDrawInBothThemes",
+        "customSkinModalFamiliesKeepTheirBackdropAndRestoreSourceText",
+        "realSecondaryActivityKeepsCustomSkinInLightAndDarkAndUsesScreenCorners",
+    },
+    PREFIX + "ScreenCornerMorphTest": {
+        "optInUsesEachWindowCornerAndDisablingItRestoresLegacyGeometry",
+        "coldBackdropDefersEntryWithoutAnExpandedThemeFrameAndThenCompletes",
+    },
+    PREFIX + "MicaPreparerIntegrationTest": {
+        "ownedInputIsRecycledAndLatestOutputMatchesSynchronousRecipe",
+        "cancelAndCloseSuppressActiveAndPendingCallbacksAndRecycleInput",
+        "sourceAndPreparationFailuresAreAsynchronousAndDoNotPreventReuse",
+    },
     PREFIX + "SurfaceSourceFrameClipTest": {
         "softwareHaloIgnoresPixelsOutsideDeclaredSourceFrame",
     },

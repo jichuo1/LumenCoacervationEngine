@@ -12,6 +12,7 @@ import android.graphics.drawable.Drawable
 import android.view.View
 import android.view.WindowManager
 import com.lumen.coacervation.engine.model.SurfaceRole
+import com.lumen.coacervation.engine.host.LumenBackdropReadiness
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -69,7 +70,8 @@ internal class LiquidSurfaceFootprint {
 internal class LiquidRootDrawable(
     private val renderer: LiquidActivityRenderer,
     private val fallbackColor: Int
-) : Drawable() {
+) : Drawable(), LumenBackdropReadiness {
+    override val isReadyForMotion: Boolean get() = renderer.isReadyForMotion
     private val location = IntArray(2)
     private var drawableAlpha = 255
 

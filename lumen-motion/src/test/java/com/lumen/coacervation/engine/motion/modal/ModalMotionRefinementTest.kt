@@ -169,7 +169,9 @@ class ModalMotionRefinementTest {
         // 动画，等形变结束才补播一次高光（见 ModalTitleHandoffTest 的 ripple 用例）。
         assertFalse(title.contains("source.alpha ="))
         assertTrue(title.contains("sourceTextColors.withAlpha("))
-        assertTrue(title.contains("sourceColors.release(source, sourceOwner)?.let(source::setTextColor)"))
+        assertTrue(title.contains("val restored = sourceColors.release(source, sourceOwner)"))
+        assertTrue(title.contains("if (restored != null) source.setTextColor(restored)"))
+        assertTrue(title.contains("sourceColors.updateWeight(source, sourceOwner, w)"))
         assertTrue(title.contains("target.alpha = targetAlpha"))
         val draw = title.after("override fun onDraw(").before("companion object")
         for (forbidden in listOf("requestLayout", "Bitmap", "find(", "TextPaint(", "textSize =")) {

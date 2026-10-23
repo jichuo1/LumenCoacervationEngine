@@ -33,7 +33,7 @@ internal class LiquidBackdropSource private constructor(
     fullWidth: Int,
     fullHeight: Int,
     private val opticalBitmap: Bitmap = bitmap,
-    crispRefraction: Boolean = false
+    private val crispRefraction: Boolean = false
 ) : AutoCloseable {
     var fullWidth: Int = fullWidth
         private set
@@ -75,6 +75,16 @@ internal class LiquidBackdropSource private constructor(
     }
     private var closed = false
     private var published = false
+
+    val preparedByteCount: Long get() = bitmap.allocationByteCount.toLong() +
+        if (opticalBitmap !== bitmap) opticalBitmap.allocationByteCount.toLong() else 0L
+
+    /** Independent mutable shader state over immutable, already published pixels. */
+    fun forkPublished(width: Int, height: Int): LiquidBackdropSource {
+        check(published && !isRealtime && !bitmap.isRecycled && !opticalBitmap.isRecycled)
+        return LiquidBackdropSource(bitmap, customAssetId, false, width, height,
+            opticalBitmap, crispRefraction).also { it.published = true }
+    }
 
     val isClosed: Boolean
         get() = closed

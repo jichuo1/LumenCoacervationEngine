@@ -25,6 +25,7 @@
 | [FLUENT_MATERIAL.md](FLUENT_MATERIAL.md) | Fluent 亚克力与层级：配方来源、回退规则、接入与验证 |
 | [PRISM_MATERIAL.md](PRISM_MATERIAL.md) | Prism 棱镜玻璃与液态选中框：配方与默认值、深浅色、接入与验证 |
 | [MICA_MATERIAL.md](MICA_MATERIAL.md) | 可选云母背景：Mica / Mica Alt、静态背景预算、内容分层、状态回退与资料依据 |
+| [SKIN_MOTION.md](SKIN_MOTION.md) | 自定义皮肤的动画交接、可选屏幕四角适配与像素保留预算 |
 
 ## 参考
 
@@ -38,6 +39,8 @@
 | 文档 | 快照对象 |
 |---|---|
 | [MICA_BUILD_REVIEW_2026_10_15.md](MICA_BUILD_REVIEW_2026_10_15.md) | 云母审阅修复、构建／门禁性能基准，以及 API 37 的候选与基线设备失败对照 |
+| [ASYNC_PREPARATION_REVIEW_2026_10_23.md](ASYNC_PREPARATION_REVIEW_2026_10_23.md) | 未发布异步 Mica 接口、源码契约索引、缓存正反验证与 API 37 定向设备记录 |
+| [RELEASE_1.5.2_REVIEW.md](RELEASE_1.5.2_REVIEW.md) | 屏幕圆角、自定义皮肤动画、异步预处理与门禁索引的发布审阅；替代前一阶段未发布状态 |
 | [PORTABILITY_AUDIT.md](PORTABILITY_AUDIT.md) | 1.0.0 从来源工程抽离时的可移植性审查 |
 | [VISUAL_ENHANCEMENT_PLAN.md](VISUAL_ENHANCEMENT_PLAN.md)、[VISUAL_EFFECTS_REVIEW.md](VISUAL_EFFECTS_REVIEW.md) | 1.2.0 视效增强的执行记录与候选阶段 Review |
 | [P2_ENHANCEMENT_PLAN.md](P2_ENHANCEMENT_PLAN.md)、[P2_REVIEW.md](P2_REVIEW.md) | 1.2.1 传感器、效果与资产的计划与 Review |

@@ -337,7 +337,8 @@ public class ModalTitleMotion private constructor(
         if (!sourceTextFaded) sourceColors.acquire(source, sourceOwner, sourceTextColors)
         sourceTextFaded = true
         appliedSourceTextWeight = w
-        source.setTextColor(sourceTextColors.withAlpha((sourceTextBaseAlpha * w).roundToInt()))
+        val combined = sourceColors.updateWeight(source, sourceOwner, w)
+        source.setTextColor(sourceTextColors.withAlpha((sourceTextBaseAlpha * combined).roundToInt()))
     }
 
     /** 交还原始 CSL（而不是当前那个降过 alpha 的单色副本），按下态等状态色一并回来。 */
@@ -345,7 +346,12 @@ public class ModalTitleMotion private constructor(
         if (!sourceTextFaded) return
         sourceTextFaded = false
         appliedSourceTextWeight = 1f
-        sourceColors.release(source, sourceOwner)?.let(source::setTextColor)
+        val restored = sourceColors.release(source, sourceOwner)
+        if (restored != null) source.setTextColor(restored)
+        else sourceColors.peek(source)?.let { original ->
+            val combined = sourceColors.weight(source)
+            source.setTextColor(original.withAlpha((sourceTextBaseAlpha * combined).roundToInt()))
+        }
     }
 
     override fun onDraw(canvas: Canvas) {

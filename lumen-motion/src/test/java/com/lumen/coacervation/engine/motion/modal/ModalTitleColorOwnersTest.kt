@@ -4,6 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ModalTitleColorOwnersTest {
+    @Test fun overlappingTransitionsKeepTheMostRestrictiveWeightUntilThatOwnerLeaves() {
+        val colors = ModalTitleColorOwners<Any, Int>()
+        val view = Any(); val old = Any(); val next = Any()
+        colors.acquire(view, old, 99)
+        colors.updateWeight(view, old, .2f)
+        colors.acquire(view, next, 0)
+        assertEquals(.2f, colors.updateWeight(view, next, .6f), 0f)
+        assertNull(colors.release(view, old))
+        assertEquals(.6f, colors.weight(view), 0f)
+        assertEquals(99, colors.original(view, 0))
+        assertEquals(0f, colors.updateWeight(view, next, 0f), 0f)
+        assertEquals(99, colors.release(view, next))
+        assertEquals(1f, colors.weight(view), 0f)
+    }
     @Test fun lateDismissCannotRestoreANewerPanelsSourceOrCaptureTransparentAsOriginal() {
         val colors = ModalTitleColorOwners<Any, Int>()
         val view = Any()

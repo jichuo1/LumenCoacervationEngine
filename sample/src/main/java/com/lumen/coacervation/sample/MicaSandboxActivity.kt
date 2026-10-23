@@ -23,9 +23,8 @@ import com.lumen.coacervation.engine.host.LumenMicaImage
 import com.lumen.coacervation.engine.host.LumenMicaKind
 import com.lumen.coacervation.engine.host.LumenMicaLayer
 import com.lumen.coacervation.engine.host.LumenMicaOptions
+import com.lumen.coacervation.engine.host.LumenMicaPreparer
 import com.lumen.coacervation.engine.model.LumenPalette
-import java.util.concurrent.Executors
-import java.util.concurrent.Future
 
 /** One static window foundation, a commanding layer and segmented content. Never captures this UI. */
 class MicaSandboxActivity : Activity() {
@@ -38,12 +37,10 @@ class MicaSandboxActivity : Activity() {
     private lateinit var card: LinearLayout
     private lateinit var status: TextView
     private val labels = ArrayList<TextView>()
-    private val worker = Executors.newSingleThreadExecutor { Thread(it, "Lumen-MicaDemo").apply { isDaemon = true } }
-    private var pending: Future<*>? = null
+    private lateinit var imagePreparer: LumenMicaPreparer
     private var options = LumenMicaOptions()
     private var dark = false
     private var alternateImage = false
-    private var generation = 0
     private var destroyed = false
     private val statusRefresh = Runnable { if (!destroyed) refreshStatus() }
 
@@ -84,6 +81,7 @@ class MicaSandboxActivity : Activity() {
         root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
         setContentView(root)
         mica = LumenMicaBackdrop(root, LumenPalette.neutral(dark), options)
+        imagePreparer = LumenMicaPreparer()
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             root.setPadding(bars.left, bars.top, bars.right, bars.bottom)
@@ -123,46 +121,24 @@ class MicaSandboxActivity : Activity() {
     }
 
     private fun loadImage() {
-        val request = ++generation
         val alternate = alternateImage
-        pending?.cancel(true)
-        pending = worker.submit {
+        imagePreparer.prepare({
+            // Original synthetic wallpaper, acquired only when this request actually starts.
+            val bitmap = Bitmap.createBitmap(192, 256, Bitmap.Config.ARGB_8888)
             try {
-                // Original synthetic wallpaper: bounded demo input, no external image assets or permissions.
-                val bitmap = Bitmap.createBitmap(192, 256, Bitmap.Config.ARGB_8888)
-                val image = try {
-                    val colors = if (alternate) intArrayOf(0xFF00B294.toInt(), 0xFFFFB900.toInt(), 0xFFE3008C.toInt())
-                        else intArrayOf(0xFF0067C0.toInt(), 0xFF8764B8.toInt(), 0xFFFF4343.toInt())
-                    val paint = Paint().apply { shader = LinearGradient(0f, 0f, 192f, 256f, colors, null, Shader.TileMode.CLAMP) }
-                    Canvas(bitmap).drawRect(0f, 0f, 192f, 256f, paint)
-                    LumenMicaImage.prepare(bitmap)
-                } finally { bitmap.recycle() }
-                // Worker completion can precede root attachment; View.post would defer delivery.
-                runOnUiThread {
-                    if (!destroyed && request == generation) {
-                        currentImage = image
-                        mica.setImage(image)
-                        scheduleStatus()
-                    }
-                }
-            } catch (_: InterruptedException) {
-                Thread.currentThread().interrupt()
-            } catch (_: OutOfMemoryError) {
-                publishImageFailure(request)
-            } catch (_: RuntimeException) {
-                publishImageFailure(request)
+                val colors = if (alternate) intArrayOf(0xFF00B294.toInt(), 0xFFFFB900.toInt(), 0xFFE3008C.toInt())
+                    else intArrayOf(0xFF0067C0.toInt(), 0xFF8764B8.toInt(), 0xFFFF4343.toInt())
+                val paint = Paint().apply { shader = LinearGradient(0f, 0f, 192f, 256f, colors, null, Shader.TileMode.CLAMP) }
+                Canvas(bitmap).drawRect(0f, 0f, 192f, 256f, paint)
+                bitmap // Ownership transfers only after successful acquisition.
+            } catch (failure: Throwable) {
+                bitmap.recycle(); throw failure
             }
-        }
-    }
-
-    private fun publishImageFailure(request: Int) {
-        runOnUiThread {
-            if (!destroyed && request == generation) {
-                currentImage = null
-                mica.setImage(null)
-                scheduleStatus()
-            }
-        }
+        }, { image, _ ->
+            currentImage = image
+            mica.setImage(image)
+            scheduleStatus()
+        })
     }
 
     private fun refreshStatus() { status.text = "${mica.diagnostics()}" }
@@ -178,11 +154,8 @@ class MicaSandboxActivity : Activity() {
     }
     override fun onDestroy() {
         destroyed = true
-        generation++
         root.removeCallbacks(statusRefresh)
-        pending?.cancel(true)
-        pending = null
-        worker.shutdownNow()
+        imagePreparer.close()
         currentImage = null
         mica.close()
         super.onDestroy()

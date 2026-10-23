@@ -8,20 +8,24 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Outline
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.RectF
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
+import android.os.Build
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewOutlineProvider
+import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.lumen.coacervation.engine.liquid.LiquidMotionSurfaceFrameProvider
+import com.lumen.coacervation.engine.host.LumenBackdropReadiness
 import com.lumen.coacervation.engine.motion.InterruptibleMotionPolicy
 import com.lumen.coacervation.engine.motion.MotionRect
 import kotlin.math.abs
@@ -120,6 +124,57 @@ public class ContainerMorphHost(
     private var currentPage: View? = null
     private var currentToolbarTitle: TextView? = null
     private val motionFrame = ContainerMorphFrameBuffer()
+    private val screenCorners = FloatArray(4)
+    private val frameCorners = FloatArray(8)
+    private val windowLocation = IntArray(2)
+
+    /** Opt-in: match the current window's system-provided screen corners (API 31+). */
+    public var followScreenCorners: Boolean = false
+        set(value) {
+            if (field == value) return
+            field = value
+            refreshScreenCorners(rootWindowInsets)
+            ViewCompat.requestApplyInsets(this)
+        }
+
+    private fun cornerRadii(radius: Float, progress: Float, width: Float, height: Float): FloatArray? {
+        if (!followScreenCorners) return null
+        ScreenCornerMorphPolicy.fill(frameCorners, screenCorners, radius, progress, width, height)
+        return frameCorners
+    }
+
+    private fun refreshScreenCorners(insets: WindowInsets?) {
+        if (followScreenCorners && Build.VERSION.SDK_INT >= 31) {
+            ScreenCornersApi31.read(this, insets, windowLocation, screenCorners)
+        } else screenCorners.fill(0f)
+        if (width <= 0 || height <= 0) return
+        if (shapedMotion) {
+            val frame = motionFrame
+            val corners = cornerRadii(frame.cornerRadiusPx, expansion, frame.right - frame.left, frame.bottom - frame.top)
+            surface.updateCorners(frame.cornerRadiusPx, corners)
+            backdropClip.setMotionOutline(frame.left, frame.top, frame.right, frame.bottom, frame.cornerRadiusPx, corners)
+            pageClip.setMotionOutline(frame.left, frame.top, frame.right, frame.bottom, frame.cornerRadiusPx, corners)
+        } else updateExpandedCorners()
+    }
+
+    private fun updateExpandedCorners() {
+        val corners = cornerRadii(0f, 1f, width.toFloat(), height.toFloat())
+        surface.updateCorners(0f, corners)
+        if (corners == null) {
+            backdropClip.clearMotionOutline(); pageClip.clearMotionOutline()
+        } else {
+            backdropClip.setMotionOutline(0f, 0f, width.toFloat(), height.toFloat(), 0f, corners)
+            pageClip.setMotionOutline(0f, 0f, width.toFloat(), height.toFloat(), 0f, corners)
+        }
+    }
+
+    override fun onApplyWindowInsets(insets: WindowInsets): WindowInsets {
+        // The legacy fitSystemWindows bridge may re-enter with synthesized, corner-free insets.
+        // Apply the caller's complete data after that bridge returns so it remains authoritative.
+        val applied = super.onApplyWindowInsets(insets)
+        refreshScreenCorners(insets)
+        return applied
+    }
 
     fun registerNavigationBack(view: View) {
         clearBackPress()
@@ -184,6 +239,9 @@ public class ContainerMorphHost(
         super.onSizeChanged(width, height, oldWidth, oldHeight)
         if (width <= 0 || height <= 0) return
         if (oldWidth > 0 && oldHeight > 0 && expansion < 0.999f) {
+            if (followScreenCorners && Build.VERSION.SDK_INT >= 31) {
+                ScreenCornersApi31.read(this, rootWindowInsets, windowLocation, screenCorners)
+            }
             onWindowSizeChangedDuringMotion?.invoke()
             return
         }
@@ -195,15 +253,19 @@ public class ContainerMorphHost(
             cornerRadiusPx = 0f,
             color = expandedSurfaceColor
         )
-        if (expansion >= 0.999f) backdropClip.clearMotionOutline()
+        refreshScreenCorners(rootWindowInsets)
     }
 
     /** 皮肤背景绑定到该层；其父容器始终跟随形变 surface 裁剪。 */
     fun liquidBackdropRoot(): View = backdropRoot
 
+    internal val isBackdropReadyForMotion: Boolean
+        get() = (backdropRoot.background as? LumenBackdropReadiness)?.isReadyForMotion ?: true
+
     /** 在 setContentView 后接管默认的根 padding，让系统栏区域也由同一背景绘制。 */
     fun installContentInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->
+            refreshScreenCorners(insets.toWindowInsets())
             val safe = insets.getInsets(
                 WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout()
             )
@@ -240,6 +302,7 @@ public class ContainerMorphHost(
     }
 
     public fun prepareFirstFrameForEntry() {
+        expansion = 0f
         backdropClip.visibility = View.INVISIBLE
         surface.visibility = View.INVISIBLE
         currentPage?.alpha = 0f
@@ -281,6 +344,8 @@ public class ContainerMorphHost(
         if (backdropClip.visibility != View.VISIBLE) backdropClip.visibility = View.VISIBLE
         backdropClip.alpha = motionFrame.surfaceAlpha
         val collapsedChromeFraction = ContainerMorphSpec.collapsedChromeFraction(clamped)
+        val corners = cornerRadii(motionFrame.cornerRadiusPx, clamped,
+            motionFrame.right - motionFrame.left, motionFrame.bottom - motionFrame.top)
         surface.setFrame(
             left = motionFrame.left,
             top = motionFrame.top,
@@ -295,7 +360,8 @@ public class ContainerMorphHost(
             strokeColor = collapsedStrokeColor.withMultipliedAlpha(
                 collapsedChromeFraction
             ),
-            strokeWidthPx = collapsedStrokeWidthPx * collapsedChromeFraction
+            strokeWidthPx = collapsedStrokeWidthPx * collapsedChromeFraction,
+            corners = corners
         )
         surface.alpha = ContainerMorphSpec.transitionSurfaceAlpha(
             expansion = clamped,
@@ -306,14 +372,14 @@ public class ContainerMorphHost(
             motionFrame.top,
             motionFrame.right,
             motionFrame.bottom,
-            motionFrame.cornerRadiusPx
+            motionFrame.cornerRadiusPx, corners
         )
         pageClip.setMotionOutline(
             motionFrame.left,
             motionFrame.top,
             motionFrame.right,
             motionFrame.bottom,
-            motionFrame.cornerRadiusPx
+            motionFrame.cornerRadiusPx, corners
         )
 
         currentPage?.apply {
@@ -391,6 +457,7 @@ public class ContainerMorphHost(
         )
         surface.alpha = clamped
         pageClip.clearMotionOutline()
+        if (followScreenCorners) updateExpandedCorners()
         currentPage?.apply {
             val beforeY = translationY
             val beforeScaleX = scaleX
@@ -425,7 +492,7 @@ public class ContainerMorphHost(
             )
         }
         surface.alpha = 1f
-        pageClip.clearMotionOutline()
+        updateExpandedCorners()
         currentPage?.apply {
             val beforeY = translationY
             val beforeScaleX = scaleX
@@ -472,6 +539,9 @@ public class ContainerMorphHost(
         }
         private val bounds = RectF()
         private val strokeBounds = RectF()
+        private val shape = MotionCornerShape()
+        private val strokePath = Path()
+        private val strokeRadii = FloatArray(8)
         private var cornerRadiusPx = 0f
 
         fun setFrame(
@@ -482,37 +552,55 @@ public class ContainerMorphHost(
             cornerRadiusPx: Float,
             color: Int,
             strokeColor: Int = Color.TRANSPARENT,
-            strokeWidthPx: Float = 0f
+            strokeWidthPx: Float = 0f,
+            corners: FloatArray? = null
         ) {
             val normalizedRadius = cornerRadiusPx.coerceAtLeast(0f)
             val normalizedStrokeWidth = strokeWidthPx.coerceAtLeast(0f)
-            if (bounds.left == left && bounds.top == top &&
-                bounds.right == right && bounds.bottom == bottom &&
-                this.cornerRadiusPx == normalizedRadius && paint.color == color &&
+            val geometryChanged = shape.set(left, top, right, bottom, normalizedRadius, corners)
+            if (!geometryChanged && paint.color == color &&
                 strokePaint.color == strokeColor &&
                 strokePaint.strokeWidth == normalizedStrokeWidth
             ) {
                 return
             }
             this.bounds.set(left, top, right, bottom)
-            this.cornerRadiusPx = normalizedRadius
+            this.cornerRadiusPx = shape.radius
             paint.color = color
             strokePaint.color = strokeColor
             strokePaint.strokeWidth = normalizedStrokeWidth
             invalidate()
         }
 
+        fun updateCorners(radius: Float, corners: FloatArray?) {
+            if (shape.set(bounds.left, bounds.top, bounds.right, bounds.bottom, radius, corners)) {
+                cornerRadiusPx = shape.radius
+                invalidate()
+            }
+        }
+
+        override fun draw(canvas: Canvas) {
+            if (!shape.asymmetric) { super.draw(canvas); return }
+            val saved = canvas.save()
+            try { canvas.clipPath(shape.path); super.draw(canvas) } finally { canvas.restoreToCount(saved) }
+        }
+
         override fun onDraw(canvas: Canvas) {
             super.onDraw(canvas)
             if (background == null) {
-                canvas.drawRoundRect(bounds, cornerRadiusPx, cornerRadiusPx, paint)
+                if (shape.asymmetric) canvas.drawPath(shape.path, paint)
+                else canvas.drawRoundRect(bounds, cornerRadiusPx, cornerRadiusPx, paint)
             }
             if (strokePaint.strokeWidth > 0f && Color.alpha(strokePaint.color) > 0) {
                 val halfStroke = strokePaint.strokeWidth / 2f
                 strokeBounds.set(bounds)
                 strokeBounds.inset(halfStroke, halfStroke)
                 val strokeRadius = (cornerRadiusPx - halfStroke).coerceAtLeast(0f)
-                canvas.drawRoundRect(strokeBounds, strokeRadius, strokeRadius, strokePaint)
+                if (shape.asymmetric) {
+                    for (i in strokeRadii.indices) strokeRadii[i] = (shape.radii[i] - halfStroke).coerceAtLeast(0f)
+                    strokePath.rewind(); strokePath.addRoundRect(strokeBounds, strokeRadii, Path.Direction.CW)
+                    canvas.drawPath(strokePath, strokePaint)
+                } else canvas.drawRoundRect(strokeBounds, strokeRadius, strokeRadius, strokePaint)
             }
         }
 
@@ -526,8 +614,8 @@ public class ContainerMorphHost(
     }
 
     private class MotionClipFrameLayout(context: Context) : FrameLayout(context) {
-        private val motionBounds = RectF()
-        private var motionRadius = 0f
+        private val shape = MotionCornerShape()
+        private val motionBounds get() = shape.bounds
 
         init {
             outlineProvider = object : ViewOutlineProvider() {
@@ -540,7 +628,7 @@ public class ContainerMorphHost(
                             floor(motionBounds.top).toInt(),
                             ceil(motionBounds.right).toInt(),
                             ceil(motionBounds.bottom).toInt(),
-                            motionRadius
+                            shape.radius
                         )
                     }
                 }
@@ -552,25 +640,26 @@ public class ContainerMorphHost(
             top: Float,
             right: Float,
             bottom: Float,
-            radiusPx: Float
+            radiusPx: Float,
+            corners: FloatArray? = null
         ) {
-            val normalizedRadius = radiusPx.coerceAtLeast(0f)
-            if (clipToOutline && motionBounds.left == left && motionBounds.top == top &&
-                motionBounds.right == right && motionBounds.bottom == bottom &&
-                motionRadius == normalizedRadius
-            ) {
-                return
-            }
-            motionBounds.set(left, top, right, bottom)
-            motionRadius = normalizedRadius
-            clipToOutline = true
+            val changed = shape.set(left, top, right, bottom, radiusPx, corners)
+            if (!changed && clipToOutline == !shape.asymmetric) return
+            clipToOutline = !shape.asymmetric
             invalidateOutline()
+            invalidate()
+        }
+
+        override fun dispatchDraw(canvas: Canvas) {
+            if (!shape.asymmetric) { super.dispatchDraw(canvas); return }
+            val saved = canvas.save()
+            try { canvas.clipPath(shape.path); super.dispatchDraw(canvas) } finally { canvas.restoreToCount(saved) }
         }
 
         fun clearMotionOutline() {
             clipToOutline = false
-            motionBounds.setEmpty()
-            motionRadius = 0f
+            shape.clear()
+            invalidate()
         }
     }
 }

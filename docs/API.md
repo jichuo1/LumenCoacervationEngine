@@ -248,7 +248,8 @@
 | 声明 | 说明 | 标准 |
 |---|---|---|
 | `ContainerMorphLauncher.launch(source, destination, entry, title, configure = {}, start = source::startActivity)`、`clear(destination, entry)` | 来源页 | §13.5 |
-| `ContainerMorphHost(context, collapsedSurfaceColor, expandedSurfaceColor, titleColor, sourceTitle, surfaceHandoffExpansion = 0.1f, collapsedStrokeColor = TRANSPARENT, collapsedStrokeWidthPx = 0f)` | 目标页内容根：`installContentInsets()`、`setMotionSurfaceBackground(d)`、`replacePage(page, toolbarTitle)`、`liquidBackdropRoot()`、`registerNavigationBack(view)`、`val expansion` | §13.5 |
+| `ContainerMorphHost(context, collapsedSurfaceColor, expandedSurfaceColor, titleColor, sourceTitle, surfaceHandoffExpansion = 0.1f, collapsedStrokeColor = TRANSPARENT, collapsedStrokeWidthPx = 0f)` | 目标页内容根：`installContentInsets()`、`setMotionSurfaceBackground(d)`、`replacePage(page, toolbarTitle)`、`liquidBackdropRoot()`、`registerNavigationBack(view)`、`val expansion`；自 1.5.2 新增 `var followScreenCorners = false`，启用后按 API 31+ 当前窗口的系统四角插值和裁剪；缺少数据或不覆盖该角时保持原几何 | §13.5 |
+| `host.LumenBackdropReadiness`（自 1.5.2） | `val isReadyForMotion: Boolean`，主线程读取；自定义背景 Drawable 在图像或稳定回退准备完成后为 true，形变控制器有界等待冷背景；普通背景不增加等待 | §13.5 |
 | `ContainerMorphController(activity, host, lumen, destination, launchOrigin, allowLaunchOriginForExit, destinationTitle, collapsedCornerRadiusDp = 12f, isBusinessBlocked = { false }, onMotionStarted = {}, onExpanded = {})` | `start(isFreshLaunch)`、`beginPredictiveBack()`、`progressPredictiveBack(p)`、`cancelPredictiveBack()`、`commitBack()`、`isSettledExpanded`、`isExpanded`、`onDestroy()`；`suppressSystemTransitions(activity)` | §13.5 |
 | `ContainerMorphOrigin.from(intent): ContainerMorphOrigin?` | 目标页读取启动几何；`entryCornerRadiusPx` 是入口卡片声明的圆角（NaN 表示没有） | §13.5、§14.2 |
 | `ContainerMorphEntrySpec` | 来源工程诊断入口的视觉参数（圆角、描边、表面色） | §13.5 |
@@ -434,6 +435,10 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 |---|---|
 | `LumenMicaBackdrop(view, palette, options = LumenMicaOptions(), image: LumenMicaImage? = null)` | `update(options)` / `updatePalette(palette)` / `setImage(image?)` / `refreshPolicy()` / `layerBackground(layer = CONTENT, radiusDp = 8f): Drawable` / `diagnostics(): LumenMicaDiagnostics` / `isClosed` / `close()`；关闭时仅恢复仍由自身持有的根背景，保留内边距；setter、刷新与关闭的迟到调用为空操作 |
 | `LumenMicaImage` | `prepare(source: Bitmap): LumenMicaImage`（companion，`@WorkerThread`），`byteCount: Int`；输入为调用期间只读的软件 Bitmap，输出为独立不可变快照，不持有或回收输入；最长边 96 像素；取消通过线程中断传播 |
+| `LumenMicaPreparer()`（自 1.5.2） | `prepare(source: LumenMicaImageSource, listener: LumenMicaPreparationListener)` / `cancel()` / `isClosed` / `close()`；主线程创建和调用；每实例一个工作线程，最多一个执行中请求、一个最新待处理来源及一个最新未交付结果；回调异步投递到主线程，不依赖 View 挂载；关闭后入口为空操作 |
+| `LumenMicaImageSource`（自 1.5.2，fun interface） | `load(): Bitmap`（`@WorkerThread`）；只有开始执行才调用；返回独占、可读的软件 Bitmap，所有权转移到 preparer，后者在预处理返回或失败时回收；不得返回共享或正在显示的位图 |
+| `LumenMicaPreparationListener`（自 1.5.2，fun interface） | `onPrepared(image: LumenMicaImage?, failure: LumenMicaPreparationFailure)`（异步主线程）；成功为 image 非空且 NONE，失败为 image 空；只交付最新请求；回调取得的快照可共享，preparer 不再回收它 |
+| `LumenMicaPreparationFailure`（自 1.5.2） | NONE / SOURCE_FAILED / PREPARATION_FAILED / WORKER_UNAVAILABLE；不传异常原文、路径或 Uri |
 | `LumenMicaOptions` | enabled = true / kind = BASE / tintColor、tintOpacity、luminosityOpacity、fallbackColor（默认 null，按 kind 与主题选择；opacity 限 0–1，拒绝非有限值）/ fallbackWhenWindowInactive、fallbackOnPowerSave、fallbackOnLowRamDevice = true / highContrast、reduceTransparency、reduceMotion = false |
 | `LumenMicaKind` | BASE / BASE_ALT |
 | `LumenMicaLayer` | COMMAND / CONTENT / CARD；工厂返回宿主所有的低透明度 Drawable，主题、kind、辅助功能改变后由宿主重新创建并赋值；radiusDp 限 0–128 |
