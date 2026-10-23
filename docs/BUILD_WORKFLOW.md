@@ -23,6 +23,8 @@
 
 涉及真实窗口合成和 PixelCopy 的 API 31／33／34 使用 `google_apis` 标准图形镜像，API 27 使用 `default`。ATD 默认关闭硬件渲染，依赖硬件渲染的截图不在官方支持范围内，见 [Android 设备测试说明](https://developer.android.com/studio/test/managed-devices)。发布脚本的必需成功作业名必须与矩阵同步，不能用旧镜像的结果满足新门禁；本地额外整屏截图通过显式 instrumentation 参数启用。
 
+API 33／34 使用现有 Mesa `lavapipe` 模拟器图形路径及 `skiagl` HWUI，保留实际硬件输出与完整 GPU 像素检查。SwiftShader 路径在真实窗口和压力测试下出现 ColorBuffer 丢失、无效纹理及设备离线，原始失败和主机资源日志须保留，不能把截断的 runner 当作应用通过。
+
 ## 3. 严格结果校验
 
 执行方式依据 [Android 命令行测试文档](https://developer.android.com/studio/test/command-line)，协议常量核对 [AndroidX InstrumentationResultPrinter](https://github.com/android/android-test/blob/main/runner/android_junit_runner/java/androidx/test/internal/runner/listener/InstrumentationResultPrinter.java)。

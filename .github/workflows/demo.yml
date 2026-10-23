@@ -149,8 +149,8 @@ jobs:
       - name: Smoke test on emulator (API ${{ matrix.api-level }} ${{ matrix.target }})
         uses: reactivecircus/android-emulator-runner@v2.38.0
         env:
-          # Keep API34 off the failing Vulkan path without suppressing actual pixel assertions.
-          HWUI_RENDERER: ${{ matrix.api-level == 34 && 'skiagl' || '' }}
+          # API33/34 SwiftShader loses ColorBuffers during real window/pressure tests.
+          HWUI_RENDERER: ${{ matrix.api-level >= 33 && 'skiagl' || '' }}
           SMOKE_API_LEVEL: ${{ matrix.api-level }}
           SMOKE_APK_BUNDLE: build/demo-apks
         with:
@@ -163,8 +163,8 @@ jobs:
           ram-size: 4096M
           heap-size: 576M
           disk-size: 4096M
-          # API34 SwiftShader loses ColorBuffers; validate real pixels through the supported Mesa backend.
-          emulator-options: -no-window -gpu ${{ matrix.api-level == 34 && 'lavapipe' || 'swiftshader_indirect' }} -noaudio -no-boot-anim -camera-back none -show-kernel
+          # Validate the unchanged GPU/pixel suite through the existing supported Mesa backend.
+          emulator-options: -no-window -gpu ${{ matrix.api-level >= 33 && 'lavapipe' || 'swiftshader_indirect' }} -noaudio -no-boot-anim -camera-back none -show-kernel
           script: |
             bash .github/scripts/run-smoke.sh || { timeout 15s adb logcat -d -b crash || true; exit 1; }
 
