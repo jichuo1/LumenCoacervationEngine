@@ -5,6 +5,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PreparedBackdropCacheTest {
+    @Test fun anExplicitHostPresentationBudgetPreservesItsRecipeAndStillRejectsOversize() {
+        val budget = 8L * 1024 * 1024 * 4 + 2L * 1024 * 1024
+        LumenPreparedBackdropCache<Int, Any>(budget).use { cache ->
+            val published = Any()
+            assertTrue(cache.put(1, published, 18L * 1024 * 1024))
+            assertSame(published, cache.get(1))
+            assertTrue(cache.put(2, published, budget))
+            assertNull(cache.get(1))
+            assertEquals(budget, cache.retainedBytes)
+            assertFalse(cache.put(3, published, budget + 1))
+            assertEquals(0L, cache.retainedBytes)
+        }
+        for (invalid in listOf(0L, -1L, budget + 1)) {
+            try {
+                LumenPreparedBackdropCache<Int, Any>(invalid).close()
+                fail("An unsupported host budget must fail before registering ownership")
+            } catch (_: IllegalArgumentException) { }
+        }
+    }
     @Test fun exactKeysSeparateThemesSizesAndBackgroundRevisions() {
         data class Key(val revision: String, val dark: Boolean, val width: Int)
         LumenPreparedBackdropCache<Key, Any>().use { cache ->

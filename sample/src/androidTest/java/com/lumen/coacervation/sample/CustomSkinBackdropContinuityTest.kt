@@ -89,6 +89,7 @@ class CustomSkinBackdropContinuityTest {
     }
 
     private fun capture(activity: Activity, name: String) {
+        if (InstrumentationRegistry.getArguments().getString("lumen.captureMotionReview") != "true") return
         val bitmap = Bitmap.createBitmap(360, 792, Bitmap.Config.ARGB_8888)
         val complete = CountDownLatch(1)
         var status = -1
@@ -100,7 +101,6 @@ class CustomSkinBackdropContinuityTest {
             assertEquals("Window capture failed: $name", PixelCopy.SUCCESS, status)
             val directory = File(context.getExternalFilesDir(null), "motion-review").apply { mkdirs() }
             File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
-            if (InstrumentationRegistry.getArguments().getString("lumen.captureMotionReview") != "true") return
             // Include the source Activity under a translucent target; Window PixelCopy alone omits it.
             val display = instrumentation.uiAutomation.takeScreenshot()
             assertNotNull("Display capture failed: $name", display)
@@ -155,6 +155,9 @@ class CustomSkinBackdropContinuityTest {
                             val host = content.getChildAt(0) as ContainerMorphHost
                             assertTrue(host.followScreenCorners)
                             assertEquals(1f, host.expansion, .001f)
+                            val color = pixels(host.liquidBackdropRoot())[1]
+                            assertTrue("The real expanded Activity lost its custom pixels",
+                                kotlin.math.abs(Color.green(color) - Color.red(color)) > 60)
                             assertTrue(target.resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
                                 if (dark) android.content.res.Configuration.UI_MODE_NIGHT_YES else android.content.res.Configuration.UI_MODE_NIGHT_NO)
                         }

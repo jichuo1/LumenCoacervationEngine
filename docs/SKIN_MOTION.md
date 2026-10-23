@@ -31,10 +31,10 @@ host.followScreenCorners = true
 
 低内存、图形释放或不匹配的新结果会丢弃缓存引用。已发布给显示列表的像素不强制 recycle，仍由运行时安全回收。缓存不随页面数量增长，不改变采样尺寸、模糊、光学强度、亮暗配方或原始图片。
 
-宿主仍保留本地 renderer 时，可以用公开 `LumenPreparedBackdropCache<K, V>` 接入同一个淘汰与图形压力机制，而无需复制缓存实现。每种 renderer 只建立一个实例、按完整像素对的真实 `allocationByteCount` 计量；每实例一个条目、最多 4 MiB，额外宿主实例的预算须另行计入。匹配键包含宿主自己的完整背景配置和配色，绘制值只能包含已发布像素与独立绘制状态，不能保存 View、Context、Activity 或捕获它们的闭包。宿主的低内存回调还须 `clear()`；关闭后不可重新放入条目。
+宿主仍保留本地 renderer 时，可以用公开 `LumenPreparedBackdropCache<K, V>(maxBytes = ...)` 接入同一个淘汰与图形压力机制，而无需复制缓存实现。每种 renderer 只建立一个实例、按完整像素对的真实 `allocationByteCount` 计量。默认预算 4 MiB；保留高分辨率显示图的宿主可按已有配方显式设置更高预算，上限 34 MiB（8MP ARGB 显示图的 32 MiB 加 2 MiB 光学图），每实例仍只有一个条目，超过实例预算的条目拒绝，非法构造预算失败。额外宿主实例的预算须另行计入，不改变内置两种材质的默认 8 MiB 合计上限。匹配键包含宿主自己的完整背景配置和色值快照，绘制值只能包含已发布像素与独立绘制状态，不能保存 View、Context、Activity 或捕获它们的闭包。宿主的低内存回调还须 `clear()`，进程级图形释放也须转给 `LumenEngine.releaseGraphics()`；关闭后不可重新放入条目。
 
 ## 验证口径
 
 `CustomSkinBackdropContinuityTest` 覆盖两种材质和亮暗配色的恢复、新会话首帧、居中／锚定／气泡／覆盖子面板，以及真实 sample 二级 Activity 的往返。`ScreenCornerMorphTest` 检查不同半径的四角、默认关闭与关闭恢复、冷背景准备态；JVM 策略检查坐标、缺失数据和插值边界。发布所用 APK 还须经过固定的四版本全量门禁，具体证据见对应 Release 的审阅与验证附件。
 
-窗口 PixelCopy 和产品断言在全部版本执行；如需同时保留包含底页的系统合成截图，在本地 instrumentation 中显式传 `-e lumen.captureMotionReview true`。整屏截图用于人工取证，不是门禁的成功判据；ATD 的最终合成输出与真实设备不同，不能让额外截图导致整轮产品测试的设备连接中断。
+实际二级页用例在全部版本打开并关闭真实窗口，检查皮肤像素、四角开关、亮暗模式、展开与关闭状态及来源文字恢复。既有窗口 PixelCopy／GPU 像素契约继续在全部支持版本执行。该用例额外输出的窗口与整屏图片仅在本地 instrumentation 显式传 `-e lumen.captureMotionReview true` 时生成；没有图片数值判据的取证步骤不混入产品门禁，避免关闭中的 Window 回读影响模拟器图形连接。真实设备的取证仍检查 PixelCopy 状态并人工复核输出。
