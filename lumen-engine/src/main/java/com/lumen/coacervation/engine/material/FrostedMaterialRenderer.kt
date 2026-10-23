@@ -106,6 +106,7 @@ internal class FrostedMaterialRenderer(
     private data class BackdropKey(val palette: LumenPalette, val config: LiquidBackgroundConfig,
         val width: Int, val height: Int, val density: Float)
     private var pendingBackdropKey: BackdropKey? = null
+    private var motionBackdropRequested = false
     private companion object {
         val preparedBackdrops = PreparedBackdropCache<BackdropKey, ModernBackdropFrame>()
     }
@@ -144,6 +145,13 @@ internal class FrostedMaterialRenderer(
         root = view
         view.addOnLayoutChangeListener(layoutListener)
         view.background = object : Drawable(), LumenBackdropReadiness {
+            override fun prepareForMotion() {
+                motionBackdropRequested = true
+                if (pendingBackdropKey == null) return
+                revealAnimator?.cancel()
+                revealFraction = 1f
+                view.invalidate()
+            }
             override val isReadyForMotion: Boolean
                 get() = closed || pendingBackdropKey == null || frame != null || failedWidth > 0
             private var drawingAlpha = 255
@@ -222,7 +230,8 @@ internal class FrostedMaterialRenderer(
         sampleShader = BitmapShader(result.blurred, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         samplePaint.shader = sampleShader
         revealAnimator?.cancel()
-        revealFraction = if (animateReveal && ValueAnimator.areAnimatorsEnabled()) 0f else 1f
+        revealFraction = if (animateReveal && !(motionBackdropRequested && pendingBackdropKey != null) &&
+            ValueAnimator.areAnimatorsEnabled()) 0f else 1f
         if (revealFraction == 0f) {
             revealAnimator = ValueAnimator.ofFloat(0f, 1f).apply {
                 duration = 160L

@@ -25,6 +25,7 @@ import com.lumen.coacervation.engine.LumenEngine
 import com.lumen.coacervation.engine.background.LiquidBackgroundImportResult
 import com.lumen.coacervation.engine.background.LiquidBackgroundStore
 import com.lumen.coacervation.engine.host.LumenActivityDelegate
+import com.lumen.coacervation.engine.host.LumenBackdropReadiness
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
 import com.lumen.coacervation.engine.motion.modal.LumenModalPresenter
@@ -99,6 +100,7 @@ class CustomSkinBackdropContinuityTest {
             assertEquals("Window capture failed: $name", PixelCopy.SUCCESS, status)
             val directory = File(context.getExternalFilesDir(null), "motion-review").apply { mkdirs() }
             File(directory, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+            if (InstrumentationRegistry.getArguments().getString("lumen.captureMotionReview") != "true") return
             // Include the source Activity under a translucent target; Window PixelCopy alone omits it.
             val display = instrumentation.uiAutomation.takeScreenshot()
             assertNotNull("Display capture failed: $name", display)
@@ -173,6 +175,53 @@ class CustomSkinBackdropContinuityTest {
                 AppCompatDelegate.setDefaultNightMode(night)
                 LumenEngine.selectMaterial(context, previous)
             }
+        }
+    }
+
+    @Test fun motionReadinessNeverExposesAPaletteOnlyReadyFrame() {
+        val previous = LumenEngine.requestedMaterial(context)
+        importFixture()
+        try {
+            for (skin in skins) for (dark in listOf(false, true)) {
+                instrumentation.runOnMainSync {
+                    LumenEngine.releaseGraphics()
+                    LumenEngine.selectMaterial(context, skin, realtimeCapture = false)
+                }
+                ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+                    lateinit var material: LumenActivityDelegate
+                    lateinit var root: FrameLayout
+                    scenario.onActivity { activity ->
+                        activity.binding.close(); activity.session.close()
+                        LumenEngine.releaseGraphics()
+                        material = LumenActivityDelegate(activity, { LumenPalette.neutral(dark) })
+                        material.prepare()
+                        root = FrameLayout(activity)
+                        activity.setContentView(root)
+                        assertTrue(material.bindRoot(root)); material.onStart()
+                        (root.background as LumenBackdropReadiness).prepareForMotion()
+                    }
+                    try {
+                        val deadline = SystemClock.uptimeMillis() + 5_000
+                        var ready = false
+                        while (!ready && SystemClock.uptimeMillis() < deadline) {
+                            scenario.onActivity {
+                                if (root.width > 0 && root.height > 0 &&
+                                    (root.background as LumenBackdropReadiness).isReadyForMotion) {
+                                    val color = pixels(root)[1]
+                                    assertTrue("$skin dark=$dark reported ready with only the theme visible",
+                                        kotlin.math.abs(Color.green(color) - Color.red(color)) > 60)
+                                    ready = true
+                                }
+                            }
+                            if (!ready) SystemClock.sleep(16)
+                        }
+                        assertTrue("Cold motion preparation did not complete", ready)
+                    } finally { scenario.onActivity { material.onDestroy() } }
+                }
+            }
+        } finally {
+            LiquidBackgroundStore.restoreAutomatic(context)
+            instrumentation.runOnMainSync { LumenEngine.selectMaterial(context, previous) }
         }
     }
 

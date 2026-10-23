@@ -184,7 +184,10 @@ public class ContainerMorphController @JvmOverloads constructor(
         val entryToken = motionSession.invalidate()
         val canResolveOrigin = hasLaunchOrigin() || registry.snapshot() != null
         val shouldAnimate = isFreshLaunch && canResolveOrigin && ValueAnimator.areAnimatorsEnabled()
-        if (shouldAnimate) host.prepareFirstFrameForEntry()
+        if (shouldAnimate) {
+            host.prepareFirstFrameForEntry()
+            host.prepareBackdropForMotion()
+        }
         val preparationDeadline = SystemClock.uptimeMillis() + 250L
         fun scheduleEntryFrame() {
             host.doOnPreDraw {

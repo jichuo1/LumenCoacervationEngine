@@ -262,6 +262,10 @@ public class ContainerMorphHost(
     internal val isBackdropReadyForMotion: Boolean
         get() = (backdropRoot.background as? LumenBackdropReadiness)?.isReadyForMotion ?: true
 
+    internal fun prepareBackdropForMotion() {
+        (backdropRoot.background as? LumenBackdropReadiness)?.prepareForMotion()
+    }
+
     /** 在 setContentView 后接管默认的根 padding，让系统栏区域也由同一背景绘制。 */
     fun installContentInsets() {
         ViewCompat.setOnApplyWindowInsetsListener(this) { _, insets ->

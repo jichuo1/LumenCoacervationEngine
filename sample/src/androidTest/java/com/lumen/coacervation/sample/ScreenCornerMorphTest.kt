@@ -62,6 +62,7 @@ class ScreenCornerMorphTest {
             val expanded = CountDownLatch(1)
             var started = 0
             var ready = false
+            var preparationRequested = false
             try {
                 scenario.onActivity { activity ->
                     activity.binding.close(); activity.session.close()
@@ -75,6 +76,7 @@ class ScreenCornerMorphTest {
                         View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY))
                     host.layout(0, 0, width, height)
                     host.liquidBackdropRoot().background = object : ColorDrawable(Color.CYAN), LumenBackdropReadiness {
+                        override fun prepareForMotion() { preparationRequested = true }
                         override val isReadyForMotion: Boolean get() = ready
                     }
                     val source = MotionRect(20f, height * .5f, 220f, height * .5f + 80f)
@@ -85,6 +87,7 @@ class ScreenCornerMorphTest {
                         resolveGeometry = { ContainerMorphGeometry(source, MotionRect(0f, 0f, width.toFloat(), height.toFloat()),
                             title, MotionRect(20f, 20f, 180f, 40f), 18f, 18f, 40f, 20f, false) })
                     controller.start(true)
+                    assertTrue(preparationRequested)
                     host.viewTreeObserver.dispatchOnPreDraw()
                     assertEquals("Cold custom pixels must not start the coloured surface", 0, started)
                     assertEquals(0f, host.expansion, 0f)

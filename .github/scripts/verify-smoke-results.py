@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
     PREFIX + "CustomSkinBackdropContinuityTest": {
+        "motionReadinessNeverExposesAPaletteOnlyReadyFrame",
         "customBackdropOwnersKeepTheirPixelsOnResumeAndFirstDrawInBothThemes",
         "customSkinModalFamiliesKeepTheirBackdropAndRestoreSourceText",
         "realSecondaryActivityKeepsCustomSkinInLightAndDarkAndUsesScreenCorners",

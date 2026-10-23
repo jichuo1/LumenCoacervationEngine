@@ -249,7 +249,8 @@
 |---|---|---|
 | `ContainerMorphLauncher.launch(source, destination, entry, title, configure = {}, start = source::startActivity)`、`clear(destination, entry)` | 来源页 | §13.5 |
 | `ContainerMorphHost(context, collapsedSurfaceColor, expandedSurfaceColor, titleColor, sourceTitle, surfaceHandoffExpansion = 0.1f, collapsedStrokeColor = TRANSPARENT, collapsedStrokeWidthPx = 0f)` | 目标页内容根：`installContentInsets()`、`setMotionSurfaceBackground(d)`、`replacePage(page, toolbarTitle)`、`liquidBackdropRoot()`、`registerNavigationBack(view)`、`val expansion`；自 1.5.2 新增 `var followScreenCorners = false`，启用后按 API 31+ 当前窗口的系统四角插值和裁剪；缺少数据或不覆盖该角时保持原几何 | §13.5 |
-| `host.LumenBackdropReadiness`（自 1.5.2） | `val isReadyForMotion: Boolean`，主线程读取；自定义背景 Drawable 在图像或稳定回退准备完成后为 true，形变控制器有界等待冷背景；普通背景不增加等待 | §13.5 |
+| `host.LumenBackdropReadiness`（自 1.5.2） | `prepareForMotion()`（默认空实现）、`val isReadyForMotion: Boolean`，主线程调用；自定义背景在准备态完成首帧皮肤交接后为 true，形变控制器有界等待冷背景；普通背景不增加等待 | §13.5 |
+| `host.LumenPreparedBackdropCache<K, V>`（自 1.5.2） | 宿主保留自己的背景 renderer 时可复用的发布像素缓存：`get(key)`、`put(key, value, byteCount)`、`clear()`、`retainedBytes`、`close()`；每实例一个条目、最多 4 MiB，键必须是不可变配置，值只含已发布像素与独立绘制状态，不得持有 View/Context/Activity；每种 renderer 一个实例 | §13.5 |
 | `ContainerMorphController(activity, host, lumen, destination, launchOrigin, allowLaunchOriginForExit, destinationTitle, collapsedCornerRadiusDp = 12f, isBusinessBlocked = { false }, onMotionStarted = {}, onExpanded = {})` | `start(isFreshLaunch)`、`beginPredictiveBack()`、`progressPredictiveBack(p)`、`cancelPredictiveBack()`、`commitBack()`、`isSettledExpanded`、`isExpanded`、`onDestroy()`；`suppressSystemTransitions(activity)` | §13.5 |
 | `ContainerMorphOrigin.from(intent): ContainerMorphOrigin?` | 目标页读取启动几何；`entryCornerRadiusPx` 是入口卡片声明的圆角（NaN 表示没有） | §13.5、§14.2 |
 | `ContainerMorphEntrySpec` | 来源工程诊断入口的视觉参数（圆角、描边、表面色） | §13.5 |

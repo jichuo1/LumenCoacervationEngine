@@ -8,6 +8,7 @@
 
 - 可选 `LumenMicaPreparer` 异步预处理接口：惰性获取独占输入，合并最新任务与待交付结果，主线程交付，支持取消、关闭与类型化失败；保留现有同步借用 API、96px 快照和材质配方。Demo 云母页改用此接口。
 - `ContainerMorphHost.followScreenCorners` 默认关闭；启用后使用当前窗口的系统圆角数据，逐角对齐形变表面、背景和正文裁剪。API 31 以下或窗口不覆盖该屏幕角时保留原几何。Demo 二级 Activity 开启该能力。
+- `LumenBackdropReadiness` 与 `LumenPreparedBackdropCache` 为宿主自有 renderer 提供可选的首帧准备和有界像素交接，不要求宿主复制缓存实现或改变原有图片配方。
 
 ### 修复
 

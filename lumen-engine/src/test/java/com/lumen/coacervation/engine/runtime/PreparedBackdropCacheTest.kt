@@ -1,12 +1,13 @@
 package com.lumen.coacervation.engine.runtime
 
+import com.lumen.coacervation.engine.host.LumenPreparedBackdropCache
 import org.junit.Assert.*
 import org.junit.Test
 
 class PreparedBackdropCacheTest {
     @Test fun exactKeysSeparateThemesSizesAndBackgroundRevisions() {
         data class Key(val revision: String, val dark: Boolean, val width: Int)
-        PreparedBackdropCache<Key, Any>().use { cache ->
+        LumenPreparedBackdropCache<Key, Any>().use { cache ->
             val pixels = Any()
             assertTrue(cache.put(Key("image-a", false, 1080), pixels, 1024))
             assertSame(pixels, cache.get(Key("image-a", false, 1080)))
@@ -17,8 +18,8 @@ class PreparedBackdropCacheTest {
     }
 
     @Test fun pageCountCannotGrowTheCacheAndBothRendererKindsStayInBudget() {
-        PreparedBackdropCache<Int, Any>().use { material ->
-            PreparedBackdropCache<Int, Any>().use { liquid ->
+        LumenPreparedBackdropCache<Int, Any>().use { material ->
+            LumenPreparedBackdropCache<Int, Any>().use { liquid ->
                 repeat(1000) { page ->
                     material.put(page, Any(), PreparedBackdropCache.MAX_BYTES_PER_RENDERER)
                     liquid.put(page, Any(), PreparedBackdropCache.MAX_BYTES_PER_RENDERER)
@@ -30,7 +31,7 @@ class PreparedBackdropCacheTest {
     }
 
     @Test fun oversizedOrInvalidEntriesCannotExpandRetention() {
-        PreparedBackdropCache<String, Any>().use { cache ->
+        LumenPreparedBackdropCache<String, Any>().use { cache ->
             assertTrue(cache.put("a", Any(), 100))
             assertFalse(cache.put("b", Any(), PreparedBackdropCache.MAX_BYTES_PER_RENDERER + 1))
             assertEquals(0L, cache.retainedBytes)
@@ -42,7 +43,7 @@ class PreparedBackdropCacheTest {
     @Test fun memoryReleaseDropsCacheOwnershipWithoutClosingPublishedPixels() {
         class Pixels : AutoCloseable { var closed = false; override fun close() { closed = true } }
         val published = Pixels()
-        val cache = PreparedBackdropCache<String, Pixels>()
+        val cache = LumenPreparedBackdropCache<String, Pixels>()
         cache.put("a", published, 100)
         LumenMemoryPressureHub.releaseGraphics()
         assertNull(cache.get("a"))
