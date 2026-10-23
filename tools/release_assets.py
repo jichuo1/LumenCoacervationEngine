@@ -21,7 +21,7 @@ MODULES = (
 )
 GROUP = "com.lumen.coacervation.engine"
 SMOKE = ("smoke (27, default)", "smoke (31, google_apis)",
-         "smoke (33, aosp_atd)", "smoke (34, google_apis)")
+         "smoke (33, google_apis)", "smoke (34, google_apis)")
 LIMITS = [
     "API27-32 provider/process animation notification window remains.",
     "Safety caps, tiny durations and later scale changes can limit velocity continuity.",

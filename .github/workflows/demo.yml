@@ -104,15 +104,15 @@ jobs:
       fail-fast: false
       matrix:
         # 27 = minSdk（只有柔光）；31 = 高级材质 BLUR 后端；33 / 34 = 高级材质 REFRACTION 后端。
-        # API33 uses ATD with scoped final output; API34 needs a standard graphics surface.
-        # API34 ATD disconnects under real final-buffer pixel tests, despite ample host memory.
+        # Real window composition/PixelCopy requires standard graphics images on API31/33/34.
+        # API33/34 ATD disconnect under final-buffer transitions despite ample host memory.
         include:
           - api-level: 27
             target: default
           - api-level: 31
             target: google_apis
           - api-level: 33
-            target: aosp_atd
+            target: google_apis
           - api-level: 34
             target: google_apis
     steps:

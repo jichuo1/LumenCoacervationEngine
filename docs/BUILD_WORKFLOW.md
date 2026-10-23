@@ -21,6 +21,8 @@
 
 每轮 Demo 编译由 5 处降为 1 处。四版本矩阵、像素断言、动画设置、图形后端、日志、基准数据及发布依赖保留。应用测试失败不自动重放；下载和模拟器安装沿用既有有界重试。
 
+涉及真实窗口合成和 PixelCopy 的 API 31／33／34 使用 `google_apis` 标准图形镜像，API 27 使用 `default`。ATD 默认关闭硬件渲染，依赖硬件渲染的截图不在官方支持范围内，见 [Android 设备测试说明](https://developer.android.com/studio/test/managed-devices)。发布脚本的必需成功作业名必须与矩阵同步，不能用旧镜像的结果满足新门禁；本地额外整屏截图通过显式 instrumentation 参数启用。
+
 ## 3. 严格结果校验
 
 执行方式依据 [Android 命令行测试文档](https://developer.android.com/studio/test/command-line)，协议常量核对 [AndroidX InstrumentationResultPrinter](https://github.com/android/android-test/blob/main/runner/android_junit_runner/java/androidx/test/internal/runner/listener/InstrumentationResultPrinter.java)。
