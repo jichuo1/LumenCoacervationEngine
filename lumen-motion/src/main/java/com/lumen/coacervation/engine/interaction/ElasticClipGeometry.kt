@@ -62,8 +62,26 @@ internal object ElasticClipGeometry {
         var fittedScale = minOf(scale.toDouble(), maximumScale).toFloat()
         // Float rounding must not put the two permissible edges in reverse order.
         if (fittedScale.toDouble() > maximumScale) fittedScale = Math.nextDown(fittedScale)
-        val minimum = (-leading.toDouble() - pivot * (1.0 - fittedScale)).toFloat()
-        val maximum = (trailing.toDouble() - (size.toDouble() - pivot) * (fittedScale - 1.0)).toFloat()
+        var minimum = (-leading.toDouble() - pivot * (1.0 - fittedScale)).toFloat()
+        var maximum = (trailing.toDouble() - (size.toDouble() - pivot) * (fittedScale - 1.0)).toFloat()
+        if (translation >= 0f && maximum < 0f || translation <= 0f && minimum > 0f) {
+            // Stretch cannot force the control against the finger, or move it with zero input.
+            // Only the offending extra scale yields; roomy frames keep their original response.
+            val delta = fittedScale.toDouble() - 1.0
+            var fraction = 1.0
+            val leadingGrowth = pivot * delta
+            val trailingGrowth = (size.toDouble() - pivot) * delta
+            if (translation <= 0f && leadingGrowth > 0.0) fraction = minOf(fraction, leading / leadingGrowth)
+            if (translation >= 0f && trailingGrowth > 0.0) fraction = minOf(fraction, trailing / trailingGrowth)
+            fittedScale = (1.0 + delta * fraction).toFloat()
+            minimum = (-leading.toDouble() - pivot * (1.0 - fittedScale)).toFloat()
+            maximum = (trailing.toDouble() - (size.toDouble() - pivot) * (fittedScale - 1.0)).toFloat()
+            if (translation >= 0f && maximum < 0f || translation <= 0f && minimum > 0f) {
+                fittedScale = Math.nextAfter(fittedScale, 1.0)
+                minimum = (-leading.toDouble() - pivot * (1.0 - fittedScale)).toFloat()
+                maximum = (trailing.toDouble() - (size.toDouble() - pivot) * (fittedScale - 1.0)).toFloat()
+            }
+        }
         if (minimum.isNaN() || maximum.isNaN() || minimum > maximum) return
         val fittedTranslation = translation.coerceIn(minimum, maximum)
         if (!fittedTranslation.isFinite()) return

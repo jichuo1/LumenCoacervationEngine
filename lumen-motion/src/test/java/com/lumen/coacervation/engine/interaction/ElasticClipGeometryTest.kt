@@ -89,6 +89,33 @@ class ElasticClipGeometryTest {
         }
     }
 
+    @Test fun `bottom stretch cannot turn downward travel upward`() {
+        ElasticClipGeometry.fitAxis(14.56f, 1f + 2.5f / 600f, 600f, 300f, 80f, 0f, out)
+        assertEquals(0f, out.x, 0f)
+        assertEquals(1f, out.y, 0f)
+        ElasticClipGeometry.fitAxis(-14.56f, 1f + 2.5f / 600f, 600f, 300f, 80f, 0f, out)
+        assertEquals(-14.56f, out.x, 0f)
+        assertEquals(1f + 2.5f / 600f, out.y, 0f)
+    }
+
+    @Test fun `zero input never becomes a clip compensation and signed input never reverses`() {
+        for (size in listOf(40f, 300f, 1600f)) for (pivot in listOf(-24f, 0f, size / 2, size, size + 24f)) {
+            for (leading in listOf(0f, 4f, 24f)) for (trailing in listOf(0f, 4f, 24f)) {
+                for (translation in listOf(-30f, -1f, 0f, 1f, 30f)) for (scale in listOf(.98f, 1f, 1.02f, 1.1f)) {
+                    ElasticClipGeometry.fitAxis(translation, scale, size, pivot, leading, trailing, out)
+                    assertTrue("Input $translation became ${out.x}", when {
+                        translation > 0 -> out.x >= 0f
+                        translation < 0 -> out.x <= 0f
+                        else -> out.x == 0f
+                    })
+                    val left = out.x + pivot * (1f - out.y)
+                    assertTrue("left=$left", left >= -leading - .001f)
+                    assertTrue("right=${left + size * out.y}", left + size * out.y <= size + trailing + .001f)
+                }
+            }
+        }
+    }
+
     @Test fun `fitted edges stay contained across drag and spring overshoot`() {
         for (size in listOf(40f, 300f, 1600f)) {
             for (pivot in listOf(0f, size / 2, size)) {

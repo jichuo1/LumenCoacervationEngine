@@ -13,9 +13,11 @@ import android.view.SurfaceView
 import android.view.TextureView
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.ScrollView
 import androidx.core.widget.NestedScrollView
 import com.lumen.coacervation.engine.liquid.LiquidStretchViewport
+import com.lumen.coacervation.engine.motion.pager.LumenPagePager
 import com.lumen.coacervation.engine.widget.LumenSlidingSelection
 import kotlin.math.roundToInt
 
@@ -32,6 +34,7 @@ internal class ElasticOverflowPortal private constructor(
     private val visibleBounds: Rect,
     private val sourceOutline: Path?,
     private val backdropOutline: Path?,
+    private val pageOwner: LumenPagePager?,
     private val clipStamps: List<ClipStamp>,
     private val geometryValid: () -> Boolean,
     onFailure: () -> Unit
@@ -43,12 +46,19 @@ internal class ElasticOverflowPortal private constructor(
     private val nativeRectangle = RectF()
     private val rectangularNativeClip = nativeClip.isRect(nativeRectangle)
     private val failureReceipt = Runnable(onFailure)
+    private var pageObserver: ViewTreeObserver? = null
+    private val pagePreDraw = ViewTreeObserver.OnPreDrawListener {
+        if (!geometryValid()) fail()
+        true
+    }
 
     fun bridgesClip(view: View): Boolean = bridged.any { it === view }
-    fun bridgesPanelPadding(view: View): Boolean = view === host
+    fun bridgesPanelPadding(view: View): Boolean = pageOwner == null && view === host
     fun copyVisibleBounds(out: Rect) { out.set(visibleBounds) }
 
     fun ownedClipsValid(): Boolean {
+        if (pageOwner != null && (!pageOwner.isSettled ||
+                pageOwner.getChildAt(pageOwner.selectedPage) !== host)) return false
         val expected = baselineCrop.takeIf { attached }
         fun matches(view: View): Boolean = if (expected == null) !view.getClipBounds(clipProbe)
             else view.getClipBounds(clipProbe) && clipProbe == expected
@@ -72,9 +82,15 @@ internal class ElasticOverflowPortal private constructor(
         setBounds(0, 0, host.width, host.height)
         host.overlay.add(this)
         attached = true
+        if (pageOwner != null) host.viewTreeObserver.takeIf { it.isAlive }?.let {
+            pageObserver = it
+            it.addOnPreDrawListener(pagePreDraw)
+        }
     }
 
     fun detach() {
+        pageObserver?.takeIf { it.isAlive }?.removeOnPreDrawListener(pagePreDraw)
+        pageObserver = null
         if (attached) {
             host.overlay.remove(this)
             if (baselineCrop != null) {
@@ -199,8 +215,18 @@ internal class ElasticOverflowPortal private constructor(
             val ancestors = ArrayList<View>()
             var node = source.parent as? View ?: return null
             var host: ViewGroup? = null
+            var pageOwner: LumenPagePager? = null
             while (ancestors.size < 32 && node !== root) {
                 if (node.tag == ElasticInteractionController.CONTAINER_TAG) { host = node as? ViewGroup; break }
+                val pager = node.parent as? LumenPagePager
+                if (pager != null) {
+                    // The resting selected page is the hard outer clip, never the whole pager/window.
+                    if (node !is LiquidStretchViewport || !pager.isSettled ||
+                        pager.getChildAt(pager.selectedPage) !== node || node.samplingOverscroll != 0f) return null
+                    host = node
+                    pageOwner = pager
+                    break
+                }
                 if (!plain(node)) return null
                 if (ElasticClipPolicy.isViewport(node)) {
                     if (node is LiquidStretchViewport) {
@@ -212,7 +238,8 @@ internal class ElasticOverflowPortal private constructor(
                 node = node.parent as? View ?: return null
             }
             val panel = host ?: return null
-            if (panel.paddingLeft <= 0 || panel.paddingRight <= 0 || panel.width <= 0 || panel.height <= 0 ||
+            if (pageOwner == null && (panel.paddingLeft <= 0 || panel.paddingRight <= 0) ||
+                panel.width <= 0 || panel.height <= 0 ||
                 panel.scrollX != 0 || panel.scrollY != 0 || !plain(panel)) return null
 
             val outline = Outline()
@@ -313,7 +340,7 @@ internal class ElasticOverflowPortal private constructor(
                 crop = candidate
             }
             return ElasticOverflowPortal(source, backdrop, panel, ancestors, sourceLeft, sourceTop, native, crop, candidate,
-                sourceShape, backdropShape, stamps,
+                sourceShape, backdropShape, pageOwner, stamps,
                 { geometryValid() && selection?.overflowBackdrop(source) === backdrop }, onFailure)
         }
     }
