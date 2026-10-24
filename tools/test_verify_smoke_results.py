@@ -15,7 +15,7 @@ SPEC.loader.exec_module(VERIFIER)
 
 VISUAL_HELPER_CLASSES = ("MicaPreparerIntegrationTest", "DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
                          "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest", "SurfaceSourceFrameClipTest",
-                         "PrismIntegrationTest")
+                         "PrismIntegrationTest", "ExpandedAccordionHeaderTest")
 
 
 class SmokeResultsTest(unittest.TestCase):
@@ -57,6 +57,20 @@ class SmokeResultsTest(unittest.TestCase):
     def test_complete_matrix_result_is_accepted(self):
         self.assertTrue(self.check())
 
+    def test_expanded_headers_are_required_and_liquid_follows_the_api33_boundary(self):
+        owner = VERIFIER.PREFIX + "ExpandedAccordionHeaderTest"
+        liquid = (owner, "liquidExpandedHeadersKeepFourDirectionsAndHiddenPixels")
+        for api in (27, 31, 33, 34):
+            for name in VERIFIER.REQUIRED[owner]:
+                with self.subTest(api=api, name=name):
+                    self.assertFalse(self.check(api=api, omit=(owner, name)))
+            with self.subTest(api=api, liquid=True):
+                self.assertEqual(api >= 33, liquid in VERIFIER.required_tests(api))
+                self.assertEqual(api < 33, self.check(api=api, omit=liquid))
+                if api >= 33:
+                    for problem in ("failure", "error", "skipped"):
+                        self.assertFalse(self.check(api=api, problem=problem, problem_key=liquid))
+
     def test_min_sdk_does_not_require_gpu_test(self):
         self.assertTrue(self.check(api=27))
 
@@ -73,6 +87,8 @@ class SmokeResultsTest(unittest.TestCase):
                 registered.add(VERIFIER.FRAME_CLIP_GPU_TEST[1])
             elif owner == "PrismIntegrationTest":
                 registered.add(VERIFIER.PRISM_GPU_TEST[1])
+            elif owner == "ExpandedAccordionHeaderTest":
+                registered.add("liquidExpandedHeadersKeepFourDirectionsAndHiddenPixels")
             with self.subTest(owner=owner):
                 self.assertTrue(actual)
                 self.assertEqual(actual, registered)

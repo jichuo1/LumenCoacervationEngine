@@ -34,6 +34,7 @@ internal class ElasticOverflowPortal private constructor(
     private val visibleBounds: Rect,
     private val sourceOutline: Path?,
     private val backdropOutline: Path?,
+    val pageCropEdges: Int,
     private val pageOwner: LumenPagePager?,
     private val clipStamps: List<ClipStamp>,
     private val geometryValid: () -> Boolean,
@@ -326,6 +327,16 @@ internal class ElasticOverflowPortal private constructor(
             var crop: Rect? = null
             val visibleBounds = RectF()
             visible.computeBounds(visibleBounds, true)
+            // Only a resting, rectangular page can carry an already cropped group. The source
+            // keeps its owned crop and the page/window keep their actual clips while it moves.
+            val pageCropEdges = if (pageOwner != null && !panel.clipToOutline &&
+                panel.paddingLeft == 0 && panel.paddingTop == 0 && panel.paddingRight == 0 && panel.paddingBottom == 0) {
+                val left = sourceLeft + source.translationX
+                val top = sourceTop + source.translationY
+                ElasticClipGeometry.pageCropEdges(left, top, left + source.width, top + source.height,
+                    visibleBounds.left, visibleBounds.top, visibleBounds.right, visibleBounds.bottom,
+                    panel.width.toFloat(), panel.height.toFloat())
+            } else 0
             visibleBounds.offset(-sourceLeft - source.translationX, -sourceTop - source.translationY)
             val candidate = Rect(visibleBounds.left.roundToInt(), visibleBounds.top.roundToInt(),
                 visibleBounds.right.roundToInt(), visibleBounds.bottom.roundToInt())
@@ -340,7 +351,7 @@ internal class ElasticOverflowPortal private constructor(
                 crop = candidate
             }
             return ElasticOverflowPortal(source, backdrop, panel, ancestors, sourceLeft, sourceTop, native, crop, candidate,
-                sourceShape, backdropShape, pageOwner, stamps,
+                sourceShape, backdropShape, if (crop != null) pageCropEdges else 0, pageOwner, stamps,
                 { geometryValid() && selection?.overflowBackdrop(source) === backdrop }, onFailure)
         }
     }

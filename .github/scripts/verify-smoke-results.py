@@ -6,6 +6,14 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "ExpandedAccordionHeaderTest": {
+        "expandedHeadersKeepFourDirectionsAndTheirExistingPageCrop",
+        "collapsedAndRoomyExpandedHeadersKeepTheirResponse",
+        "aTighterOuterClipStillConstrainsAnAlreadyPageCroppedCard",
+        "regrabbingAndLeavingThePageReleaseTheHeaderCropWithoutRevivingIt",
+        "invalidationPreservesAForeignCropWhileRestoringTheHeldTransform",
+        "aDifferentChildUnderTheScaledCardDoesNotInheritItsGesture",
+    },
     PREFIX + "InputOutlineScrollTest": {
         "longSingleLineInputKeepsItsOutlineAtBothSignedScrollOffsets",
         "longMultilineInputKeepsItsOutlineWhileTheCursorScrollsVertically",
@@ -187,6 +195,7 @@ PANEL_STRETCH_TESTS = {
 }
 P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")
 ENHANCED_GPU_TESTS = {
+    (PREFIX + "ExpandedAccordionHeaderTest", "liquidExpandedHeadersKeepFourDirectionsAndHiddenPixels"),
     (PREFIX + "LocalSurfaceIntegrationTest", "linearEnhancedGpuFadeHasUniformPixelCoverage"),
     (PREFIX + "NativeComposeIntegrationTest", "nativeEnhancedPressChangesPixelsAndUniformUpdatesKeepTheShaderCache"),
     (PREFIX + "EnhancedSurfaceIntegrationTest", "fusionPressAndLightCompileAndContinuousFramesDoNotBuildRenderEffects"),

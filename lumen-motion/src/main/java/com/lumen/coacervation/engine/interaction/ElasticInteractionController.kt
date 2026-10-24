@@ -601,6 +601,11 @@ public class ElasticInteractionController(
         visibleCrop.set(0, 0, groupWidth, groupHeight)
         overflowPortal?.copyVisibleBounds(visibleCrop)
         retainedClipGaps.fill(Float.POSITIVE_INFINITY)
+        val pageCropEdges = overflowPortal?.pageCropEdges ?: 0
+        fun retain(index: Int, edge: Int, gap: Float) {
+            retainedClipGaps[index] = minOf(retainedClipGaps[index],
+                ElasticClipGeometry.retainedGap(gap, pageCropEdges and edge != 0))
+        }
         roundedClipCount = 0
         freezeForOutline = false
         val original = lease?.original ?: return
@@ -625,10 +630,10 @@ public class ElasticInteractionController(
             }
             fun constrain(left: Float, top: Float, right: Float, bottom: Float,
                           horizontal: Boolean = true, vertical: Boolean = true) {
-                if (horizontal) retainedClipGaps[0] = minOf(retainedClipGaps[0], x + visibleCrop.left - left)
-                if (vertical) retainedClipGaps[1] = minOf(retainedClipGaps[1], y + visibleCrop.top - top)
-                if (horizontal) retainedClipGaps[2] = minOf(retainedClipGaps[2], right - x - visibleCrop.right)
-                if (vertical) retainedClipGaps[3] = minOf(retainedClipGaps[3], bottom - y - visibleCrop.bottom)
+                if (horizontal) retain(0, ElasticClipGeometry.CROP_LEFT, x + visibleCrop.left - left)
+                if (vertical) retain(1, ElasticClipGeometry.CROP_TOP, y + visibleCrop.top - top)
+                if (horizontal) retain(2, ElasticClipGeometry.CROP_RIGHT, right - x - visibleCrop.right)
+                if (vertical) retain(3, ElasticClipGeometry.CROP_BOTTOM, bottom - y - visibleCrop.bottom)
             }
             if (children || parent === root || parent is ElasticClipBoundary) {
                 constrain(0f, 0f, parent.width.toFloat(), parent.height.toFloat(),
@@ -838,8 +843,13 @@ public class ElasticInteractionController(
                 }
                 val childHit = hitTarget(child, point[0], point[1], resultPath, depth + 1)
                 if (childHit != null) {
-                    // A leased transform is safe only on the visual target, never above another one.
-                    if (childHit.view != null && (view.scaleX != 1f || view.scaleY != 1f)) return Hit(null)
+                    // A promoted header may regrab its own scaled group during release. A different
+                    // child group, foreign lease or unrelated scaled ancestor must still yield.
+                    if (childHit.view != null && (view.scaleX != 1f || view.scaleY != 1f)) {
+                        val owned = lease
+                        if (view !== target || owned == null || !leases.owns(view, owned) ||
+                            resolveMotionGroup(childHit.view, resultPath) !== view) return Hit(null)
+                    }
                     return childHit
                 }
             }

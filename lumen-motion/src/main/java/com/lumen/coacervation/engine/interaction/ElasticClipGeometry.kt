@@ -2,6 +2,34 @@ package com.lumen.coacervation.engine.interaction
 
 /** Fits the final drawn edges, including pivot stretch, inside retained clips. */
 internal object ElasticClipGeometry {
+    const val CROP_LEFT = 1
+    const val CROP_TOP = 2
+    const val CROP_RIGHT = 4
+    const val CROP_BOTTOM = 8
+
+    /** Both rectangles are in page coordinates, before rounding the owned source crop. */
+    fun pageCropEdges(left: Float, top: Float, right: Float, bottom: Float,
+                      visibleLeft: Float, visibleTop: Float, visibleRight: Float, visibleBottom: Float,
+                      pageWidth: Float, pageHeight: Float): Int {
+        if (!left.isFinite() || !top.isFinite() || !right.isFinite() || !bottom.isFinite() ||
+            !visibleLeft.isFinite() || !visibleTop.isFinite() || !visibleRight.isFinite() ||
+            !visibleBottom.isFinite() || !pageWidth.isFinite() || !pageHeight.isFinite() ||
+            right <= left || bottom <= top || pageWidth <= 0f || pageHeight <= 0f ||
+            visibleRight <= visibleLeft || visibleBottom <= visibleTop ||
+            visibleLeft < maxOf(left, 0f) || visibleTop < maxOf(top, 0f) ||
+            visibleRight > minOf(right, pageWidth) || visibleBottom > minOf(bottom, pageHeight)) return 0
+        var edges = 0
+        if (left < 0f && visibleLeft == 0f) edges = edges or CROP_LEFT
+        if (top < 0f && visibleTop == 0f) edges = edges or CROP_TOP
+        if (right > pageWidth && visibleRight == pageWidth) edges = edges or CROP_RIGHT
+        if (bottom > pageHeight && visibleBottom == pageHeight) edges = edges or CROP_BOTTOM
+        return edges
+    }
+
+    /** The fixed page already clips this side. A tighter outer crop remains authoritative. */
+    fun retainedGap(gap: Float, pageCropped: Boolean): Float =
+        if (pageCropped && gap >= 0f) Float.POSITIVE_INFINITY else gap
+
     fun roundedContains(left: Float, top: Float, right: Float, bottom: Float,
                         clipLeft: Float, clipTop: Float, clipRight: Float, clipBottom: Float,
                         radius: Float): Boolean {
