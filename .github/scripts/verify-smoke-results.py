@@ -6,6 +6,14 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "EngineWorkRegressionTest": {
+        "effectUpdatesPreservePixelsAndReportOnlyRequestedWork",
+        "dialogPositionWorkloadKeepsOtherWindowsValid",
+        "scopedHintsUseOneKnownWindowAndUnknownHintsKeepTheFullFallback",
+    },
+    PREFIX + "EffectConfigurationCacheTest": {
+        "cachesFollowAllFilmFieldsAndOnlyTheNormalizedGrainSeed",
+    },
     PREFIX + "ExpandedAccordionHeaderTest": {
         "expandedHeadersKeepFourDirectionsAndTheirExistingPageCrop",
         "collapsedAndRoomyExpandedHeadersKeepTheirResponse",
@@ -193,6 +201,10 @@ PANEL_STRETCH_TESTS = {
     (PREFIX + "PanelFlingHandoffTest", "fastFlingReboundsAndTouchTakesOwnership"),
     (PREFIX + "PanelStretchWindowIsolationTest", "dialogReboundDoesNotRerecordTheStationaryActivityBehindIt"),
 }
+LIQUID_IDLE_TESTS = {
+    (PREFIX + "EngineWorkRegressionTest", "realtimeIdleWorkloadKeepsTheFallbackProbe"),
+    (PREFIX + "EngineWorkRegressionTest", "idlePreferencesStayReleasedAcrossProbesAndPreserveAnExternalOwner"),
+}
 P2_GPU_TEST = (PREFIX + "P2IntegrationTest", "proceduralGeneratorsActuallyDrawAndDoNotRecompileForParticleFrames")
 ENHANCED_GPU_TESTS = {
     (PREFIX + "ExpandedAccordionHeaderTest", "liquidExpandedHeadersKeepFourDirectionsAndHiddenPixels"),
@@ -222,6 +234,7 @@ def required_tests(api):
         required.add(LINEAR_GPU_TEST)
         required.add(PRISM_GPU_TEST)
         required.update(PANEL_STRETCH_TESTS)
+        required.update(LIQUID_IDLE_TESTS)
     if api >= 33:
         required.update(ENHANCED_GPU_TESTS)
         required.add(P2_GPU_TEST)

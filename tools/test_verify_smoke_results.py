@@ -33,6 +33,7 @@ class SmokeResultsTest(unittest.TestCase):
                 keys.add(VERIFIER.LINEAR_GPU_TEST)
                 keys.add(VERIFIER.PRISM_GPU_TEST)
                 keys.update(VERIFIER.PANEL_STRETCH_TESTS)
+                keys.update(VERIFIER.LIQUID_IDLE_TESTS)
             if api >= 33:
                 keys.update(VERIFIER.ENHANCED_GPU_TESTS)
                 keys.add(VERIFIER.P2_GPU_TEST)
@@ -254,6 +255,12 @@ class SmokeResultsTest(unittest.TestCase):
     def test_absent_reports_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary, contextlib.redirect_stdout(io.StringIO()):
             self.assertFalse(VERIFIER.verify(Path(temporary), 34))
+
+    def test_liquid_idle_cases_are_required_from_api31_and_missing_cases_fail(self):
+        for key in VERIFIER.LIQUID_IDLE_TESTS:
+            self.assertNotIn(key, VERIFIER.required_tests(27))
+            self.assertIn(key, VERIFIER.required_tests(31))
+            self.assertFalse(self.check(api=31, omit=key))
 
 
 if __name__ == "__main__":

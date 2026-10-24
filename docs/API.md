@@ -8,6 +8,8 @@
 
 `LumenActivityDelegate.notifyPositionChanged(changedView: View)` 提供可选窗口提示；原有无参全窗口入口保持。未知范围使用全窗口兼容路径。
 
+`GlowEngine.notifyPositionChanged(changedView: View)` 的默认实现转发原有无参方法；旧实现无需补方法。仅 Liquid 在已知窗口上缩小入队范围，仍按完整矩阵及可见性判断刷新，不截取脏矩形。
+
 > 覆盖当前版本全部受兼容承诺保护的公开声明；各节标题注明引入版本。新增或改变公开声明时同步本文。
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。

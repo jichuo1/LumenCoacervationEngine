@@ -39,6 +39,7 @@
 | 文档 | 快照对象 |
 |---|---|
 | [MICA_BUILD_REVIEW_2026_10_15.md](MICA_BUILD_REVIEW_2026_10_15.md) | 云母审阅修复、构建／门禁性能基准，以及 API 37 的候选与基线设备失败对照 |
+| [RELEASE_1.5.4_REVIEW.md](RELEASE_1.5.4_REVIEW.md) | 性能报告复核、等价优化、刷新率自唤醒陷阱、二进制兼容与验证边界 |
 | [ASYNC_PREPARATION_REVIEW_2026_10_23.md](ASYNC_PREPARATION_REVIEW_2026_10_23.md) | 未发布异步 Mica 接口、源码契约索引、缓存正反验证与 API 37 定向设备记录 |
 | [RELEASE_1.5.2_REVIEW.md](RELEASE_1.5.2_REVIEW.md) | 屏幕圆角、自定义皮肤动画、异步预处理与门禁索引的发布审阅；替代前一阶段未发布状态 |
 | [RELEASE_1.5.3_REVIEW.md](RELEASE_1.5.3_REVIEW.md) | 长文本输入框描边、展开手风琴四向形变、当前页局部外溢及手势回归的发布审阅 |
