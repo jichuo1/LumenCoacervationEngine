@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import com.lumen.coacervation.engine.LumenEngine
 import com.lumen.coacervation.engine.effects.*
@@ -101,6 +102,7 @@ class EngineWorkRegressionTest {
         }
     }
 
+    @SdkSuppress(minSdkVersion = 31)
     @Test fun realtimeIdleWorkloadKeepsTheFallbackProbe() = withLiquid(true) { _, material, root ->
         val seconds = InstrumentationRegistry.getArguments().getString("lumen.workSeconds")?.toLongOrNull()?.coerceIn(3, 60) ?: 3L
         val deadline = SystemClock.uptimeMillis() + 8000
@@ -108,7 +110,7 @@ class EngineWorkRegressionTest {
         while (!snapshot.idle && SystemClock.uptimeMillis() < deadline) {
             SystemClock.sleep(50); snapshot = requireNotNullOnMain(material)
         }
-        assertTrue("A static realtime scene must reach idle", snapshot.idle)
+        assertTrue("A static realtime scene must reach idle: $snapshot", snapshot.idle)
         val before = snapshot
         SystemClock.sleep(seconds * 1000)
         val after = requireNotNullOnMain(material)
@@ -126,6 +128,54 @@ class EngineWorkRegressionTest {
         lateinit var result: LiquidWorkDiagnostics
         WindowRegressionCapture.main { result = requireNotNull(material.liquidWorkDiagnostics()) }
         return result
+    }
+
+    @SdkSuppress(minSdkVersion = 31)
+    @Test fun idlePreferencesStayReleasedAcrossProbesAndPreserveAnExternalOwner() = withLiquid(true) { activity, material, root ->
+        fun idle(): LiquidWorkDiagnostics {
+            val deadline = SystemClock.uptimeMillis() + 8000
+            var result = requireNotNullOnMain(material)
+            while (!result.idle && SystemClock.uptimeMillis() < deadline) {
+                SystemClock.sleep(20); result = requireNotNullOnMain(material)
+            }
+            assertTrue("Static sampling must release its preference: $result", result.idle)
+            return result
+        }
+        val before = idle()
+        WindowRegressionCapture.main {
+            assertEquals(0f, activity.window.attributes.preferredRefreshRate, .01f)
+            assertEquals(0, activity.window.attributes.preferredDisplayModeId)
+        }
+        SystemClock.sleep(2600)
+        val probes = idle()
+        assertTrue(probes.idleProbeWakeups > before.idleProbeWakeups)
+        assertEquals("Unchanged probes must not configure Hz", before.refreshConfigureCalls, probes.refreshConfigureCalls)
+        assertEquals("Unchanged probes must not restore Hz again", before.refreshRestoreCalls, probes.refreshRestoreCalls)
+        assertEquals("Unchanged probes must not write attributes", before.windowPreferenceWrites, probes.windowPreferenceWrites)
+        WindowRegressionCapture.main { root.invalidate() }
+        WindowRegressionCapture.frame(root)
+        assertTrue("A draw must reapply the current target", requireNotNullOnMain(material).refreshConfigureCalls > probes.refreshConfigureCalls)
+        // A different owner may update the preference while Liquid is active. Restore only our values.
+        WindowRegressionCapture.main {
+            val attributes = activity.window.attributes
+            attributes.preferredRefreshRate = 37f
+            attributes.preferredDisplayModeId = 0
+            activity.window.attributes = attributes
+        }
+        idle()
+        WindowRegressionCapture.main {
+            assertEquals(37f, activity.window.attributes.preferredRefreshRate, .01f)
+            material.onStop()
+        }
+        val stopped = requireNotNullOnMain(material)
+        SystemClock.sleep(1300)
+        assertEquals(stopped.captureRequests, requireNotNullOnMain(material).captureRequests)
+        WindowRegressionCapture.main {
+            assertEquals(37f, activity.window.attributes.preferredRefreshRate, .01f)
+            material.onStart()
+        }
+        idle()
+        WindowRegressionCapture.main { assertEquals(37f, activity.window.attributes.preferredRefreshRate, .01f) }
     }
 
     private fun withLiquid(realtime: Boolean, check: (SurfaceSandboxActivity, LumenActivityDelegate, FrameLayout) -> Unit) {

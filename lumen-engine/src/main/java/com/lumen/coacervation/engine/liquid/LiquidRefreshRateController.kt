@@ -24,6 +24,9 @@ internal class LiquidRefreshRateController(
     var frameIntervalNanos: Long = LiquidRealtimeCapturePolicy.frameIntervalNanos(60f)
         private set
     private var targetRefreshRate = 60f
+    private val activityState = LiquidRefreshActivity()
+    val idle: Boolean get() = activityState.phase == LiquidRefreshActivity.Phase.IDLE
+    val probing: Boolean get() = activityState.phase == LiquidRefreshActivity.Phase.PROBING
     var configureCalls = 0L
         private set
     var restoreCalls = 0L
@@ -75,6 +78,8 @@ internal class LiquidRefreshRateController(
             ?: thermalLimited
         frameIntervalNanos = LiquidRealtimeCapturePolicy.frameIntervalNanos(targetRefreshRate)
         performance?.updateTargetWorkDuration(frameIntervalNanos)
+        // Thermal updates may change sampling cadence while idle/probing, but must not reacquire Hz.
+        if (activityState.phase != LiquidRefreshActivity.Phase.ACTIVE) return
         val attributes = activity.window.attributes
         if (originalPreferredRefreshRate == null) {
             originalPreferredRefreshRate = attributes.preferredRefreshRate
@@ -98,6 +103,26 @@ internal class LiquidRefreshRateController(
 
     /** 失败、相同截图、缓冲重建、热状态变化：旧样本不再代表当前的稳态吞吐。 */
     fun resetThroughput() = throughput.reset()
+
+    fun enterIdle() {
+        if (activityState.enterIdle()) {
+            val writesBefore = preferenceWrites
+            restore()
+            activityState.preferenceRestored(preferenceWrites != writesBefore)
+        }
+    }
+
+    fun consumeRestoredDraw(): Boolean = activityState.consumeRestoredDraw()
+
+    fun beginProbe(): Boolean = activityState.beginProbe()
+
+    fun wake(root: View?) {
+        if (!activityState.wake()) return
+        resetThroughput()
+        if (root != null) configure(root)
+    }
+
+    fun resetIdle() = activityState.reset()
 
     /** 新前台会话重新从设备最高档开始探测；只降不升的策略靠会话边界自愈。 */
     fun resetSession() {

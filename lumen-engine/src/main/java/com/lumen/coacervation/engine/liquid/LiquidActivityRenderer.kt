@@ -292,7 +292,7 @@ internal class LiquidActivityRenderer(
      * 静止时不挂逐帧回调、不发 PixelCopy、不重画玻璃；窗口任何一次绘制（[realtimeDrawListener]）
      * 或每秒一次的兜底探测（[realtimeIdleProbe]）把它唤醒。
      */
-    private var realtimeIdle = false
+    private val realtimeIdle: Boolean get() = refreshRate.idle
     private var identicalCaptureStreak = 0
     private var positionNotifications = 0L
     private var windowsQueued = 0L
@@ -312,7 +312,10 @@ internal class LiquidActivityRenderer(
     )
 
     private val realtimeDrawListener = ViewTreeObserver.OnDrawListener {
-        if (realtimeIdle) leaveRealtimeIdle(LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES)
+        if (realtimeIdle || refreshRate.probing) {
+            leaveRealtimeIdle(LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES,
+                probe = refreshRate.consumeRestoredDraw())
+        }
     }
     /**
      * 主窗口失去焦点（面板、确认框等弹窗盖在上面）期间不发 PixelCopy。
@@ -337,7 +340,7 @@ internal class LiquidActivityRenderer(
         idleProbeWakeups++
         // 探测只需再确认一张：相同就立刻回到静止，不必重新攒两张。
         identicalCaptureStreak = LiquidRealtimeCapturePolicy.IDLE_CONFIRMATIONS - 1
-        leaveRealtimeIdle(settleFrames = 0)
+        leaveRealtimeIdle(settleFrames = 0, probe = true)
     }
 
 
@@ -1373,6 +1376,9 @@ internal class LiquidActivityRenderer(
     override fun notifyGestureActive(active: Boolean) {
         if (closed) return
         gestureActiveSinceNanos = if (active) System.nanoTime() else 0L
+        if (active && activityVisible && !windowObscured && !realtimeCaptureSuspended &&
+            effectProfile == LiquidEffectProfile.REALTIME_CAPTURE && (realtimeIdle || refreshRate.probing)
+        ) leaveRealtimeIdle(LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES)
     }
 
     private fun gestureHoldsRelease(now: Long): Boolean {
@@ -1684,7 +1690,7 @@ internal class LiquidActivityRenderer(
 
     private fun enterRealtimeIdle() {
         if (realtimeIdle) return
-        realtimeIdle = true
+        refreshRate.enterIdle()
         removeRealtimeFrameCallback()
         mainHandler.removeCallbacks(realtimeIdleProbe)
         mainHandler.postDelayed(realtimeIdleProbe, LiquidRealtimeCapturePolicy.IDLE_PROBE_MS)
@@ -1694,9 +1700,15 @@ internal class LiquidActivityRenderer(
      * 离开静止并排一次采集。[settleFrames] 帧之后才截：由窗口绘制唤醒时，触发唤醒的那一帧
      * 此刻可能还没合成，立刻截会截到旧帧、被误判为"没变"。
      */
-    private fun leaveRealtimeIdle(settleFrames: Int) {
-        if (!realtimeIdle) return
-        realtimeIdle = false
+    private fun leaveRealtimeIdle(settleFrames: Int, probe: Boolean = false) {
+        if (probe) {
+            if (!refreshRate.beginProbe() && !refreshRate.probing) return
+            // A preference-only draw may arrive after the timer already submitted its probe.
+            if (realtimeCaptureInFlight != null) captureRequests.invalidate()
+        } else {
+            if (!realtimeIdle && !refreshRate.probing) return
+            wakeRealtimeRefresh()
+        }
         mainHandler.removeCallbacks(realtimeIdleProbe)
         realtimeNextCaptureNanos = System.nanoTime() + settleFrames * refreshRate.frameIntervalNanos
         postRealtimeFrameCallback()
@@ -1704,9 +1716,20 @@ internal class LiquidActivityRenderer(
 
     /** 生命周期边界（停止/挂起/关闭）：静止状态与探测一并清掉，恢复时从头采集。 */
     private fun resetRealtimeIdle() {
-        realtimeIdle = false
+        if (!closed && activityVisible && !realtimeCaptureSuspended) wakeRealtimeRefresh()
+        else refreshRate.resetIdle()
         identicalCaptureStreak = 0
         mainHandler.removeCallbacks(realtimeIdleProbe)
+    }
+
+    private fun wakeRealtimeRefresh() {
+        if (refreshRate.probing) {
+            // The real draw can precede composition. A probe already in flight cannot put it back to idle.
+            // Invalidation keeps its single-flight lease until the actual callback releases the buffers.
+            captureRequests.invalidate()
+            identicalCaptureStreak = 0
+        }
+        refreshRate.wake(boundRoot)
     }
 
     private fun onRealtimeFrame(frameTimeNanos: Long) {
@@ -1825,6 +1848,8 @@ internal class LiquidActivityRenderer(
                         return
                     }
                     identicalCaptureStreak = 0
+                    // A changed fallback probe becomes active only after current-ticket validation above.
+                    refreshRate.wake(root)
                     // 位图刚被改写，立刻提示 HWUI 预上传纹理；否则上传会推迟到下一帧 draw 中间，
                     // 变成 RenderThread 上的一次同步停顿。每帧一张约 3.81 MiB 的实时缓冲。
                     runCatching { captureSource.bitmap.prepareToDraw() }
