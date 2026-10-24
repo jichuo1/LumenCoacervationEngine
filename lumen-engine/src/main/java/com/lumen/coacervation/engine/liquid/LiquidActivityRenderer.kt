@@ -1291,6 +1291,19 @@ internal class LiquidActivityRenderer(
         queueSurfaceRefresh(contentChanged = false)
     }
 
+    @MainThread
+    override fun notifyPositionChanged(changedView: View) {
+        if (closed) return
+        val windowRoot = if (changedView.isAttachedToWindow) changedView.rootView else null
+        if (windowRoot == null || !windowRoot.isAttachedToWindow || !refreshWindows.containsKey(windowRoot)) {
+            notifyPositionChanged()
+            return
+        }
+        positionNotifications++
+        if (windowRoot === boundRoot?.rootView) lastContentShiftNanos = System.nanoTime()
+        queueSurfaceRefresh(contentChanged = false, windowRoot = windowRoot)
+    }
+
     /** Scroll offsets may advance in computeScroll, after the window's pre-draw already ran. */
     @MainThread
     override fun notifyScrollPositionChanged(scrollHost: View) {
@@ -1496,8 +1509,16 @@ internal class LiquidActivityRenderer(
         }
     }
 
-    private fun queueSurfaceRefresh(contentChanged: Boolean, captureOnly: Boolean = false) {
+    private fun queueSurfaceRefresh(contentChanged: Boolean, captureOnly: Boolean = false, windowRoot: View? = null) {
         if (closed) return
+        if (windowRoot != null) {
+            val state = refreshWindows[windowRoot] ?: return
+            if (!windowRoot.isAttachedToWindow) {
+                removeRefreshWindow(state)
+                refreshWindows.remove(windowRoot)
+            } else markWindowRefresh(windowRoot, state, contentChanged, captureOnly)
+            return
+        }
         val iterator = refreshWindows.entries.iterator()
         while (iterator.hasNext()) {
             val (root, state) = iterator.next()
@@ -1505,12 +1526,16 @@ internal class LiquidActivityRenderer(
                 removeRefreshWindow(state)
                 iterator.remove()
             } else {
-                windowsQueued++
-                if (state.batch.mark(contentChanged, captureOnly) && contentChanged && root.isShown) {
-                    // New source pixels need a draw. Position owners already schedule their own frame.
-                    triggerSurfaceFrame(root, captureOnly)
-                }
+                markWindowRefresh(root, state, contentChanged, captureOnly)
             }
+        }
+    }
+
+    private fun markWindowRefresh(root: View, state: LiquidWindowRefresh, contentChanged: Boolean, captureOnly: Boolean) {
+        windowsQueued++
+        if (state.batch.mark(contentChanged, captureOnly) && contentChanged && root.isShown) {
+            // New source pixels need a draw. Position owners already schedule their own frame.
+            triggerSurfaceFrame(root, captureOnly)
         }
     }
 

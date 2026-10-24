@@ -130,6 +130,39 @@ class EngineWorkRegressionTest {
         return result
     }
 
+    @Test fun scopedHintsUseOneKnownWindowAndUnknownHintsKeepTheFullFallback() = withLiquid(false) { activity, material, root ->
+        lateinit var dialog: Dialog
+        lateinit var dialogRoot: FrameLayout
+        WindowRegressionCapture.main {
+            dialogRoot = FrameLayout(activity).apply {
+                addView(View(activity).apply { background = material.cardBackground(Color.WHITE, 8f) }, FrameLayout.LayoutParams(180, 90))
+            }
+            dialog = Dialog(activity).apply { setContentView(dialogRoot); show() }
+        }
+        try {
+            WindowRegressionCapture.frame(dialogRoot)
+            WindowRegressionCapture.main {
+                fun visits(expected: Long, action: () -> Unit) {
+                    val before = requireNotNull(material.liquidWorkDiagnostics())
+                    action()
+                    val after = requireNotNull(material.liquidWorkDiagnostics())
+                    assertEquals(1L, after.positionNotifications - before.positionNotifications)
+                    assertEquals(expected, after.windowsQueued - before.windowsQueued)
+                }
+                visits(1) { material.notifyPositionChanged(dialogRoot) }
+                visits(1) { material.notifyPositionChanged(root) }
+                visits(2) { material.notifyPositionChanged(View(activity)) }
+                visits(2) { material.notifyPositionChanged() }
+            }
+        } finally { WindowRegressionCapture.main { dialog.dismiss() } }
+        WindowRegressionCapture.frame(root)
+        WindowRegressionCapture.main {
+            val before = requireNotNull(material.liquidWorkDiagnostics())
+            material.notifyPositionChanged(dialogRoot)
+            assertEquals(1L, requireNotNull(material.liquidWorkDiagnostics()).windowsQueued - before.windowsQueued)
+        }
+    }
+
     @SdkSuppress(minSdkVersion = 31)
     @Test fun idlePreferencesStayReleasedAcrossProbesAndPreserveAnExternalOwner() = withLiquid(true) { activity, material, root ->
         fun idle(): LiquidWorkDiagnostics {

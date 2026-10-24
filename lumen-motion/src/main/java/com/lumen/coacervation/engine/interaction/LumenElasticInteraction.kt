@@ -61,7 +61,7 @@ public class LumenElasticInteraction(
         if (disposed) return superDispatch(event)
         val controller = windowController ?: ElasticInteractionController(
             root = activity.window.decorView,
-            notifyPositionChanged = { lumen.notifyPositionChanged() },
+            notifyPositionChanged = { changedView -> lumen.notifyPositionChanged(changedView) },
             isExcluded = isExcluded,
             highlightColor = lumen.palette.primary,
             effectTuning = effectTuning,
@@ -90,7 +90,7 @@ public class LumenElasticInteraction(
         dialogInteractions[window]?.let { return it.release }
         val original = window.callback ?: return {}
         val controller = ElasticInteractionController(window.decorView,
-            notifyPositionChanged = { lumen.notifyPositionChanged() },
+            notifyPositionChanged = { changedView -> lumen.notifyPositionChanged(changedView) },
             isExcluded = isExcluded,
             highlightColor = lumen.palette.primary,
             effectTuning = effectTuning,

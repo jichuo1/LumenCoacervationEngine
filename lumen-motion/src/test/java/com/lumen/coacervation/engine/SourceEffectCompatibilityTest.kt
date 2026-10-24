@@ -73,6 +73,8 @@ class SourceEffectCompatibilityTest {
         assertTrue(wrapper.contains("windowController?.travelPolicy = value"))
         assertTrue(wrapper.contains("dialogInteractions.values.forEach { it.controller.travelPolicy = value }"))
         assertTrue(wrapper.contains("it.travelPolicy = travelPolicy"))
+        assertEquals("Activity and Dialog must both retain the moved View", 2,
+            Regex(Regex.escape("notifyPositionChanged = { changedView -> lumen.notifyPositionChanged(changedView) }")).findAll(wrapper).count())
         val signature = wrapper.after("public class LumenElasticInteraction(").before(") {")
         assertFalse(signature.contains("travelPolicy"))
     }

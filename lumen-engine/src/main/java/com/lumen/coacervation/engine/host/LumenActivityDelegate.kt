@@ -133,8 +133,8 @@ public class LumenActivityDelegate @JvmOverloads constructor(
     }
 
     /** Optional window hint; unscoped notification remains the compatibility fallback. */
-    public fun notifyPositionChanged(@Suppress("UNUSED_PARAMETER") changedView: View) {
-        notifyPositionChanged()
+    public fun notifyPositionChanged(changedView: View) {
+        if (!lifecycleEnded) session?.notifyPositionChanged(changedView)
     }
 
     /**

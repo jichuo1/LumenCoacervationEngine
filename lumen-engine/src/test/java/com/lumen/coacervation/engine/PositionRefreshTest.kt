@@ -64,17 +64,40 @@ class PositionRefreshTest {
 
     @Test fun contentRefreshTriggersTraversalThroughOneVisibleSurfaceNotTheWholeWindow() {
         val renderer = source("liquid/LiquidActivityRenderer")
-        val queue = function(renderer, "private fun queueSurfaceRefresh(contentChanged: Boolean, captureOnly: Boolean = false)")
+        val queue = function(renderer, "private fun queueSurfaceRefresh(contentChanged: Boolean, captureOnly: Boolean = false, windowRoot: View? = null)")
+        val mark = function(renderer, "private fun markWindowRefresh(root: View, state: LiquidWindowRefresh, contentChanged: Boolean, captureOnly: Boolean)")
         // 整窗 root.invalidate() 会把每个 View 的 display list 标脏重录；
         // 滚动期 PixelCopy 完成与回弹期强度步进每秒数十次走到这里。
         assertFalse(queue.contains("root.invalidate()"))
-        assertTrue(queue.contains("triggerSurfaceFrame(root, captureOnly)"))
+        assertTrue(queue.contains("markWindowRefresh(windowRoot, state, contentChanged, captureOnly)"))
+        assertTrue(queue.contains("markWindowRefresh(root, state, contentChanged, captureOnly)"))
+        assertFalse(mark.contains("root.invalidate()"))
+        assertTrue(mark.contains("state.batch.mark(contentChanged, captureOnly) && contentChanged && root.isShown"))
+        assertTrue(mark.contains("triggerSurfaceFrame(root, captureOnly)"))
         val trigger = function(renderer, "private fun triggerSurfaceFrame(windowRoot: View, captureOnly: Boolean)")
         assertTrue(trigger.contains("view.isShown"))
         assertTrue(trigger.contains("view.invalidate()"))
         // 损伤域必须收缩到表面矩形：flush 内的逐表面 invalidate 仍是唯一扩散点。
         val flush = function(renderer, "private fun flushSurfaceRefresh(windowRoot: View)")
         assertTrue(flush.contains("view.invalidate()"))
+    }
+
+    @Test fun scopedPositionHintsPreserveDefaultFallbackAndCurrentEngineDispatch() {
+        val renderer = source("liquid/LiquidActivityRenderer")
+        val scoped = function(renderer, "fun notifyPositionChanged(changedView: View)")
+        assertTrue(scoped.contains("if (closed) return"))
+        assertTrue(scoped.contains("changedView.isAttachedToWindow"))
+        assertTrue(scoped.contains("!refreshWindows.containsKey(windowRoot)"))
+        assertTrue(scoped.contains("notifyPositionChanged()"))
+        assertTrue(scoped.contains("windowRoot === boundRoot?.rootView"))
+        assertTrue(scoped.contains("queueSurfaceRefresh(contentChanged = false, windowRoot = windowRoot)"))
+        assertFalse(scoped.contains("suppressRealtimeSamplingWhileScrolling"))
+        assertFalse(scoped.contains("PixelCopy"))
+        assertTrue(source("glow/GlowEngine").contains("fun notifyPositionChanged(changedView: View) = notifyPositionChanged()"))
+        assertTrue(function(source("host/LumenActivityDelegate"), "fun notifyPositionChanged(changedView: View)")
+            .contains("if (!lifecycleEnded) session?.notifyPositionChanged(changedView)"))
+        assertTrue(function(source("runtime/ActivitySkinSession"), "fun notifyPositionChanged(changedView: View)")
+            .contains("if (!isClosed) activeEngine.notifyPositionChanged(changedView)"))
     }
 
     @Test fun originRefreshKeepsStationaryControlsIdleAndRefreshesHiddenPagesOnlyOnReentry() {

@@ -164,6 +164,11 @@ internal class ActivitySkinSession private constructor(
     }
 
     @MainThread
+    fun notifyPositionChanged(changedView: View) {
+        if (!isClosed) activeEngine.notifyPositionChanged(changedView)
+    }
+
+    @MainThread
     fun notifyScrollPositionChanged(scrollHost: View) {
         if (!isClosed) activeEngine.notifyScrollPositionChanged(scrollHost)
     }
