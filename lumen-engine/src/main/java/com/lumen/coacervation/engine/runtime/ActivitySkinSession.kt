@@ -89,6 +89,10 @@ internal class ActivitySkinSession private constructor(
     val liquidBackendName: String?
         get() = activeEngine.backendName
 
+    fun liquidWorkDiagnostics() = if (!isClosed && effectiveSkin == SkinId.LIQUID) {
+        liquidRenderer?.workDiagnostics()
+    } else null
+
     val liquidBackendDegradeReason: String?
         get() = activeEngine.backendDegradeReason
 

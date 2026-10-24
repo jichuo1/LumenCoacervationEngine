@@ -24,6 +24,12 @@ internal class LiquidRefreshRateController(
     var frameIntervalNanos: Long = LiquidRealtimeCapturePolicy.frameIntervalNanos(60f)
         private set
     private var targetRefreshRate = 60f
+    var configureCalls = 0L
+        private set
+    var restoreCalls = 0L
+        private set
+    var preferenceWrites = 0L
+        private set
 
     /** 实测采集吞吐；只统计连续成功完成之间的间隔，失败/熔断/重建/相同截图都会重置。 */
     private val throughput = LiquidCaptureThroughputTracker()
@@ -43,6 +49,7 @@ internal class LiquidRefreshRateController(
         thermalStatus: Int = performance?.currentThermalStatus
             ?: LiquidPerformancePolicy.THERMAL_STATUS_NONE
     ) {
+        configureCalls++
         val display = root.display ?: return
         val currentMode = display.mode
         val matchingModes = display.supportedModes.asSequence()
@@ -83,6 +90,7 @@ internal class LiquidRefreshRateController(
             attributes.preferredRefreshRate = targetRefreshRate
             attributes.preferredDisplayModeId = targetModeId
             activity.window.attributes = attributes
+            preferenceWrites++
         }
         appliedPreferredRefreshRate = targetRefreshRate
         appliedPreferredDisplayModeId = targetModeId
@@ -133,6 +141,7 @@ internal class LiquidRefreshRateController(
     /** 只还原自己申请过、且此刻仍是自己那个值的窗口属性。 */
     @Suppress("DEPRECATION")
     fun restore() {
+        restoreCalls++
         val applied = appliedPreferredRefreshRate ?: return
         val original = originalPreferredRefreshRate ?: return
         val attributes = activity.window.attributes
@@ -151,6 +160,7 @@ internal class LiquidRefreshRateController(
         }
         if (changed) {
             activity.window.attributes = attributes
+            preferenceWrites++
         }
         appliedPreferredRefreshRate = null
         originalPreferredRefreshRate = null

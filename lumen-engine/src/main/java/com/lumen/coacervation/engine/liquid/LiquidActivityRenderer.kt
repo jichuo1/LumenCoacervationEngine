@@ -294,6 +294,22 @@ internal class LiquidActivityRenderer(
      */
     private var realtimeIdle = false
     private var identicalCaptureStreak = 0
+    private var positionNotifications = 0L
+    private var windowsQueued = 0L
+    private var refreshPasses = 0L
+    private var surfaceVisits = 0L
+    private var surfaceInvalidations = 0L
+    private var nativeCaptureRequests = 0L
+    private var nativeCapturePixels = 0L
+    private var identicalCaptures = 0L
+    private var idleProbeWakeups = 0L
+
+    @MainThread
+    fun workDiagnostics(): LiquidWorkDiagnostics = LiquidWorkDiagnostics(
+        positionNotifications, windowsQueued, refreshPasses, surfaceVisits, surfaceInvalidations,
+        nativeCaptureRequests, nativeCapturePixels, identicalCaptures, idleProbeWakeups,
+        refreshRate.configureCalls, refreshRate.restoreCalls, refreshRate.preferenceWrites, realtimeIdle
+    )
 
     private val realtimeDrawListener = ViewTreeObserver.OnDrawListener {
         if (realtimeIdle) leaveRealtimeIdle(LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES)
@@ -318,6 +334,7 @@ internal class LiquidActivityRenderer(
     }
     private val realtimeIdleProbe = Runnable {
         if (!realtimeIdle) return@Runnable
+        idleProbeWakeups++
         // 探测只需再确认一张：相同就立刻回到静止，不必重新攒两张。
         identicalCaptureStreak = LiquidRealtimeCapturePolicy.IDLE_CONFIRMATIONS - 1
         leaveRealtimeIdle(settleFrames = 0)
@@ -1266,6 +1283,7 @@ internal class LiquidActivityRenderer(
      */
     @MainThread
     override fun notifyPositionChanged() {
+        positionNotifications++
         lastContentShiftNanos = System.nanoTime()
         queueSurfaceRefresh(contentChanged = false)
     }
@@ -1480,9 +1498,12 @@ internal class LiquidActivityRenderer(
             if (!root.isAttachedToWindow) {
                 removeRefreshWindow(state)
                 iterator.remove()
-            } else if (state.batch.mark(contentChanged, captureOnly) && contentChanged && root.isShown) {
-                // New source pixels need a draw. Position owners already schedule their own frame.
-                triggerSurfaceFrame(root, captureOnly)
+            } else {
+                windowsQueued++
+                if (state.batch.mark(contentChanged, captureOnly) && contentChanged && root.isShown) {
+                    // New source pixels need a draw. Position owners already schedule their own frame.
+                    triggerSurfaceFrame(root, captureOnly)
+                }
             }
         }
     }
@@ -1521,6 +1542,7 @@ internal class LiquidActivityRenderer(
         if (closed) return
         val changes = refreshWindows[windowRoot]?.batch?.take() ?: return
         if (changes == 0) return
+        refreshPasses++
         val contentChanged = LiquidRefreshBatch.anyContent(changes)
         // 位移门控：只有某个表面真的改了屏幕原点才算"内容位移"。点击、按键或
         // 零位移的滚动回调同样会走这条链路，若在此刻切底图，所有玻璃会在一次
@@ -1534,6 +1556,7 @@ internal class LiquidActivityRenderer(
         try {
             val surfaceIterator = surfaceViews.entries.iterator()
             while (surfaceIterator.hasNext()) {
+                surfaceVisits++
                 val entry = surfaceIterator.next()
                 val view = entry.key
                 if (!view.isAttachedToWindow) { surfaceIterator.remove(); continue }
@@ -1550,7 +1573,10 @@ internal class LiquidActivityRenderer(
                         originChanged = originChanged,
                         contentChanged = LiquidRefreshBatch.surfaceContentChanged(
                             changes, captureIndependent = isCaptureIndependent(view)
-                        ))) view.invalidate()
+                        ))) {
+                    surfaceInvalidations++
+                    view.invalidate()
+                }
             }
         } finally { refreshWindowRoot = null }
         // 抑制在 preDraw 内、draw 前生效：本帧被失效的位移表面重录时已经读到
@@ -1750,6 +1776,8 @@ internal class LiquidActivityRenderer(
             mainHandler.post { recipient.get()?.handleRealtimeCaptureResult(request, result) }
         }
         val requested = runCatching {
+            nativeCaptureRequests++
+            nativeCapturePixels += captureSource.bitmap.width.toLong() * captureSource.bitmap.height
             PixelCopy.request(
                 activity.window,
                 realtimeCaptureSourceRect,
@@ -1787,6 +1815,7 @@ internal class LiquidActivityRenderer(
                         samplingSuppressed = realtimeSamplingSuppressed
                     ) { request.sameAsBaseline }
                     if (unchanged) {
+                        identicalCaptures++
                         // 本张只是一次探测，不绑定、不重画。轮转退回这块缓冲：下一次探测继续写它
                         // ——它此刻没有被绑定，也就不会被任何显示列表引用，三缓冲的不变式不破。
                         realtimeCaptureNextIndex = realtimeCaptureSources.indexOf(captureSource)

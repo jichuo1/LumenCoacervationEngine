@@ -1,5 +1,13 @@
 # 公开 API 清单
 
+## 1.5.4 工作量诊断
+
+`LumenActivityDelegate.liquidWorkDiagnostics(): LiquidWorkDiagnostics?` 返回主线程按需创建的累计快照；未准备、会话关闭或实际回落到非 Liquid 时为 null。字段记录位移通知、已附着窗口的入队访问（包含合并）、实际刷新批次、批次遍历的表面项（包含其他窗口）、批次 invalidate 次数（不含初始触帧）、原生截图请求/像素、相同截图、每秒兜底探测唤醒、刷新率配置/恢复调用与窗口属性写入，以及查询时的 idle 状态。计数不代表实际屏幕 Hz、CPU/GPU 时间或功耗，不含 View、用户内容或来源路径。
+
+`LumenEffectLayer.workDiagnostics(): LumenEffectWorkDiagnostics` 返回累计 configure、grain 重算和 gradient 构建次数；查询不重置计数。它与既有 `LumenEffectDiagnostics` 分开，保留旧构造及 `copy` 的二进制签名。
+
+`LumenActivityDelegate.notifyPositionChanged(changedView: View)` 提供可选窗口提示；原有无参全窗口入口保持。未知范围使用全窗口兼容路径。
+
 > 覆盖当前版本全部受兼容承诺保护的公开声明；各节标题注明引入版本。新增或改变公开声明时同步本文。
 
 > **只有本文列出的声明受兼容承诺保护**（`VERSIONING.md`）。

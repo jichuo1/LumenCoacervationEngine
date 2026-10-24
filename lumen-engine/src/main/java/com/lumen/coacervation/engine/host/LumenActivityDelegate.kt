@@ -132,6 +132,11 @@ public class LumenActivityDelegate @JvmOverloads constructor(
         if (!lifecycleEnded) session?.notifyPositionChanged()
     }
 
+    /** Optional window hint; unscoped notification remains the compatibility fallback. */
+    public fun notifyPositionChanged(@Suppress("UNUSED_PARAMETER") changedView: View) {
+        notifyPositionChanged()
+    }
+
     /**
      * 在滚动容器实际更新 scrollX/Y 后调用，包含拖动、惯性和程序滚动。
      * 只同步刷新该容器后代中采样原点已过期的可见表面；零位移时不调用。
@@ -271,6 +276,10 @@ public class LumenActivityDelegate @JvmOverloads constructor(
 
     /** 只读诊断摘要，不暴露渲染器或 View。 */
     public fun diagnostics(): SkinSessionDiagnostics? = session?.diagnostics
+
+    /** Per-renderer work counters; null before preparation, after close or on non-Liquid fallback. */
+    public fun liquidWorkDiagnostics(): com.lumen.coacervation.engine.liquid.LiquidWorkDiagnostics? =
+        session?.liquidWorkDiagnostics()
 
     // ---------------- 生命周期转发 ----------------
 

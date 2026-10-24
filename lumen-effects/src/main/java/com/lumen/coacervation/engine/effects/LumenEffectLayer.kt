@@ -46,6 +46,7 @@ public class LumenEffectLayer @JvmOverloads constructor(view:View,options:LumenE
         host.get()?.invalidate();state=if(active())LumenEffectState.ACTIVE else if(drawable.shaderFailed)LumenEffectState.SHADER_FALLBACK else LumenEffectState.IDLE
     }
     public fun diagnostics():LumenEffectDiagnostics{if(!closed)checkMain();return LumenEffectDiagnostics(state,drawable.particles.live,drawable.frames,drawable.shaderBuilds,drawable.particles.dropped,scheduled,shaderFallback=drawable.shaderFailed)}
+    public fun workDiagnostics():LumenEffectWorkDiagnostics{if(!closed)checkMain();return LumenEffectWorkDiagnostics(drawable.configureCalls,drawable.grainRegenerations,drawable.gradientBuilds)}
     private fun active():Boolean=drawable.particles.live>0||energyBorn!=Long.MIN_VALUE
     private fun runningAllowed():Boolean{val v=host.get()?:return false;return !closed&&!paused&&visible&&v.width.toLong()*v.height<=options.maximumRenderPixels}
     private fun refresh(){if(closed)return;val v=host.get();val shown=v!=null&&v.isAttachedToWindow&&v.isShown&&(!options.pauseWhenUnfocused||v.hasWindowFocus())

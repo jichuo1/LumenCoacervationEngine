@@ -16,14 +16,19 @@ internal class EffectDrawable(private val density:Float):Drawable() {
     var phase=0f
     var frames=0L;private set
     var shaderBuilds=0L;private set
+    var configureCalls=0L;private set
+    var grainRegenerations=0L;private set
+    var gradientBuilds=0L;private set
     val shaderFailed get()=failed
     init{configure(options)}
     fun configure(value:LumenEffectOptions){
+        configureCalls++
         val reseed=value.seed!=options.seed;val particleChange=value.particles!=options.particles;options=value
         if(reseed)particles.reseed(value.seed)else if(particleChange)particles.clear()
         var seed=if(value.seed==0)1 else value.seed
         fun next():Float{seed=seed xor(seed shl 13);seed=seed xor(seed ushr 17);seed=seed xor(seed shl 5);return(seed ushr 8)/16777216f}
         for(i in 0..511){grainX[i]=next();grainY[i]=next();grainWeight[i]=next()-.5f}
+        grainRegenerations++
         val film=value.procedural.film;val base=value.procedural.color
         fun spectral(fraction:Float):Int{
             val optical=film.thicknessNm*(.4f+.6f*fraction);val amount=(film.iridescence*(1f-film.roughness*.7f)*film.intensity).coerceIn(0f,1f)
@@ -32,6 +37,7 @@ internal class EffectDrawable(private val density:Float):Drawable() {
         }
         val radians=film.angleDegrees*PI/180.0;val dx=cos(radians).toFloat();val dy=sin(radians).toFloat()
         gradient=LinearGradient(.5f-dx*.5f,.5f-dy*.5f,.5f+dx*.5f,.5f+dy*.5f,intArrayOf(spectral(0f),spectral(.5f),spectral(1f)),null,Shader.TileMode.CLAMP)
+        gradientBuilds++
         onBoundsChange(bounds);invalidateSelf()
     }
     override fun onBoundsChange(bounds:Rect){rectangle.set(bounds);clip.reset();val r=options.procedural.radiusDp*density;clip.addRoundRect(rectangle,r,r,Path.Direction.CW)
