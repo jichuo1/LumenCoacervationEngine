@@ -5,14 +5,16 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import kotlin.math.*
 
-internal class EffectDrawable(private val density:Float):Drawable() {
-    var options=LumenEffectOptions()
+internal class EffectDrawable(private val density:Float,initial:LumenEffectOptions=LumenEffectOptions()):Drawable() {
+    var options=initial
     val particles=ParticlePool(options.seed)
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
     private val rectangle=RectF();private val clip=Path();private val matrix=Matrix()
     private var program:ProceduralProgramApi33?=null;private var failed=false;private var alphaValue=255
     private val grainX=FloatArray(512);private val grainY=FloatArray(512);private val grainWeight=FloatArray(512)
     private var gradient:LinearGradient?=null
+    private var grainReady=false;private var grainSeed=1
+    private var gradientFilm:LumenFilmOptions?=null;private var gradientColor=0
     var phase=0f
     var frames=0L;private set
     var shaderBuilds=0L;private set
@@ -25,19 +27,24 @@ internal class EffectDrawable(private val density:Float):Drawable() {
         configureCalls++
         val reseed=value.seed!=options.seed;val particleChange=value.particles!=options.particles;options=value
         if(reseed)particles.reseed(value.seed)else if(particleChange)particles.clear()
-        var seed=if(value.seed==0)1 else value.seed
-        fun next():Float{seed=seed xor(seed shl 13);seed=seed xor(seed ushr 17);seed=seed xor(seed shl 5);return(seed ushr 8)/16777216f}
-        for(i in 0..511){grainX[i]=next();grainY[i]=next();grainWeight[i]=next()-.5f}
-        grainRegenerations++
-        val film=value.procedural.film;val base=value.procedural.color
-        fun spectral(fraction:Float):Int{
-            val optical=film.thicknessNm*(.4f+.6f*fraction);val amount=(film.iridescence*(1f-film.roughness*.7f)*film.intensity).coerceIn(0f,1f)
-            fun channel(source:Int,wavelength:Float)=((source/255f*(1f-amount)+(.5+.5*cos(4*PI*optical/wavelength))*amount)*255).roundToInt().coerceIn(0,255)
-            return Color.rgb(channel(Color.red(base),650f),channel(Color.green(base),510f),channel(Color.blue(base),440f))
+        val normalizedSeed=if(value.seed==0)1 else value.seed
+        if(!grainReady||grainSeed!=normalizedSeed){
+            var seed=normalizedSeed
+            fun next():Float{seed=seed xor(seed shl 13);seed=seed xor(seed ushr 17);seed=seed xor(seed shl 5);return(seed ushr 8)/16777216f}
+            for(i in 0..511){grainX[i]=next();grainY[i]=next();grainWeight[i]=next()-.5f}
+            grainSeed=normalizedSeed;grainReady=true;grainRegenerations++
         }
-        val radians=film.angleDegrees*PI/180.0;val dx=cos(radians).toFloat();val dy=sin(radians).toFloat()
-        gradient=LinearGradient(.5f-dx*.5f,.5f-dy*.5f,.5f+dx*.5f,.5f+dy*.5f,intArrayOf(spectral(0f),spectral(.5f),spectral(1f)),null,Shader.TileMode.CLAMP)
-        gradientBuilds++
+        val film=value.procedural.film;val base=value.procedural.color
+        if(gradient==null||gradientFilm!=film||gradientColor!=base){
+            fun spectral(fraction:Float):Int{
+                val optical=film.thicknessNm*(.4f+.6f*fraction);val amount=(film.iridescence*(1f-film.roughness*.7f)*film.intensity).coerceIn(0f,1f)
+                fun channel(source:Int,wavelength:Float)=((source/255f*(1f-amount)+(.5+.5*cos(4*PI*optical/wavelength))*amount)*255).roundToInt().coerceIn(0,255)
+                return Color.rgb(channel(Color.red(base),650f),channel(Color.green(base),510f),channel(Color.blue(base),440f))
+            }
+            val radians=film.angleDegrees*PI/180.0;val dx=cos(radians).toFloat();val dy=sin(radians).toFloat()
+            gradient=LinearGradient(.5f-dx*.5f,.5f-dy*.5f,.5f+dx*.5f,.5f+dy*.5f,intArrayOf(spectral(0f),spectral(.5f),spectral(1f)),null,Shader.TileMode.CLAMP)
+            gradientFilm=film;gradientColor=base;gradientBuilds++
+        }
         onBoundsChange(bounds);invalidateSelf()
     }
     override fun onBoundsChange(bounds:Rect){rectangle.set(bounds);clip.reset();val r=options.procedural.radiusDp*density;clip.addRoundRect(rectangle,r,r,Path.Direction.CW)

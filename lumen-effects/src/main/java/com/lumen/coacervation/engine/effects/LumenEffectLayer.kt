@@ -15,7 +15,7 @@ import java.lang.ref.WeakReference
 public class LumenEffectLayer @JvmOverloads constructor(view:View,options:LumenEffectOptions=LumenEffectOptions(),private val clock:LumenFrameClock=LumenFrameClock{System.nanoTime()})
     :AutoCloseable,View.OnAttachStateChangeListener,View.OnLayoutChangeListener,ViewTreeObserver.OnPreDrawListener,ViewTreeObserver.OnWindowFocusChangeListener {
     private val host=WeakReference(view);private var options=options
-    private val drawable=EffectDrawable(view.resources.displayMetrics.density).apply{configure(options)}
+    private val drawable=EffectDrawable(view.resources.displayMetrics.density,options)
     private val main=Handler(Looper.getMainLooper());private var observer:ViewTreeObserver?=null
     private var closed=false;private var paused=false;private var scheduled=false;private var visible=false
     private var energyBorn=Long.MIN_VALUE;private var energyElapsed=0L;private var last=clock.nowNanos()
