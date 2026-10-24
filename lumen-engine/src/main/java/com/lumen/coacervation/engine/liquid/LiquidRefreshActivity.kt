@@ -20,6 +20,9 @@ internal class LiquidRefreshActivity {
     /** Only an active owner needs to restore its preference when entering idle. */
     fun enterIdle(): Boolean {
         val release = phase == Phase.ACTIVE
+        // Some windows apply preferred Hz without drawing. A completed unchanged probe expires
+        // that old redraw hint; a later real draw must acquire the current preference immediately.
+        if (phase == Phase.PROBING) restoredDrawPending = false
         phase = Phase.IDLE
         return release
     }

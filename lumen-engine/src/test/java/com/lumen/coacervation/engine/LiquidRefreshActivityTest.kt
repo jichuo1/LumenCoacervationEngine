@@ -53,4 +53,13 @@ class LiquidRefreshActivityTest {
         state.preferenceRestored(true); state.reset()
         assertFalse(state.consumeRestoredDraw())
     }
+
+    @Test fun `an unchanged probe expires a restore hint even when the window never drew`() {
+        val state = LiquidRefreshActivity()
+        state.enterIdle(); state.preferenceRestored(true)
+        assertTrue(state.beginProbe())
+        assertFalse(state.enterIdle())
+        assertFalse(state.consumeRestoredDraw())
+        assertTrue(state.wake())
+    }
 }
