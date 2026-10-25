@@ -9,6 +9,8 @@ import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.PointF
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.RectF
 import android.graphics.Shader
@@ -79,12 +81,23 @@ private class LiquidCaptureRequest(
      * 发起截图时正绑定给后端的那张实时截图：后台只和它比较。提交时它必须仍是绑定源，
      * 比较结论才可采信——否则一律当"有变化"。
      */
-    val baseline: LiquidBackdropSource?
+    val baseline: LiquidBackdropSource?,
+    /** 每次真正发出的请求递增；探测复用只认紧接在上一次探测之后的那一次。 */
+    val serial: Long = 0L,
+    /** 静止期兜底探测（[LiquidRefreshRateController.probing]）发起的截图。 */
+    val probe: Boolean = false,
+    /** 本次遮罩与上一次构建逐位相同，见 [LiquidFeedbackSuppressor.maskMatchesPrevious]。 */
+    val maskMatchesPrevious: Boolean = false
 ) {
-    // 以下三项只在截图线程写入，经 mainHandler 消息队列交接后才在主线程读取。
+    // 以下几项只在截图线程写入，经 mainHandler 消息队列交接后才在主线程读取。
     var copyCompletedNanos = 0L
     var outcome = LiquidCaptureOutcome.FAILED
     var sameAsBaseline = false
+    /**
+     * 沿用了上一次探测的结论，[source] 里是**未抑制**的原始截图。它在提交时只能当作探测丢弃；
+     * 若被判为有变化，必须先由 [LiquidActivityRenderer] 从基准恢复出抑制后的像素再使用。
+     */
+    var reusedProbe = false
 }
 
 /**
@@ -103,15 +116,40 @@ private fun postProcessRealtimeCapture(
     result: Int
 ) {
     request.copyCompletedNanos = System.nanoTime()
-    if (result != PixelCopy.SUCCESS) return
+    if (result != PixelCopy.SUCCESS) {
+        feedback.forgetProbe()
+        return
+    }
+    if (request.probe) {
+        // 连续探测原始截图逐字节相同、遮罩与底图不变：抑制后的结果必然仍等于基准，跳过整窗抑制填充。
+        val reused = runCatching {
+            feedback.reuseIdenticalProbe(request.serial, request.source, request.stableBackdrop, request.baseline,
+                request.maskReady, request.maskMatchesPrevious)
+        }.getOrNull()
+        if (reused != null) {
+            request.outcome = reused
+            request.sameAsBaseline = true
+            request.reusedProbe = true
+            return
+        }
+        if (runCatching { feedback.rememberProbeRaw(request.source) }.isFailure) feedback.forgetProbe()
+    } else {
+        feedback.forgetProbe()
+    }
     val outcome = runCatching {
         feedback.sanitizeRealtimeCapture(request.source, request.stableBackdrop, request.mask, request.maskReady)
     }.getOrDefault(LiquidCaptureOutcome.FAILED)
     request.outcome = outcome
-    val baseline = request.baseline ?: return
-    if (outcome == LiquidCaptureOutcome.FAILED) return
+    val baseline = request.baseline
+    if (baseline == null || outcome == LiquidCaptureOutcome.FAILED) {
+        if (request.probe) feedback.commitProbe(request.serial, request.stableBackdrop, baseline, request.maskReady,
+            outcome, sameAsBaseline = false)
+        return
+    }
     // 异常一律当"有变化"处理，不能抛出去。
     request.sameAsBaseline = runCatching { request.source.bitmap.sameAs(baseline.bitmap) }.getOrDefault(false)
+    if (request.probe) feedback.commitProbe(request.serial, request.stableBackdrop, baseline, request.maskReady,
+        outcome, request.sameAsBaseline)
 }
 
 /**
@@ -355,6 +393,9 @@ internal class LiquidActivityRenderer(
     private var realtimeCaptureSources: List<LiquidBackdropSource> = emptyList()
     private var realtimeCaptureNextIndex = 0
     private val captureRequests = LiquidCaptureRequestState()
+    private var captureSerial = 0L
+    private val restoreCanvas = Canvas()
+    private val restorePaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
     private var realtimeCaptureInFlight: LiquidCaptureRequest? = null
     private var realtimeCaptureFailureCount = 0
     private var realtimeCaptureSuspended = false
@@ -1825,7 +1866,10 @@ internal class LiquidActivityRenderer(
         ) {
             requestRealtimeCapture(frameTimeNanos)
         }
-        postRealtimeFrameCallback()
+        // 截图在途时不再逐帧轮询：这些回调什么也做不了，却每个 vsync 唤醒一次主线程并让 SurfaceFlinger
+        // 多投一次 vsync（2026-10-25 静止期主线程 4.4 次/秒唤醒几乎都来自这里）。完成回调会重新挂上
+        // （[handleRealtimeCaptureResult]），下一次截图仍落在与原来相同的那个 vsync 上。
+        if (realtimeCaptureInFlight == null) postRealtimeFrameCallback()
     }
 
     private fun requestRealtimeCapture(frameTimeNanos: Long) {
@@ -1868,7 +1912,9 @@ internal class LiquidActivityRenderer(
             it !== captureSource && !it.isClosed && backends.lastBoundBackdrop === it
         }
         val request = LiquidCaptureRequest(ticket, captureSource, stable, WeakReference(root), root.width, root.height,
-            feedback.mask, realtimeMaskReady, baseline)
+            feedback.mask, realtimeMaskReady, baseline, serial = ++captureSerial, probe = refreshRate.probing,
+            maskMatchesPrevious = feedback.maskMatchesPrevious)
+        feedback.commitMaskSignature()
         realtimeCaptureInFlight = request
         realtimeNextCaptureNanos = frameTimeNanos + refreshRate.frameIntervalNanos
         val recipient = WeakReference(this)
@@ -1896,6 +1942,9 @@ internal class LiquidActivityRenderer(
     private fun handleRealtimeCaptureResult(request: LiquidCaptureRequest, result: Int) {
         if (realtimeCaptureInFlight !== request) return
         realtimeCaptureInFlight = null
+        // 在途期间没有逐帧回调（见 [onRealtimeFrame]），这里是唯一清空在途请求的地方：先重新挂上，
+        // 之后的静止、挂起与失败路径照常摘掉或改期。
+        if (!realtimeIdle) postRealtimeFrameCallback()
         val completion = captureRequests.complete(request.ticket)
         val root = request.root.get()
         if (completion != LiquidCaptureRequestState.Completion.CURRENT || closed || !activityVisible ||
@@ -1918,6 +1967,13 @@ internal class LiquidActivityRenderer(
                             bound !== captureSource && !bound.isClosed && backends.lastBoundBackdrop === bound,
                         samplingSuppressed = realtimeSamplingSuppressed
                     ) { request.sameAsBaseline }
+                    // 沿用探测结论的截图里是未抑制的原始像素；既然判为有变化要被使用，先恢复成抑制后的
+                    // 像素：复用的前提保证"抑制后 == 基准"，从基准逐像素复制即得到完全相同的结果。
+                    if (!unchanged && request.reusedProbe && !restoreSuppressedFromBaseline(request)) {
+                        refreshRate.resetThroughput()
+                        realtimeNextCaptureNanos = System.nanoTime()
+                        return
+                    }
                     if (unchanged) {
                         identicalCaptures++
                         // 本张只是一次探测，不绑定、不重画。轮转退回这块缓冲：下一次探测继续写它
@@ -1960,6 +2016,28 @@ internal class LiquidActivityRenderer(
                 System.nanoTime() - workStartedNanos
             )
         }
+    }
+
+    /**
+     * 复用探测被判为有变化时（探测途中开始滚动、基准不再是绑定源等少见情形），把基准的像素逐像素
+     * 复制进本次缓冲：复用条件保证"本次截图抑制后 == 上一次抑制后 == 基准"。基准缺失或已关闭时返回
+     * false，调用方丢弃本张、下一帧重新截一张完整处理的。单飞期间没有新的 PixelCopy，基准内容未变。
+     */
+    private fun restoreSuppressedFromBaseline(request: LiquidCaptureRequest): Boolean {
+        val baseline = request.baseline ?: return false
+        if (baseline.isClosed || request.source.isClosed) return false
+        val target = request.source.bitmap
+        if (baseline.bitmap.width != target.width || baseline.bitmap.height != target.height) return false
+        return runCatching {
+            restoreCanvas.setBitmap(target)
+            try {
+                restoreCanvas.drawBitmap(baseline.bitmap, 0f, 0f, restorePaint)
+            } finally {
+                restoreCanvas.setBitmap(null)
+            }
+            onCaptureWorker(feedback::forgetProbe)
+            true
+        }.getOrDefault(false)
     }
 
     /** 按需启动截图线程；启动失败返回 null，由调用方退回主线程回调（与改造前相同的路径）。 */

@@ -142,6 +142,28 @@ class LiquidRefreshOptimizationTest {
         assertTrue("基准换了就不能采信后台比较结论", result.contains("bound === request.baseline"))
         val frame = renderer.after("private fun onRealtimeFrame(").before("private fun requestRealtimeCapture(")
         assertTrue("静止期不得继续逐帧回调", frame.contains("|| realtimeIdle"))
+        // 2026-10-25 功耗：截图在途时不逐帧轮询，完成回调重新挂上；清空在途请求的地方只能有这一处，
+        // 否则回调链会在某条路径上断掉，实时采集永久停住。
+        assertTrue("在途时不得逐帧轮询", frame.contains("if (realtimeCaptureInFlight == null) postRealtimeFrameCallback()"))
+        val completion = renderer.after("private fun handleRealtimeCaptureResult(").before("val completion = captureRequests.complete(")
+        assertTrue("完成时必须重新挂上逐帧回调", completion.contains("realtimeCaptureInFlight = null") &&
+            completion.indexOf("if (!realtimeIdle) postRealtimeFrameCallback()") > completion.indexOf("realtimeCaptureInFlight = null"))
+        assertEquals("在途请求只能在完成回调里清空", 1, Regex("""realtimeCaptureInFlight = null""").findAll(renderer).count())
+
+        // 2026-10-25 功耗：静止探测复用。只有探测能复用、复用前提由序号相邻 + 遮罩签名 + 底图/基准同一保证；
+        // 完整路径必须在抑制前留下原始截图；非探测截图让复用失效；复用的截图被判为有变化时必须先从基准恢复。
+        val post = renderer.after("@AnyThread\nprivate fun postProcessRealtimeCapture(").before("\n}")
+        assertTrue(post.indexOf("if (request.probe) {") in 0 until post.indexOf("feedback.reuseIdenticalProbe(request.serial"))
+        assertTrue(post.indexOf("feedback.rememberProbeRaw(request.source)") in 0 until post.indexOf("sanitizeRealtimeCapture"))
+        assertTrue(post.contains("} else {\n        feedback.forgetProbe()"))
+        val suppressor = source("LiquidFeedbackSuppressor")
+        assertTrue(suppressor.contains("serial != probeSerial + 1"))
+        assertTrue(suppressor.contains("probeStable !== stableBackdrop || probeBaseline !== baseline"))
+        val issue = renderer.after("private fun requestRealtimeCapture(").before("private fun handleRealtimeCaptureResult(")
+        assertTrue("签名只在请求真正发出后提交", issue.indexOf("feedback.commitMaskSignature()") >
+            issue.indexOf("val request = LiquidCaptureRequest(ticket"))
+        val handled = renderer.after("private fun handleRealtimeCaptureResult(").before("if (unchanged) {")
+        assertTrue(handled.contains("if (!unchanged && request.reusedProbe && !restoreSuppressedFromBaseline(request))"))
         assertTrue("窗口任何绘制都必须唤醒采集", renderer.contains("addOnDrawListener(realtimeDrawListener)"))
         assertTrue("静止判定只和真正绑定给后端的底图比", renderer.contains("lastBoundBackdrop === bound"))
     }

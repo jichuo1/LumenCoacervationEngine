@@ -6,6 +6,8 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.graphics.Rect
 import android.graphics.Shader
 import android.view.View
@@ -54,6 +56,39 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
     private var suppressionUnderlayShader: BitmapShader? = null
     private var suppressionUnderlaySource: LiquidBackdropSource? = null
     private val suppressionPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    /** 最近一次 [sanitizeRealtimeCapture] 是否走了预缩放抑制底图（而不是分配失败时的回退路径）。 */
+    private var lastSanitizeUsedUnderlay = false
+
+    /**
+     * 遮罩输入签名（主线程）：[buildSuppressionMask] 把决定遮罩形状的全部数值按位记下，与**上一次真正
+     * 发出的截图请求**所用的遮罩比较（[commitMaskSignature]）。构建后没发出请求的那次不算数。
+     * 只用于判断"这次遮罩与上一次请求逐位相同"，不参与绘制。
+     */
+    private var signature = FloatArray(64)
+    private var signatureSize = 0
+    private var committedSignature = FloatArray(64)
+    private var committedSignatureSize = -1
+
+    /** 本次构建的遮罩与上一次发出请求的遮罩逐位相同（输入数值完全一致）。 */
+    var maskMatchesPrevious = false
+        private set
+
+    /**
+     * 静止探测复用（截图线程封闭）：上一次探测的原始截图与它的结论。连续两次探测原始截图逐字节相同、
+     * 遮罩与稳定底图不变、基准仍是同一张时，这次抑制后的结果必然与上一次相同、也就与基准相同，
+     * 可以跳过约 70% 截图线程开销的整窗抑制填充（2026-10-25 静止期实测）。任何其它截图都会清掉它。
+     */
+    private var probeRaw: Bitmap? = null
+    private val probeCanvas = Canvas()
+    private val copyPaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
+    private var probeValid = false
+    /** 留下原始截图的那次探测的请求序号；只有紧接着它发出的下一次请求可以复用。 */
+    private var probeSerial = Long.MIN_VALUE
+    private var probeStable: LiquidBackdropSource? = null
+    private var probeBaseline: LiquidBackdropSource? = null
+    private var probeMaskReady = false
+    private var probeUsedUnderlay = false
+    private var probeOutcome = LiquidCaptureOutcome.FAILED
 
     /**
      * 准备与当前截图尺寸 1:1 的抑制底图；尺寸或稳定底图变化时重建。
@@ -96,6 +131,8 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
 
     @AnyThread
     fun releaseSuppressionUnderlay() {
+        forgetProbe()
+        probeRaw = null
         suppressionPaint.shader = null
         suppressionUnderlayShader = null
         suppressionUnderlaySource = null
@@ -117,10 +154,15 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
         rootOriginY: Int,
         surfaces: MutableMap<View, LiquidSurfaceFootprint>
     ): Boolean {
-        if (captureSource.isClosed || root.width <= 0 || root.height <= 0) return false
+        beginSignature()
+        if (captureSource.isClosed || root.width <= 0 || root.height <= 0) {
+            signatureSize = -1
+            return finishSignature(false)
+        }
         val bitmap = captureSource.bitmap
         val scaleX = bitmap.width.toFloat() / root.width.toFloat()
         val scaleY = bitmap.height.toFloat() / root.height.toFloat()
+        record(bitmap.width.toFloat()); record(bitmap.height.toFloat()); record(scaleX); record(scaleY)
         mask.rewind()
         mask.fillType = Path.FillType.WINDING
         var hasMask = false
@@ -155,14 +197,131 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
                     surfaceToCapture.postScale(scaleX, scaleY)
                     surfacePath.transform(surfaceToCapture)
                     mask.addPath(surfacePath)
+                    record(1f); record(footprint.left.toFloat()); record(footprint.top.toFloat())
+                    record(footprint.right.toFloat()); record(footprint.bottom.toFloat()); record(radiusPx)
+                    record(paddingPx); record(rootOriginX.toFloat()); record(rootOriginY.toFloat())
+                    for (value in footprint.screenTransform) record(value)
                 } else {
                     mask.addRoundRect(geometry.left, geometry.top, geometry.right, geometry.bottom,
                         geometry.radiusX, geometry.radiusY, Path.Direction.CW)
+                    record(2f); record(geometry.left); record(geometry.top); record(geometry.right)
+                    record(geometry.bottom); record(geometry.radiusX); record(geometry.radiusY)
                 }
                 hasMask = true
             }
         }
+        return finishSignature(hasMask)
+    }
+
+    private fun beginSignature() {
+        signatureSize = 0
+    }
+
+    /** 主线程：本次构建的遮罩确实随一次截图请求发出后调用，它成为下一次比较的对象。 */
+    @MainThread
+    fun commitMaskSignature() {
+        val swap = committedSignature
+        committedSignature = signature
+        committedSignatureSize = signatureSize
+        signature = swap
+        signatureSize = 0
+    }
+
+    private fun record(value: Float) {
+        if (signatureSize < 0) return
+        if (signatureSize == signature.size) signature = signature.copyOf(signature.size * 2)
+        signature[signatureSize++] = value
+    }
+
+    /** 与上一次构建逐位比较（`toRawBits`：±0 与 NaN 也按位区分，宁可不复用）。 */
+    private fun finishSignature(hasMask: Boolean): Boolean {
+        record(if (hasMask) 1f else 0f)
+        var same = signatureSize >= 0 && signatureSize == committedSignatureSize
+        var index = 0
+        while (same && index < signatureSize) {
+            same = signature[index].toRawBits() == committedSignature[index].toRawBits()
+            index++
+        }
+        maskMatchesPrevious = same
         return hasMask
+    }
+
+    /**
+     * 截图线程：本次探测能否沿用上一次探测的结论。返回上一次的结论（此时本次截图**未做抑制**，
+     * 调用方只能把它当作"与基准相同"的探测结果，不得绑定），不能复用返回 null。
+     */
+    @AnyThread
+    fun reuseIdenticalProbe(
+        serial: Long,
+        captureSource: LiquidBackdropSource,
+        stableBackdrop: LiquidBackdropSource,
+        baseline: LiquidBackdropSource?,
+        maskReady: Boolean,
+        maskMatchesPrevious: Boolean
+    ): LiquidCaptureOutcome? {
+        val raw = probeRaw
+        // 序号相邻保证"上一次请求"就是留下原始截图的那次探测，遮罩签名比较的也正是它的遮罩。
+        if (!probeValid || raw == null || baseline == null || !maskMatchesPrevious || serial != probeSerial + 1) return null
+        if (captureSource.isClosed || stableBackdrop.isClosed || baseline.isClosed) return null
+        if (probeStable !== stableBackdrop || probeBaseline !== baseline || probeMaskReady != maskReady) return null
+        val bitmap = captureSource.bitmap
+        // 抑制路径必须与上一次相同：上一次用了预缩放底图，这次它也必须仍按同一源、同一尺寸缓存着。
+        if (maskReady && (!probeUsedUnderlay || !underlayReadyFor(stableBackdrop, bitmap.width, bitmap.height))) return null
+        if (!bitmap.sameAs(raw)) return null
+        // 本次与上一次的原始截图、遮罩、底图、基准与结论都相同，它同样可以作为下一次的比较对象。
+        probeSerial = serial
+        return probeOutcome
+    }
+
+    /** 截图线程：完整路径之前留下本次探测的原始截图（抑制会就地改写它）。 */
+    @AnyThread
+    fun rememberProbeRaw(captureSource: LiquidBackdropSource) {
+        probeValid = false
+        val bitmap = captureSource.bitmap
+        var raw = probeRaw
+        if (raw == null || raw.width != bitmap.width || raw.height != bitmap.height) {
+            raw = createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+            probeRaw = raw
+        }
+        probeCanvas.setBitmap(raw)
+        try {
+            probeCanvas.drawBitmap(bitmap, 0f, 0f, copyPaint)
+        } finally {
+            probeCanvas.setBitmap(null)
+        }
+    }
+
+    /** 截图线程：完整路径结束后登记结论；只有"抑制后与基准相同"的探测才能被下一次复用。 */
+    @AnyThread
+    fun commitProbe(
+        serial: Long,
+        stableBackdrop: LiquidBackdropSource,
+        baseline: LiquidBackdropSource?,
+        maskReady: Boolean,
+        outcome: LiquidCaptureOutcome,
+        sameAsBaseline: Boolean
+    ) {
+        probeValid = probeRaw != null && baseline != null && sameAsBaseline && outcome != LiquidCaptureOutcome.FAILED
+        probeSerial = serial
+        probeStable = stableBackdrop
+        probeBaseline = baseline
+        probeMaskReady = maskReady
+        probeUsedUnderlay = lastSanitizeUsedUnderlay
+        probeOutcome = outcome
+    }
+
+    /** 截图线程：非探测截图、失败与缓冲变化都让复用失效。 */
+    @AnyThread
+    fun forgetProbe() {
+        probeValid = false
+        probeStable = null
+        probeBaseline = null
+    }
+
+    private fun underlayReadyFor(stableBackdrop: LiquidBackdropSource, width: Int, height: Int): Boolean {
+        val cached = suppressionUnderlay ?: return false
+        return !cached.isRecycled && cached.width == width && cached.height == height &&
+            suppressionUnderlaySource === stableBackdrop && !stableBackdrop.isClosed
     }
 
     /**
@@ -180,6 +339,7 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
         requestMask: Path,
         maskReady: Boolean
     ): LiquidCaptureOutcome {
+        lastSanitizeUsedUnderlay = false
         if (captureSource.isClosed || stableBackdrop.isClosed) return LiquidCaptureOutcome.FAILED
         if (!maskReady) return LiquidCaptureOutcome.NO_GLASS_VISIBLE
 
@@ -191,6 +351,7 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
                 // Cached opaque underlay is copied 1:1; no recursive composite fraction or per-frame resampling.
                 suppressionPaint.alpha = LiquidRealtimeCapturePolicy.BASE_SUPPRESSION_ALPHA
                 canvas.drawPath(requestMask, suppressionPaint)
+                lastSanitizeUsedUnderlay = true
             } else {
                 // 预缩放位图分配失败时回退到原路径，抑制强度与几何完全一致。
                 stableBackdrop.drawSuppressionBackdropMasked(
@@ -210,5 +371,6 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
     fun close() {
         releaseSuppressionUnderlay()
         canvas.setBitmap(null)
+        probeCanvas.setBitmap(null)
     }
 }
