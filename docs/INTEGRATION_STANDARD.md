@@ -527,7 +527,7 @@ root（bindRoot）
   - 选中框**可以**用 `setPrismSelection(LumenPrismSelectionOptions())` 换成液态选中胶囊（§13.13）；`null` 恢复经典选中框，逐帧不变。
 - **`LumenSegmentScrubBar`**（分段档位条）：与底栏共用手势判定、高光和弹簧；用 `configure(labels, colors, thumbBackground, trackBackground, selectedIndex, onSelect)` 配置，1～8 段（§15.1）。
 - 两者都**必须**满足 §12.1 的 `EXCLUDED_TAG` 和 §12.3 的宿主裁剪。
-- **`LumenSlider`**（通用滑块，自未发布版本）：连续值或离散刻度；胶囊（亮度条式，填充即数值）与细轨两种形态；外观 `Skin`（柔光 / Liquid，槽体为 `SELECTED_ITEM` 表面）、`Fluent`、`Mica`、`Prism`、`Plain`。
+- **`LumenSlider`**（通用滑块，自 1.5.5）：连续值或离散刻度；胶囊（亮度条式，填充即数值）与细轨两种形态；外观 `Skin`（柔光 / Liquid，槽体为 `SELECTED_ITEM` 表面）、`Fluent`、`Mica`、`Prism`、`Plain`。
   - 引擎的长按弹性与 `LumenPagePager` **自动**排除本控件（与 `SeekBar` 同等），宿主不需要打 `EXCLUDED_TAG`；打了也无副作用。
   - 横向超过 slop 才接管手势；竖向先动时让给父级滚动，本次手势不改值。放在 `ScrollView` / `RecyclerView` 里不需要额外处理。
   - 按压放大、两端拉伸（≤ 6dp）、数值气泡和 Prism 阴影画在边界外：直接宿主容器**必须** `clipChildren = false`、`clipToPadding = false`（§12.3）。

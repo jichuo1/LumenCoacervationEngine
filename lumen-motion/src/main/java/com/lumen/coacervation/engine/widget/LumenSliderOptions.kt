@@ -4,7 +4,7 @@ import com.lumen.coacervation.engine.host.LumenActivityDelegate
 import com.lumen.coacervation.engine.host.LumenPrismOptions
 
 /**
- * 滑块的取值范围（自未发布版本）。[step] 为 0 表示连续值；大于 0 时值吸附到 `from + k·step`，
+ * 滑块的取值范围（自 1.5.5）。[step] 为 0 表示连续值；大于 0 时值吸附到 `from + k·step`，
  * 范围不是 step 整数倍时 [to] 作为最后一档。构造时校验，拒绝非有限值与空范围。
  */
 public data class LumenSliderRange(

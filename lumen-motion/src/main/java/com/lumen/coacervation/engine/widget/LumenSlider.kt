@@ -48,7 +48,7 @@ import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.widget.LumenSliderPolicy as Policy
 
 /**
- * 通用拖动滑块（自未发布版本）：连续值或离散刻度，五种材质外观（[LumenSliderAppearance]）。
+ * 通用拖动滑块（自 1.5.5）：连续值或离散刻度，五种材质外观（[LumenSliderAppearance]）。
  *
  * - **胶囊**（亮度条式）：填充即数值，可放图标（越过填充时逐像素反色），相对拖动不跳值；
  * - **细轨**：滑钮 + 轨道；按在滑钮上相对拖动，按在别处跟随手指；

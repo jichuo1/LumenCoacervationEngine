@@ -75,7 +75,7 @@
 | 页 | 可以体验 |
 |:---|:---|
 | 材质 | 两套材质、表面角色、控件换装、形变面板与全屏页 |
-| 动效 | 可打断翻页、手风琴、档位条、选中框滑动、定位高亮 |
+| 动效 | 可打断翻页、手风琴、档位条、滑块（五种材质、HDR 高光）、选中框滑动、定位高亮 |
 | 列表 | 竖向列表与网格的长按拖拽排序 |
 | 排布 | 网格、混排、横向轮播、卡中卡 |
 | 自适应 | 窗口变化、宽屏双栏、旋转与分屏 |
@@ -100,7 +100,7 @@
 
 | 项 | 说明 |
 |:---|:---|
-| **引擎版本** | 1.5.4 |
+| **引擎版本** | 1.5.5 |
 | **运行系统** | Android 8.1+（`minSdk 27`） |
 | **编译环境** | `compileSdk 37`；源码构建使用 JDK 17+ |
 | **基础依赖** | 引擎本体依赖 AndroidX core；motion 不要求 AppCompat |
@@ -150,10 +150,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.5.4")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.5.5")
     // 按需添加，版本保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.5.4")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.5.4")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.5.5")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.5.5")
 }
 ```
 

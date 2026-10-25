@@ -6,6 +6,17 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "LumenSliderIntegrationTest": {
+        "longPressThenDragAdjustsTheSliderInsteadOfTheElasticHold",
+        "verticalDragStartingOnTheSliderScrollsThePage",
+        "tapMapsToTheTappedPositionAndMirrorsInRtl",
+        "discreteDragLandsExactlyOnAStop",
+        "keyboardAndAccessibilityActionsStepTheValue",
+        "disposeRestoresTheThumbItCreatedMaterialsFor",
+        "hdrWindowPressAndReleaseSettle",
+        "enlargedPrismLensStaysInsideTheGrooveAtBothEnds",
+        "capsuleFillCoversExactlyTheValue",
+    },
     PREFIX + "EngineWorkRegressionTest": {
         "effectUpdatesPreservePixelsAndReportOnlyRequestedWork",
         "dialogPositionWorkloadKeepsOtherWindowsValid",

@@ -262,6 +262,13 @@ class SmokeResultsTest(unittest.TestCase):
             self.assertIn(key, VERIFIER.required_tests(31))
             self.assertFalse(self.check(api=31, omit=key))
 
+    def test_slider_cases_are_required_on_every_api_and_missing_cases_fail(self):
+        owner = VERIFIER.PREFIX + "LumenSliderIntegrationTest"
+        for api in (27, 31, 33, 34):
+            for name in VERIFIER.REQUIRED[owner]:
+                self.assertIn((owner, name), VERIFIER.required_tests(api))
+        self.assertFalse(self.check(api=27, omit=(owner, "capsuleFillCoversExactlyTheValue")))
+
 
 if __name__ == "__main__":
     unittest.main()
