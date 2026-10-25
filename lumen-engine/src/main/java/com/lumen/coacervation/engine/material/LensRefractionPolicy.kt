@@ -106,10 +106,17 @@ internal object LensRefractionPolicy {
             for (x in 0 until dw) {
                 val x0 = columnLeft[x]
                 val x1 = columnRight[x]
-                out[row + x] = bilinear(
-                    source[rowTop + x0], source[rowTop + x1],
-                    source[rowBottom + x0], source[rowBottom + x1], columnFrac[x], fy
-                )
+                val c00 = source[rowTop + x0]
+                val c10 = source[rowTop + x1]
+                val c01 = source[rowBottom + x0]
+                val c11 = source[rowBottom + x1]
+                // 四邻同色时插值结果必然等于该色：四个权重之和与 1 的浮点误差乘上 ≤255 的通道值
+                // 远小于 0.5，加 0.5 截断后落回原值（BitExactKernelsTest 穷举守住）。
+                if (c00 == c10 && c00 == c01 && c00 == c11) {
+                    out[row + x] = c00
+                    continue
+                }
+                out[row + x] = bilinear(c00, c10, c01, c11, columnFrac[x], fy)
             }
         }
     }
@@ -159,24 +166,27 @@ internal object LensRefractionPolicy {
         return f * f * (3f - 2f * f)
     }
 
+    /**
+     * 四个通道手工展开：原写法每像素调 4 次 9 参数的 `channel()`，ART（含 R8 后）不内联它，
+     * 重映射因此慢约 2–4 倍（2026-10-25 API 35 模拟器实测）。权重与逐通道的浮点运算顺序不变，
+     * 输出逐位相同。
+     */
     private fun bilinear(c00: Int, c10: Int, c01: Int, c11: Int, fx: Float, fy: Float): Int {
         val w00 = (1f - fx) * (1f - fy)
         val w10 = fx * (1f - fy)
         val w01 = (1f - fx) * fy
         val w11 = fx * fy
-        return (channel(c00, c10, c01, c11, 24, w00, w10, w01, w11) shl 24) or
-            (channel(c00, c10, c01, c11, 16, w00, w10, w01, w11) shl 16) or
-            (channel(c00, c10, c01, c11, 8, w00, w10, w01, w11) shl 8) or
-            channel(c00, c10, c01, c11, 0, w00, w10, w01, w11)
+        val a = (c00 ushr 24) * w00 + (c10 ushr 24) * w10 + (c01 ushr 24) * w01 + (c11 ushr 24) * w11
+        val r = ((c00 ushr 16) and 255) * w00 + ((c10 ushr 16) and 255) * w10 +
+            ((c01 ushr 16) and 255) * w01 + ((c11 ushr 16) and 255) * w11
+        val g = ((c00 ushr 8) and 255) * w00 + ((c10 ushr 8) and 255) * w10 +
+            ((c01 ushr 8) and 255) * w01 + ((c11 ushr 8) and 255) * w11
+        val b = (c00 and 255) * w00 + (c10 and 255) * w10 + (c01 and 255) * w01 + (c11 and 255) * w11
+        return (channelByte(a) shl 24) or (channelByte(r) shl 16) or (channelByte(g) shl 8) or channelByte(b)
     }
 
-    @Suppress("LongParameterList")
-    private fun channel(
-        c00: Int, c10: Int, c01: Int, c11: Int, shift: Int,
-        w00: Float, w10: Float, w01: Float, w11: Float
-    ): Int {
-        val value = ((c00 ushr shift) and 255) * w00 + ((c10 ushr shift) and 255) * w10 +
-            ((c01 ushr shift) and 255) * w01 + ((c11 ushr shift) and 255) * w11
-        return (value + 0.5f).toInt().coerceIn(0, 255)
+    private fun channelByte(value: Float): Int {
+        val rounded = (value + 0.5f).toInt()
+        return if (rounded < 0) 0 else if (rounded > 255) 255 else rounded
     }
 }

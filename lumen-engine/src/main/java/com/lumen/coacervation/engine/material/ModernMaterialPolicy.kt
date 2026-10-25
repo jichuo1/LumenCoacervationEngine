@@ -3,6 +3,7 @@ package com.lumen.coacervation.engine.material
 import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenEffectTuningPolicy
 import com.lumen.coacervation.engine.model.SurfaceRole
+import java.util.concurrent.atomic.AtomicReferenceArray
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
@@ -37,6 +38,12 @@ internal object ModernMaterialPolicy {
      * [LiveBackdropSampler]。
      */
     const val LIVE_SAMPLE_MIN_INTERVAL_MS = 28L
+
+    /**
+     * 透镜"输入未变即沿用"比对位图的独立预算（每个采样器）：密度 3 下顶栏、底栏胶囊与三个圆按钮
+     * 合计约 229 KiB，局部会话的多个表面按先来先得分配，超出后只是不做比对、照常全量处理。
+     */
+    const val LIVE_SAMPLE_MEMO_BYTES = 512L * 1024
 
     fun sampleSize(width: Int, height: Int): Pair<Int, Int> {
         require(width > 0 && height > 0)
@@ -112,6 +119,20 @@ internal object ModernMaterialPolicy {
  * Stateless and reentrant: the static frost worker and the live-lens worker call it concurrently.
  */
 internal object ModernBackdropBlur {
+    /** 窗口和的上限：最大窗口 65（半径 32）× 255。两条 16 位通道各自装得下，互不进位。 */
+    private const val MAX_WINDOW_SUM = 65 * 255
+    private const val LANES = 0x00FF00FF
+
+    /**
+     * 每种窗口一张商表 `table[sum] = sum / window`（窗口 2r+1，长度 window×255+1）。
+     * 全部 32 种半径合计约 272 KiB，实际同进程只会用到其中几种；表内容只由窗口决定，
+     * 并发首次构建时谁先发布用谁，结果相同。
+     */
+    private val quotients = AtomicReferenceArray<ByteArray>(MAX_WINDOW_SUM / 255 + 1)
+
+    /** 竖向趟的逐列累加器，按线程复用：静态磨砂与实时透镜两个 worker 并发调用时互不共享。 */
+    private val columns = ThreadLocal<IntArray>()
+
     fun blur(source: IntArray, width: Int, height: Int, radius: Int): IntArray =
         blurInto(source.copyOf(), IntArray(source.size), width, height, radius)
 
@@ -125,61 +146,106 @@ internal object ModernBackdropBlur {
         require(width > 0 && height > 0 && width.toLong() * height == pixels.size.toLong())
         require(scratch.size == pixels.size)
         require(radius in 1..32)
+        val table = quotientTable(radius * 2 + 1)
+        val accumulators = columnAccumulators(width)
         var input = pixels
         var output = scratch
         repeat(3) {
-            pass(input, output, width, height, radius, horizontal = true)
+            horizontal(input, output, width, height, radius, table)
             val swap = input; input = output; output = swap
-            pass(input, output, width, height, radius, horizontal = false)
+            vertical(input, output, width, height, radius, table, accumulators)
             val next = input; input = output; output = next
         }
         return input
     }
 
+    private fun quotientTable(window: Int): ByteArray {
+        quotients.get(window)?.let { return it }
+        val table = ByteArray(window * 255 + 1) { (it / window).toByte() }
+        quotients.compareAndSet(window, null, table)
+        return quotients.get(window)
+    }
+
+    /** 前 width 个是 R/B 累加，后 width 个是 A/G 累加。 */
+    private fun columnAccumulators(width: Int): IntArray {
+        val existing = columns.get()
+        if (existing != null && existing.size >= width * 2) return existing
+        return IntArray(width * 2).also(columns::set)
+    }
+
     /**
-     * 滑动窗口盒式模糊的一趟。
+     * 滑动窗口盒式模糊的横向一趟。输出与逐通道 `sum / window` 的原实现逐位相同：
+     * - R/B、A/G 各打包进一个 Int 的两条 16 位通道一起累加（`color and 0x00FF00FF`），
+     *   窗口和最大 [MAX_WINDOW_SUM] = 16575 < 65536，通道之间不会进位；
+     * - 整数除法换成查商表，商与 `sum / window` 完全相同。
      *
-     * ⚠️ **不要把窗口进出写成局部函数**：捕获可变局部变量的局部 fun 会让 Kotlin 把
-     * `a/r/g/b` 装箱成 `Ref.IntRef` 挪到堆上，每次自增都变成堆读写、还多一次调用。
-     * 真机实测（102×102 采样图、半径 10、6 趟）原写法 **2.0–4.6ms/次**，是柔光皮肤
-     * UI 线程掉帧的主因；手工内联后同样的算法只要几百微秒。输出逐位不变——钳位、
-     * 累加顺序与整数除法都保持原样。
+     * ⚠️ **不要把窗口进出写成局部函数**：捕获可变局部变量的局部 fun 会让 Kotlin 把累加器
+     * 装箱成 `Ref.IntRef` 挪到堆上（2026-09-22 真机实测 2.0–4.6ms/次，柔光掉帧主因）。
+     * 也不要改回 Long 乘倒数：HotSpot 上更快，ART 上反而慢 7–15%（2026-10-25 模拟器实测）。
      */
-    private fun pass(input: IntArray, output: IntArray, width: Int, height: Int, radius: Int, horizontal: Boolean) {
+    private fun horizontal(input: IntArray, output: IntArray, width: Int, height: Int, radius: Int, table: ByteArray) {
         if (Thread.currentThread().isInterrupted) throw InterruptedException("Backdrop replaced")
-        val length = if (horizontal) width else height
-        val lines = if (horizontal) height else width
-        val stride = if (horizontal) 1 else width
-        val window = radius * 2 + 1
-        val last = length - 1
-        for (line in 0 until lines) {
-            val base = if (horizontal) line * width else line
-            var a = 0; var r = 0; var g = 0; var b = 0
+        val last = width - 1
+        for (line in 0 until height) {
+            val base = line * width
+            var rb = 0
+            var ag = 0
             for (offset in -radius..radius) {
-                val index = if (offset < 0) 0 else if (offset > last) last else offset
-                val color = input[base + index * stride]
-                a += color ushr 24
-                r += (color ushr 16) and 255
-                g += (color ushr 8) and 255
-                b += color and 255
+                val color = input[base + (if (offset < 0) 0 else if (offset > last) last else offset)]
+                rb += color and LANES
+                ag += (color ushr 8) and LANES
             }
-            for (position in 0 until length) {
-                output[base + position * stride] = ((a / window) shl 24) or
-                    ((r / window) shl 16) or ((g / window) shl 8) or (b / window)
+            for (position in 0 until width) {
+                output[base + position] = ((table[ag ushr 16].toInt() and 255) shl 24) or
+                    ((table[rb ushr 16].toInt() and 255) shl 16) or
+                    ((table[ag and 0xFFFF].toInt() and 255) shl 8) or
+                    (table[rb and 0xFFFF].toInt() and 255)
                 val drop = position - radius
-                val dropIndex = if (drop < 0) 0 else if (drop > last) last else drop
-                val dropColor = input[base + dropIndex * stride]
-                a -= dropColor ushr 24
-                r -= (dropColor ushr 16) and 255
-                g -= (dropColor ushr 8) and 255
-                b -= dropColor and 255
                 val add = position + radius + 1
-                val addIndex = if (add < 0) 0 else if (add > last) last else add
-                val addColor = input[base + addIndex * stride]
-                a += addColor ushr 24
-                r += (addColor ushr 16) and 255
-                g += (addColor ushr 8) and 255
-                b += addColor and 255
+                val dropColor = input[base + (if (drop < 0) 0 else drop)]
+                val addColor = input[base + (if (add > last) last else add)]
+                rb += (addColor and LANES) - (dropColor and LANES)
+                ag += ((addColor ushr 8) and LANES) - ((dropColor ushr 8) and LANES)
+            }
+        }
+    }
+
+    /**
+     * 竖向一趟：按行推进、每列一组累加器，内存顺序访问（原实现逐列跨行跳读）。
+     * 每列的窗口和、钳位与商都与逐列实现相同，输出逐位不变。
+     */
+    private fun vertical(
+        input: IntArray, output: IntArray, width: Int, height: Int, radius: Int,
+        table: ByteArray, accumulators: IntArray
+    ) {
+        if (Thread.currentThread().isInterrupted) throw InterruptedException("Backdrop replaced")
+        val last = height - 1
+        java.util.Arrays.fill(accumulators, 0, width * 2, 0)
+        for (offset in -radius..radius) {
+            val row = (if (offset < 0) 0 else if (offset > last) last else offset) * width
+            for (x in 0 until width) {
+                val color = input[row + x]
+                accumulators[x] += color and LANES
+                accumulators[width + x] += (color ushr 8) and LANES
+            }
+        }
+        for (y in 0 until height) {
+            val outRow = y * width
+            val drop = y - radius
+            val add = y + radius + 1
+            val dropRow = (if (drop < 0) 0 else drop) * width
+            val addRow = (if (add > last) last else add) * width
+            for (x in 0 until width) {
+                val rb = accumulators[x]
+                val ag = accumulators[width + x]
+                output[outRow + x] = ((table[ag ushr 16].toInt() and 255) shl 24) or
+                    ((table[rb ushr 16].toInt() and 255) shl 16) or
+                    ((table[ag and 0xFFFF].toInt() and 255) shl 8) or
+                    (table[rb and 0xFFFF].toInt() and 255)
+                val dropColor = input[dropRow + x]
+                val addColor = input[addRow + x]
+                accumulators[x] = rb + (addColor and LANES) - (dropColor and LANES)
+                accumulators[width + x] = ag + ((addColor ushr 8) and LANES) - ((dropColor ushr 8) and LANES)
             }
         }
     }

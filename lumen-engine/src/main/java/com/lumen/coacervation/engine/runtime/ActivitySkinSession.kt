@@ -298,6 +298,7 @@ internal class ActivitySkinSession private constructor(
             } else null
             val renderer = if (owner != null) {
                 runCatching { LiquidActivityRenderer(activity, materialPalette, effectTuning) }.getOrNull()
+                    ?.also(LiquidActivityRenderer::prewarmBackdrop)
             } else null
             val initializationFailed = requestedSkin == SkinId.LIQUID && renderer == null
             val initialFailureResult = if (initializationFailed && owner != null) {

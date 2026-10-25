@@ -28,6 +28,9 @@ import java.lang.ref.ReferenceQueue
 import java.lang.ref.WeakReference
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.ceil
 import kotlin.math.floor
 import kotlin.math.roundToInt
@@ -105,6 +108,26 @@ internal class LiveBackdropSampler(
         /** 缓冲每重建/释放一次递增；后台结果按它认领，旧缓冲上算出的结果直接丢弃。 */
         var generation = 0
 
+        /**
+         * 已发布纹理的输入回放，与 [sample] 交替使用：本批回放与它逐像素相同、且模糊与重映射参数
+         * 也相同，输出就必然与已发布纹理相同，于是跳过取像素、模糊、重映射、`setPixels` 与重绘
+         * （2026-10-25）。只在 [ModernMaterialPolicy.LIVE_SAMPLE_MEMO_BYTES] 的独立预算内分配，
+         * 不参与必需缓冲的准入，因此不会挤掉任何原本放得下的表面。
+         */
+        var reference: Bitmap? = null
+        var referenceCanvas: Canvas? = null
+        var memoBytes = 0L
+        var hasPublishedInput = false
+        var publishedScale = 0
+        var publishedMargin = 0
+        var publishedRadius = 0
+        var publishedWeakRadius = 0
+        var publishedStrongRadius = 0
+
+        fun publishedWith(scale: Int, margin: Int, radius: Int, weakRadius: Int, strongRadius: Int): Boolean =
+            hasPublishedInput && publishedScale == scale && publishedMargin == margin && publishedRadius == radius &&
+                publishedWeakRadius == weakRadius && publishedStrongRadius == strongRadius
+
         // 以下几项主线程在采集时写、后台回放时读；单飞保证读写不交叠。
         /** 内容局部坐标 → 目标局部坐标。 */
         val sourceToTarget = Matrix()
@@ -126,6 +149,10 @@ internal class LiveBackdropSampler(
             // 原生像素，正在写的那一趟就是释放后使用。只断引用，在飞作业自己持有它直到结束。
             sample = null
             sampleCanvas = null
+            reference = null
+            referenceCanvas = null
+            memoBytes = 0L
+            hasPublishedInput = false
             pixels = null
             scratch = null
             out = null
@@ -210,6 +237,9 @@ internal class LiveBackdropSampler(
         val replay: Matrix?,
         val sample: Bitmap,
         val sampleCanvas: Canvas,
+        /** 已发布纹理的输入；参数不同或尚无发布结果时为 null，本批照常全量处理。 */
+        val reference: Bitmap?,
+        val scale: Int,
         val pixels: IntArray,
         val scratch: IntArray,
         val out: IntArray,
@@ -229,6 +259,8 @@ internal class LiveBackdropSampler(
         private val target = WeakReference(view)
         val view: LumenSurfaceTarget? get() = target.get()
         var processingNanos = 0L
+        /** 后台写、主线程在批次回来后读：本批回放与已发布输入逐像素相同。 */
+        var unchanged = false
     }
 
     private var source: View? = null
@@ -275,6 +307,16 @@ internal class LiveBackdropSampler(
     private val worker: ExecutorService by lazy {
         workerStarted = true
         Executors.newSingleThreadExecutor { task -> Thread(task, "Lumen-LiveLens").apply { isDaemon = true } }
+    }
+    /**
+     * 第二条透镜线程：一批里有两组及以上录制时，较轻的一半放到这里与 [worker] 并行（2026-10-25）。
+     * 共用同一份 [Picture] 的作业永远在同一条线程上；各作业只写自己的缓冲，输出与串行逐位相同，
+     * 批次仍在两半都完成后一次性回主线程发布。只在有第二组录制时才启动。
+     */
+    private var secondWorkerStarted = false
+    private val secondWorker: ExecutorService by lazy {
+        secondWorkerStarted = true
+        Executors.newSingleThreadExecutor { task -> Thread(task, "Lumen-LiveLens-2").apply { isDaemon = true } }
     }
     private val mainHandler = Handler(Looper.getMainLooper())
 
@@ -383,13 +425,30 @@ internal class LiveBackdropSampler(
         inFlight = true
         val token = batchToken
         val measure = counters?.timingEnabled == true
-        worker.execute {
-            val ok = runCatching { jobs.forEach { job ->
-                val start=if(measure)System.nanoTime()else 0L
-                process(job)
-                if(measure)job.processingNanos=System.nanoTime()-start
-            } }.isSuccess
-            mainHandler.post { onBatchDone(token, jobs, ok) }
+        val second = LensBatchSplit.secondHalf(jobs.map { it.picture }, jobs.map { it.sampleWidth.toLong() * it.sampleHeight },
+            Runtime.getRuntime().availableProcessors())
+        if (second == null) {
+            worker.execute {
+                val ok = runCatching { jobs.forEach { process(it, measure) } }.isSuccess
+                mainHandler.post { onBatchDone(token, jobs, ok) }
+            }
+        } else {
+            val secondJobs = second.map(jobs::get)
+            val firstJobs = jobs.filterIndexed { index, _ -> index !in second }
+            val remaining = AtomicInteger(2)
+            val failed = AtomicBoolean(false)
+            val half = { part: List<LensJob> ->
+                Runnable {
+                    if (runCatching { part.forEach { process(it, measure) } }.isFailure) failed.set(true)
+                    if (remaining.decrementAndGet() == 0) mainHandler.post { onBatchDone(token, jobs, !failed.get()) }
+                }
+            }
+            val offloaded = try {
+                secondWorker.execute(half(secondJobs)); true
+            } catch (_: RejectedExecutionException) { false }
+            // 第二条线程不可用：整批照旧串行，只等这一半。
+            if (!offloaded) remaining.set(1)
+            worker.execute(half(if (offloaded) firstJobs else jobs))
         }
         repeat(jobs.size) { counters?.softwareRequested() }
     }
@@ -502,6 +561,12 @@ internal class LiveBackdropSampler(
                 entry.strongPixels=IntArray(tw*th);entry.strongTexture=createBitmap(tw,th,Bitmap.Config.ARGB_8888)
                 entry.strongShader=BitmapShader(entry.strongTexture!!,Shader.TileMode.CLAMP,Shader.TileMode.CLAMP)
             }
+            val memoBytes = sampleWidth.toLong() * sampleHeight * 4L
+            if (entries.values.sumOf { it.memoBytes } + memoBytes <= ModernMaterialPolicy.LIVE_SAMPLE_MEMO_BYTES) {
+                entry.reference = createBitmap(sampleWidth, sampleHeight, Bitmap.Config.ARGB_8888)
+                entry.referenceCanvas = Canvas(entry.reference!!)
+                entry.memoBytes = memoBytes
+            }
             entry.sampleWidth = sampleWidth; entry.sampleHeight = sampleHeight
             entry.outWidth = outWidth; entry.outHeight = outHeight
         }
@@ -597,34 +662,44 @@ internal class LiveBackdropSampler(
         return jobs
     }
 
-    private fun job(view: LumenSurfaceTarget, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob = LensJob(
-        view = view,
-        entry = entry,
-        generation = entry.generation,
-        picture = picture,
-        replay = replay,
-        sample = entry.sample!!,
-        sampleCanvas = entry.sampleCanvas!!,
-        pixels = entry.pixels!!,
-        scratch = entry.scratch!!,
-        out = entry.out!!,
-        sampleWidth = entry.sampleWidth,
-        sampleHeight = entry.sampleHeight,
-        margin = entry.margin,
-        outWidth = entry.outWidth,
-        outHeight = entry.outHeight,
-        blurRadius = entry.profile?.let {
+    private fun job(view: LumenSurfaceTarget, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob {
+        val blurRadius = entry.profile?.let {
             val radius = if (it.blurEnabled) (it.softwareBlurRadiusDp ?: it.blurRadiusDp) * density / entry.scale else 0f
             (if (it.softwareBlurRadiusDp != null) radius.roundToInt() else radius.toInt()).coerceIn(0, 32)
         }
-            ?: LensRefractionPolicy.blurRadius(entry.scale, density),
-        profile = entry.profile,
-        preserveBackdropColors = entry.preserveBackdropColors,
-        raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
-        weakRadius=((entry.raw?.weakBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32),
-        strongRadius=((entry.raw?.strongBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32),
-        sourceEpoch=events?.sourceEpoch?:0L,contentVersion=events?.contentVersion?:0L,started=started
-    )
+            ?: LensRefractionPolicy.blurRadius(entry.scale, density)
+        val weakRadius = ((entry.raw?.weakBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32)
+        val strongRadius = ((entry.raw?.strongBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32)
+        val reference = entry.reference?.takeIf {
+            entry.valid && entry.publishedWith(entry.scale, entry.margin, blurRadius, weakRadius, strongRadius)
+        }
+        return LensJob(
+            view = view,
+            entry = entry,
+            generation = entry.generation,
+            picture = picture,
+            replay = replay,
+            sample = entry.sample!!,
+            sampleCanvas = entry.sampleCanvas!!,
+            reference = reference,
+            scale = entry.scale,
+            pixels = entry.pixels!!,
+            scratch = entry.scratch!!,
+            out = entry.out!!,
+            sampleWidth = entry.sampleWidth,
+            sampleHeight = entry.sampleHeight,
+            margin = entry.margin,
+            outWidth = entry.outWidth,
+            outHeight = entry.outHeight,
+            blurRadius = blurRadius,
+            profile = entry.profile,
+            preserveBackdropColors = entry.preserveBackdropColors,
+            raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
+            weakRadius=weakRadius,
+            strongRadius=strongRadius,
+            sourceEpoch=events?.sourceEpoch?:0L,contentVersion=events?.contentVersion?:0L,started=started
+        )
+    }
 
     /** 批次回到主线程：把后台结果写进纹理。过期的批次/缓冲一律丢弃。 */
     private fun onBatchDone(token: Int, jobs: List<LensJob>, ok: Boolean) {
@@ -649,17 +724,37 @@ internal class LiveBackdropSampler(
             if (!target.isAttachedToWindow || entries[target] !== entry) continue
             val texture = entry.texture ?: continue
             if (texture.isRecycled) continue
+            // 输入与已发布的那次逐像素相同：纹理里已经是本批的结果，不重传、不重绘。
+            if (job.unchanged && entry.valid) continue
             val tw=if(job.raw!=null)job.sampleWidth else job.outWidth;val th=if(job.raw!=null)job.sampleHeight else job.outHeight
             texture.setPixels(job.out, 0, tw, 0, 0, tw, th)
             job.weakPixels?.let {entry.weakTexture?.setPixels(it,0,tw,0,0,tw,th)}
             job.strongPixels?.let {entry.strongTexture?.setPixels(it,0,tw,0,0,tw,th)}
             entry.valid = true
+            rememberPublishedInput(entry, job)
             target.invalidate()
             if (!dirty && isInside(job.view, source)) ignoreSelfInflictedDirty = true
         }
         // 批次在飞期间又有位移：上面的 invalidate 通常已经拉起下一趟 pre-draw；这里兜底，
         // 保证即使本批结果全被丢弃，停下来的那一帧也一定会被补采。
         schedulePendingSample(System.nanoTime())
+    }
+
+    /** 刚发布的这次回放成为下一批的比对基准：两块采样位图交换，下一批回放写进另一块。 */
+    private fun rememberPublishedInput(entry: Entry, job: LensJob) {
+        val reference = entry.reference ?: return
+        val referenceCanvas = entry.referenceCanvas ?: return
+        if (job.sample !== entry.sample) return
+        entry.reference = job.sample
+        entry.referenceCanvas = entry.sampleCanvas
+        entry.sample = reference
+        entry.sampleCanvas = referenceCanvas
+        entry.hasPublishedInput = true
+        entry.publishedScale = job.scale
+        entry.publishedMargin = job.margin
+        entry.publishedRadius = job.blurRadius
+        entry.publishedWeakRadius = job.weakRadius
+        entry.publishedStrongRadius = job.strongRadius
     }
 
     private fun isInside(view: LumenSurfaceTarget?, ancestor: View?): Boolean {
@@ -772,6 +867,13 @@ internal class LiveBackdropSampler(
          * 预乘 → 模糊 → 重映射 → 提亮 → 解预乘），只是画内容那一步从直接绘制换成了回放录制。
          */
         @WorkerThread
+        fun process(job: LensJob, measure: Boolean) {
+            val start = if (measure) System.nanoTime() else 0L
+            process(job)
+            if (measure) job.processingNanos = System.nanoTime() - start
+        }
+
+        @WorkerThread
         fun process(job: LensJob) {
             if(Thread.currentThread().isInterrupted)throw InterruptedException("Sampler closed")
             job.sample.eraseColor(0)
@@ -780,6 +882,12 @@ internal class LiveBackdropSampler(
                 job.sampleCanvas.drawPicture(job.picture)
             } else {
                 job.sampleCanvas.withMatrix(replay) { drawPicture(job.picture) }
+            }
+            // 原生逐字节比较（292×62 约 1.4µs）；相同则输出必然与已发布纹理相同。
+            val reference = job.reference
+            if (reference != null && job.sample.sameAs(reference)) {
+                job.unchanged = true
+                return
             }
             job.sample.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)
             if(job.raw!=null){
@@ -827,6 +935,7 @@ internal class LiveBackdropSampler(
         trailingPosted = false
         releaseAll()
         if (workerStarted) worker.shutdownNow()
+        if (secondWorkerStarted) secondWorker.shutdownNow()
         roots.forEach { (root, listener) ->
             root.viewTreeObserver.takeIf { it.isAlive }?.removeOnPreDrawListener(listener)
         }

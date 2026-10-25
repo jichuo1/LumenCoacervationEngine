@@ -103,12 +103,17 @@ internal class FrostedMaterialRenderer(
     private var failedWidth = 0
     private var failedHeight = 0
     private var workerStarted = false
-    private data class BackdropKey(val palette: LumenPalette, val config: LiquidBackgroundConfig,
+    /** [config] 为 null 表示自动氛围背景：它只由配色、尺寸与密度决定，与背景配置无关。 */
+    private data class BackdropKey(val palette: LumenPalette, val config: LiquidBackgroundConfig?,
         val width: Int, val height: Int, val density: Float)
+    /** 只表示"自定义背景待就绪"：动效就绪判定与淡入跳过都依赖这一语义，自动背景不写这里。 */
     private var pendingBackdropKey: BackdropKey? = null
+    /** 本次请求的自动背景缓存键；请求自定义背景时为 null。 */
+    private var pendingAutoBackdropKey: BackdropKey? = null
     private var motionBackdropRequested = false
     private companion object {
-        val preparedBackdrops = PreparedBackdropCache<BackdropKey, ModernBackdropFrame>()
+        val preparedBackdrops = PreparedBackdropCache<BackdropKey, ModernBackdropFrame>(
+            maxEntries = PreparedBackdropCache.ENGINE_ENTRIES)
     }
     private var work: Future<*>? = null
     private val worker by lazy { Executors.newSingleThreadExecutor { task -> Thread(task, "Lumen-SoftFrost").apply { isDaemon = true } } }
@@ -194,10 +199,19 @@ internal class FrostedMaterialRenderer(
         val key = config?.takeIf { it.mode == LiquidBackgroundMode.CUSTOM }
             ?.let { BackdropKey(colors, it, newWidth, newHeight, scale) }
         pendingBackdropKey = key
-        if (key == null) preparedBackdrops.clear()
+        val autoKey = if (key == null) BackdropKey(colors, null, newWidth, newHeight, scale) else null
+        pendingAutoBackdropKey = autoKey
+        // 改回自动背景时照旧释放自定义图片条目；自动背景条目留给下一个页面与下一种根尺寸。
+        if (key == null) preparedBackdrops.removeIf { it.config != null }
         val prepared = key?.let(preparedBackdrops::get)
         if (prepared != null) {
             acceptBackdrop(token, prepared, animateReveal = false)
+            return
+        }
+        // 自动背景命中时照常淡入：与后台生成后到达的观感一致，只是不再等后台线程。
+        val preparedAuto = autoKey?.let(preparedBackdrops::get)
+        if (preparedAuto != null) {
+            acceptBackdrop(token, preparedAuto)
             return
         }
         val isDark = dark
@@ -222,7 +236,7 @@ internal class FrostedMaterialRenderer(
             return // A readable neutral surface remains; retry only on resize or a later foreground session.
         }
         frame = result
-        pendingBackdropKey?.takeIf { result.custom }?.let { key ->
+        (if (result.custom) pendingBackdropKey else pendingAutoBackdropKey)?.let { key ->
             preparedBackdrops.put(key, result,
                 result.original.allocationByteCount.toLong() + result.blurred.allocationByteCount)
         }

@@ -51,6 +51,7 @@ import java.util.WeakHashMap
 import java.lang.ref.WeakReference
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
+import java.util.concurrent.atomic.AtomicReference
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -150,7 +151,10 @@ internal class LiquidActivityRenderer(
     private data class BackdropKey(val palette: LumenPalette, val config: LiquidBackgroundConfig,
         val width: Int, val height: Int, val density: Float, val realtimeOptics: Boolean)
     private companion object {
-        val preparedBackdrops = PreparedBackdropCache<BackdropKey, LiquidBackdropSource>()
+        val PREWARM_PENDING = Any()
+        val PREWARM_TAKEN = Any()
+        val preparedBackdrops = PreparedBackdropCache<BackdropKey, LiquidBackdropSource>(
+            maxEntries = PreparedBackdropCache.ENGINE_ENTRIES)
     }
     private fun backdropKey(width: Int, height: Int) = BackdropKey(palette, backgroundConfig,
         width, height, density, effectProfile == LiquidEffectProfile.REALTIME_CAPTURE)
@@ -394,6 +398,22 @@ internal class LiquidActivityRenderer(
     private var fatalPosted = false
     private var closed = false
     private val rootScreenLocation = IntArray(2)
+
+    /**
+     * 自动背景预热：宿主 `prepare()`（构造本渲染器）与 `bindRoot` 之间还要构建整页视图，
+     * 这段时间里由 `Lumen-LiquidBackground` 按 [rebuildBackdrop] 尚未布局时的回退尺寸
+     * （displayMetrics）先画好同一张 [LiquidBackdropSource.create]。主线程取用时就绪即采用，
+     * 未就绪照旧同步绘制，后台那份交还时自行丢弃；两条路径的像素逐位相同。
+     *
+     * 不经 Handler 交接：`prepare()` 与 `bindRoot` 往往在同一个 onCreate 消息里，投递回主线程
+     * 的结果要等到绑定之后才执行，预热就白做了。
+     *
+     * 由会话在构造**成功之后**调用 [prewarmBackdrop]：构造中途抛错的渲染器不会被 close()，
+     * 在 init 里就启动后台线程会把它泄漏掉。
+     */
+    private val prewarmSlot = AtomicReference<Any>(PREWARM_TAKEN)
+    private val prewarmWidth = activity.resources.displayMetrics.widthPixels.coerceAtLeast(1)
+    private val prewarmHeight = activity.resources.displayMetrics.heightPixels.coerceAtLeast(1)
     private val realtimeFrameCallback = Choreographer.FrameCallback(::onRealtimeFrame)
 
     val backend: LiquidRenderBackend?
@@ -1063,6 +1083,35 @@ internal class LiquidActivityRenderer(
         }
     }
 
+    /**
+     * 自动模式下预热的就是正式背景；自定义模式下预热的是解码完成前的自动占位（同样在主线程绘制）。
+     * 已有可恢复的缓存条目（自动背景或自定义图片）时不预热。
+     */
+    @MainThread
+    internal fun prewarmBackdrop() {
+        if (closed || prewarmSlot.get() !== PREWARM_TAKEN) return
+        if (preparedBackdrops.get(backdropKey(prewarmWidth, prewarmHeight)) != null) return
+        prewarmSlot.set(PREWARM_PENDING)
+        val accepted = runCatching {
+            backgroundWorker.execute {
+                val source = runCatching {
+                    LiquidBackdropSource.create(palette, prewarmWidth, prewarmHeight)
+                }.getOrNull()
+                if (source != null && !prewarmSlot.compareAndSet(PREWARM_PENDING, source)) source.discardUnpublished()
+            }
+        }.isSuccess
+        if (!accepted) prewarmSlot.set(PREWARM_TAKEN)
+    }
+
+    /** 主线程：一次性取走预热结果。尺寸不符或尚未画完返回 null，后台那份由 worker 丢弃。 */
+    private fun takePrewarmedBackdrop(width: Int, height: Int): LiquidBackdropSource? {
+        val value = prewarmSlot.getAndSet(PREWARM_TAKEN)
+        if (value !is LiquidBackdropSource) return null
+        if (width == prewarmWidth && height == prewarmHeight) return value
+        value.discardUnpublished()
+        return null
+    }
+
     private fun scheduleBackdropRebuild(root: View) {
         if (closed || backdropRebuildPosted) return
         backdropRebuildPosted = true
@@ -1102,15 +1151,22 @@ internal class LiquidActivityRenderer(
 
         // 先创建并绑定新 source，再让下一次 traversal 接收全部 invalidation 后断开旧 source；
         // close 只释放 Java 所有权而不调用 Bitmap.recycle()，不能把帧回调误当作 GPU fence。
-        val created = runCatching {
-            LiquidBackdropSource.create(palette, width, height)
-        }.getOrNull()
+        val autoMode = backgroundConfig.mode != LiquidBackgroundMode.CUSTOM
+        // 自动背景只由配色与根尺寸决定：命中进程级缓存就复用已发布的像素，省掉主线程上的整张
+        // 软件光栅化（270×600 约 3.3–4.2ms，2026-10-25 模拟器实测）。自定义模式下这里画的只是
+        // 解码完成前的占位，不入缓存，否则会以自定义背景的键被当成图片恢复。
+        val cached = if (autoMode) preparedBackdrops.get(backdropKey(width, height)) else null
+        val prewarmed = takePrewarmedBackdrop(width, height)
+        val created = (cached?.let { runCatching { it.forkPublished(width, height) }.getOrNull() })
+            ?: prewarmed ?: runCatching { LiquidBackdropSource.create(palette, width, height) }.getOrNull()
+        if (cached != null && prewarmed != null && created !== prewarmed) prewarmed.discardUnpublished()
         if (created == null) {
             if (existing == null) backends.advanceToTranslucent()
             return
         }
         captureRequests.invalidate()
         created.markPublished()
+        if (autoMode) preparedBackdrops.put(backdropKey(width, height), created, created.preparedByteCount)
         backdropSource = created
         backdropGeneration++
         bindPreparedBackendsToBackdrop(created)
@@ -2065,6 +2121,8 @@ internal class LiquidActivityRenderer(
         customBackdropFuture = null
         customBackdropRequest = null
         backgroundWorker.shutdownNow()
+        // 从未取用的预热结果没有发布过，可以直接回收；仍在绘制的那份交还时会自行丢弃。
+        (prewarmSlot.getAndSet(PREWARM_TAKEN) as? LiquidBackdropSource)?.discardUnpublished()
         val root = boundRoot
         rootLayoutListener?.let { listener -> root?.removeOnLayoutChangeListener(listener) }
         rootLayoutListener = null
