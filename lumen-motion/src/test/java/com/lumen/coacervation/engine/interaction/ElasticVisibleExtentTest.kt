@@ -36,9 +36,12 @@ class ElasticVisibleExtentTest {
             assertFalse(ElasticVisibleExtent.unreachable(bad, 1700f, limit, 1f))
             assertFalse(ElasticVisibleExtent.unreachable(9868f, bad, limit, 1f))
         }
-        assertEquals(-12f, ElasticVisibleExtent.retainedGap(-12f, false), 0f)
-        assertEquals(4f, ElasticVisibleExtent.retainedGap(4f, true), 0f)
-        assertEquals(Float.POSITIVE_INFINITY, ElasticVisibleExtent.retainedGap(-9868f, true), 0f)
+        val open = Float.POSITIVE_INFINITY
+        assertEquals(-12f, ElasticVisibleExtent.retainedGap(-12f, open, false), 0f)
+        assertEquals(4f, ElasticVisibleExtent.retainedGap(4f, open, true), 0f)
+        assertEquals(open, ElasticVisibleExtent.retainedGap(-9868f, open, true), 0f)
+        // 远端 320px 宽窗口：整宽行被窗口切掉右侧，行自己的视口（间隙 0）仍须约束右缘。
+        assertEquals(0f, ElasticVisibleExtent.retainedGap(-60f, 0f, true), 0f)
     }
 
     @Test fun `travel toward an unreachable hidden edge ignores neighbours beyond the viewport`() {

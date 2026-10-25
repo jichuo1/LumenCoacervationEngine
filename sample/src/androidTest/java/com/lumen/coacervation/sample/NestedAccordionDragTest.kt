@@ -73,7 +73,8 @@ class NestedAccordionDragTest {
     private fun checkFollows(f: Fixture, result: Drag, sign: Float) {
         assertTrue("Holding must not sink the header by a far pivot: $result", abs(result.pressY) < f.dp(8))
         assertTrue("The drawn header must follow the finger: $result", result.dragY * sign > f.dp(4))
-        assertTrue("The visible segment must stretch along the drag: $result", result.stretch > 2f)
+        // 屏幕坐标是整数像素：阈值随密度缩放（远端 density 1 上 6dp 量程只差 2px）。
+        assertTrue("The visible segment must stretch along the drag: $result", result.stretch > .5f * f.density)
     }
 
     private data class Drag(val inner: Boolean, val pressY: Float, val dragX: Float, val dragY: Float,

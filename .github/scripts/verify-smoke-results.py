@@ -172,6 +172,7 @@ REQUIRED = {
         "matchParentRowStaysInsideRetainedViewportWhileDragging",
         "paddedViewportIncludesScrollOffsetInItsBounds",
         "partiallyVisibleRowKeepsBaselineCropWithoutFurtherOverflow",
+        "rowCutByTheWindowStillStaysInsideItsViewport",
         "roundedViewportPreservesItsRealCornerDuringDiagonalDrag",
     },
     PREFIX + "HeldRowOverflowPortalTest": {

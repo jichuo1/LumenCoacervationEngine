@@ -95,6 +95,8 @@ public class ElasticInteractionController(
     private var gapBottom = 0f
     private val neighborGaps = FloatArray(4)
     private val retainedClipGaps = FloatArray(4)
+    /** 同一侧尚未被越过（间隙 ≥ 0）的保留裁剪里最紧的那道；见 [ElasticVisibleExtent.retainedGap]。 */
+    private val openClipGaps = FloatArray(4)
     private val fittedAxis = ElasticVector()
     private val roundedClipBounds = FloatArray(64 * 5)
     private var roundedClipCount = 0
@@ -614,10 +616,12 @@ public class ElasticInteractionController(
         visibleCrop.set(0, 0, groupWidth, groupHeight)
         overflowPortal?.copyVisibleBounds(visibleCrop)
         retainedClipGaps.fill(Float.POSITIVE_INFINITY)
+        openClipGaps.fill(Float.POSITIVE_INFINITY)
         val pageCropEdges = overflowPortal?.pageCropEdges ?: 0
         fun retain(index: Int, edge: Int, gap: Float) {
-            retainedClipGaps[index] = minOf(retainedClipGaps[index],
-                ElasticClipGeometry.retainedGap(gap, pageCropEdges and edge != 0))
+            val retained = ElasticClipGeometry.retainedGap(gap, pageCropEdges and edge != 0)
+            retainedClipGaps[index] = minOf(retainedClipGaps[index], retained)
+            if (retained >= 0f) openClipGaps[index] = minOf(openClipGaps[index], retained)
         }
         roundedClipCount = 0
         freezeForOutline = false
@@ -745,10 +749,10 @@ public class ElasticInteractionController(
         gapBottom = ElasticVisibleExtent.travelBound(gapBottom, hiddenBottom, limit)
         // 补画条带会把源像素画到原生裁剪之外，由它自己的页面裁剪规则决定；这里只放行原生视口藏起的边。
         if (overflowPortal != null) return
-        retainedClipGaps[0] = ElasticVisibleExtent.retainedGap(retainedClipGaps[0], hiddenLeft)
-        retainedClipGaps[1] = ElasticVisibleExtent.retainedGap(retainedClipGaps[1], hiddenTop)
-        retainedClipGaps[2] = ElasticVisibleExtent.retainedGap(retainedClipGaps[2], hiddenRight)
-        retainedClipGaps[3] = ElasticVisibleExtent.retainedGap(retainedClipGaps[3], hiddenBottom)
+        retainedClipGaps[0] = ElasticVisibleExtent.retainedGap(retainedClipGaps[0], openClipGaps[0], hiddenLeft)
+        retainedClipGaps[1] = ElasticVisibleExtent.retainedGap(retainedClipGaps[1], openClipGaps[1], hiddenTop)
+        retainedClipGaps[2] = ElasticVisibleExtent.retainedGap(retainedClipGaps[2], openClipGaps[2], hiddenRight)
+        retainedClipGaps[3] = ElasticVisibleExtent.retainedGap(retainedClipGaps[3], openClipGaps[3], hiddenBottom)
     }
 
     private fun scheduleFrame() {

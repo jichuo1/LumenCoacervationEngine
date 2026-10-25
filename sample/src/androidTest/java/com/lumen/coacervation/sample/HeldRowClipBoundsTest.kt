@@ -30,7 +30,10 @@ class HeldRowClipBoundsTest {
 
     @Test fun roundedViewportPreservesItsRealCornerDuringDiagonalDrag() = runCase(0, 0, true)
 
-    private fun runCase(padding: Int, scrollY: Int, rounded: Boolean = false) {
+    /** 远端 320px 宽窗口复现：行的右侧被窗口切掉，行自己的视口仍须约束右缘。 */
+    @Test fun rowCutByTheWindowStillStaysInsideItsViewport() = runCase(0, 0, cutByWindow = true)
+
+    private fun runCase(padding: Int, scrollY: Int, rounded: Boolean = false, cutByWindow: Boolean = false) {
         ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
             lateinit var root: View
             lateinit var row: TextView
@@ -66,7 +69,7 @@ class HeldRowClipBoundsTest {
                 content.addView(row, FrameLayout.LayoutParams(300 - padding * 2 - if (rounded) 40 else 0, 80).apply { topMargin = 16; leftMargin = if (rounded) 20 else 0 })
                 viewport.addView(content, FrameLayout.LayoutParams(-1, 400))
                 panel.addView(viewport, FrameLayout.LayoutParams(300, 120).apply {
-                    leftMargin = 80
+                    leftMargin = if (cutByWindow) activity.resources.displayMetrics.widthPixels - 240 else 80
                     topMargin = 80
                 })
                 activity.setContentView(panel)

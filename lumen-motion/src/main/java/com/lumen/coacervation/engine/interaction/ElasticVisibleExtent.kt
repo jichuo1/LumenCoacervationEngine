@@ -44,9 +44,12 @@ internal object ElasticVisibleExtent {
         return hidden * (1f - shrink) > 2f * limit + extent / 2f * shrink
     }
 
-    /** 不可达的被藏边早已越过保留裁剪（[gap] < 0）：它之外的形变始终在同一道原生裁剪之外。 */
-    fun retainedGap(gap: Float, unreachableEdge: Boolean): Float =
-        if (unreachableEdge && gap < 0f) Float.POSITIVE_INFINITY else gap
+    /**
+     * 不可达的被藏边早已越过某道保留裁剪（[gap] < 0）：那道裁剪之外的形变始终看不见，不再约束。
+     * 该边仍在其内的裁剪（[openGap]，例如被窗口切掉的整宽行自己的视口）照样保留。
+     */
+    fun retainedGap(gap: Float, openGap: Float, unreachableEdge: Boolean): Float =
+        if (unreachableEdge && gap < 0f) openGap else gap
 
     /**
      * 朝不可达被藏边的行程：那一侧的邻居与父容器内缘都在视口之外，按满额 [limit] 放行；
