@@ -133,6 +133,8 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
     fun releaseSuppressionUnderlay() {
         forgetProbe()
         probeRaw = null
+        regionA = ArrayList()
+        regionB = ArrayList()
         suppressionPaint.shader = null
         suppressionUnderlayShader = null
         suppressionUnderlaySource = null
@@ -316,6 +318,56 @@ internal class LiquidFeedbackSuppressor(private val paddingPx: Float) {
         probeValid = false
         probeStable = null
         probeBaseline = null
+    }
+
+    private val regionCanvas = Canvas()
+    private val regionSource = Rect()
+    private val regionTarget = Rect()
+    private var regionA = ArrayList<Bitmap>()
+    private var regionB = ArrayList<Bitmap>()
+
+    /**
+     * 截图线程：两张抑制后的截图在 [rects]（位图像素，left/top/right/bottom 依次排列，右下不含）内是否逐像素相同。
+     * 只比较玻璃可能读到的区域（见 [LiquidGlassFootprintPolicy]）。区域为空表示没有玻璃读取截图，视为相同。
+     * 每块区域以 SRC、无缩放原样复制进复用位图后用原生 `sameAs` 比较：逐行内存复制加 memcmp，
+     * 不经逐像素颜色转换；复制不改变任何像素，结论与直接比较原始像素一致。
+     */
+    @AnyThread
+    fun regionsEqual(capture: Bitmap, baseline: Bitmap, rects: IntArray): Boolean {
+        if (capture.width != baseline.width || capture.height != baseline.height || capture.config != baseline.config) return false
+        var index = 0
+        var slot = 0
+        while (index + 3 < rects.size) {
+            val left = rects[index]; val top = rects[index + 1]
+            val width = rects[index + 2] - left; val height = rects[index + 3] - top
+            index += 4
+            if (width <= 0 || height <= 0) continue
+            val a = regionBitmap(regionA, slot, width, height, capture.config)
+            val b = regionBitmap(regionB, slot, width, height, capture.config)
+            slot++
+            regionSource.set(left, top, left + width, top + height)
+            regionTarget.set(0, 0, width, height)
+            copyRegion(capture, a); copyRegion(baseline, b)
+            if (!a.sameAs(b)) return false
+        }
+        return true
+    }
+
+    private fun regionBitmap(pool: ArrayList<Bitmap>, slot: Int, width: Int, height: Int, config: Bitmap.Config?): Bitmap {
+        val existing = pool.getOrNull(slot)
+        if (existing != null && existing.width == width && existing.height == height) return existing
+        val created = createBitmap(width, height, config ?: Bitmap.Config.ARGB_8888)
+        if (slot < pool.size) pool[slot] = created else pool += created
+        return created
+    }
+
+    private fun copyRegion(from: Bitmap, to: Bitmap) {
+        regionCanvas.setBitmap(to)
+        try {
+            regionCanvas.drawBitmap(from, regionSource, regionTarget, copyPaint)
+        } finally {
+            regionCanvas.setBitmap(null)
+        }
     }
 
     private fun underlayReadyFor(stableBackdrop: LiquidBackdropSource, width: Int, height: Int): Boolean {

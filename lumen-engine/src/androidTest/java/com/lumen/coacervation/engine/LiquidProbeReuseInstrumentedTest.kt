@@ -94,4 +94,27 @@ class LiquidProbeReuseInstrumentedTest {
         assertNotNull(outcome1)
         feedback.close()
     }
+
+    /** 区域比较：区域外的差异被忽略、区域内一个像素的差异被看见、没有玻璃时视为相同、尺寸不符一律不同。 */
+    @Test fun regionComparisonSeesOnlyTheGlassRegions() {
+        val feedback = LiquidFeedbackSuppressor(paddingPx = 12f)
+        val random = Random(9)
+        val a = capture(random).bitmap
+        val b = a.copy(Bitmap.Config.ARGB_8888, true)
+        val rects = intArrayOf(10, 20, 300, 140, 400, 1300, 660, 1480)
+        b.setPixel(5, 5, Color.RED)            // 区域外
+        b.setPixel(500, 700, Color.BLUE)       // 区域外
+        assertTrue(feedback.regionsEqual(b, a, rects))
+        assertTrue(!a.sameAs(b))
+        b.setPixel(299, 139, Color.GREEN)      // 第一块区域的右下角（含）
+        assertTrue(!feedback.regionsEqual(b, a, rects))
+        val c = a.copy(Bitmap.Config.ARGB_8888, true).also { it.setPixel(659, 1479, Color.GREEN) }
+        assertTrue(!feedback.regionsEqual(c, a, rects))
+        val d = a.copy(Bitmap.Config.ARGB_8888, true).also { it.setPixel(300, 139, Color.GREEN) } // 右边界不含
+        assertTrue(feedback.regionsEqual(d, a, rects))
+        assertTrue(feedback.regionsEqual(b, a, IntArray(0)))
+        val small = Bitmap.createBitmap(10, 10, Bitmap.Config.ARGB_8888)
+        assertTrue(!feedback.regionsEqual(small, a, rects))
+        feedback.close()
+    }
 }

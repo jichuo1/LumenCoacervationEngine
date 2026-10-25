@@ -87,12 +87,19 @@ private class LiquidCaptureRequest(
     /** 静止期兜底探测（[LiquidRefreshRateController.probing]）发起的截图。 */
     val probe: Boolean = false,
     /** 本次遮罩与上一次构建逐位相同，见 [LiquidFeedbackSuppressor.maskMatchesPrevious]。 */
-    val maskMatchesPrevious: Boolean = false
+    val maskMatchesPrevious: Boolean = false,
+    /**
+     * 玻璃可能读到的截图区域（位图像素，见 [LiquidGlassFootprintPolicy]）；null 表示本次不能按区域判定
+     * （非 REFRACTION 后端、存在回弹拉伸或位置未知），只做整图比较。
+     */
+    val glassRegion: IntArray? = null
 ) {
     // 以下几项只在截图线程写入，经 mainHandler 消息队列交接后才在主线程读取。
     var copyCompletedNanos = 0L
     var outcome = LiquidCaptureOutcome.FAILED
     var sameAsBaseline = false
+    /** 抑制后的截图在 [glassRegion] 内与基准相同（[sameAsBaseline] 为真时必然为真）。 */
+    var glassRegionEqual = false
     /**
      * 沿用了上一次探测的结论，[source] 里是**未抑制**的原始截图。它在提交时只能当作探测丢弃；
      * 若被判为有变化，必须先由 [LiquidActivityRenderer] 从基准恢复出抑制后的像素再使用。
@@ -129,6 +136,7 @@ private fun postProcessRealtimeCapture(
         if (reused != null) {
             request.outcome = reused
             request.sameAsBaseline = true
+            request.glassRegionEqual = true
             request.reusedProbe = true
             return
         }
@@ -146,8 +154,12 @@ private fun postProcessRealtimeCapture(
             outcome, sameAsBaseline = false)
         return
     }
-    // 异常一律当"有变化"处理，不能抛出去。
+    // 异常一律当"有变化"处理，不能抛出去。先比整图（原生 memcmp）：相同则玻璃区域必然相同；
+    // 不同时才按玻璃区域再比一次，区分"只在区域外变化"。
     request.sameAsBaseline = runCatching { request.source.bitmap.sameAs(baseline.bitmap) }.getOrDefault(false)
+    val region = request.glassRegion
+    request.glassRegionEqual = request.sameAsBaseline || (region != null &&
+        runCatching { feedback.regionsEqual(request.source.bitmap, baseline.bitmap, region) }.getOrDefault(false))
     if (request.probe) feedback.commitProbe(request.serial, request.stableBackdrop, baseline, request.maskReady,
         outcome, request.sameAsBaseline)
 }
@@ -355,10 +367,21 @@ internal class LiquidActivityRenderer(
 
     private val realtimeDrawListener = ViewTreeObserver.OnDrawListener {
         if (realtimeIdle || refreshRate.probing) {
+            val restoredDraw = refreshRate.consumeRestoredDraw()
+            // 窗口绘制本身不说明玻璃附近变了。REFRACTION 下先以探测方式截一张：玻璃区域真的变了，
+            // 提交时才进入活跃并申请刷新率（[handleRealtimeCaptureResult] 的变化分支）。
+            timerProbePending = false
             leaveRealtimeIdle(LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES,
-                probe = refreshRate.consumeRestoredDraw())
+                probe = restoredDraw || glassRegionGatingAvailable())
         }
     }
+
+    /** 按玻璃区域判定变化的前提：采样范围的证明只覆盖 REFRACTION 窗口玻璃。 */
+    private fun glassRegionGatingAvailable(): Boolean =
+        effectProfile == LiquidEffectProfile.REALTIME_CAPTURE && backends.current?.backend == LiquidRenderBackend.REFRACTION
+
+    /** 每秒兜底探测发起、尚未被窗口绘制打断的那一次截图；只有它留原始截图供下一次探测复用。 */
+    private var timerProbePending = false
     /**
      * 主窗口失去焦点（面板、确认框等弹窗盖在上面）期间不发 PixelCopy。
      *
@@ -382,6 +405,7 @@ internal class LiquidActivityRenderer(
         idleProbeWakeups++
         // 探测只需再确认一张：相同就立刻回到静止，不必重新攒两张。
         identicalCaptureStreak = LiquidRealtimeCapturePolicy.IDLE_CONFIRMATIONS - 1
+        timerProbePending = true
         leaveRealtimeIdle(settleFrames = 0, probe = true)
     }
 
@@ -394,6 +418,10 @@ internal class LiquidActivityRenderer(
     private var realtimeCaptureNextIndex = 0
     private val captureRequests = LiquidCaptureRequestState()
     private var captureSerial = 0L
+    private val glassFootprint = LiquidGlassFootprint()
+    private val regionMatrix = Matrix()
+    private val regionStretch = FloatArray(3)
+    private val glassSamplingDeltaPx = LiquidGlassFootprintPolicy.maxOffsetPx(parameters, density)
     private val restoreCanvas = Canvas()
     private val restorePaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
     private var realtimeCaptureInFlight: LiquidCaptureRequest? = null
@@ -1912,9 +1940,11 @@ internal class LiquidActivityRenderer(
             it !== captureSource && !it.isClosed && backends.lastBoundBackdrop === it
         }
         val request = LiquidCaptureRequest(ticket, captureSource, stable, WeakReference(root), root.width, root.height,
-            feedback.mask, realtimeMaskReady, baseline, serial = ++captureSerial, probe = refreshRate.probing,
-            maskMatchesPrevious = feedback.maskMatchesPrevious)
+            feedback.mask, realtimeMaskReady, baseline, serial = ++captureSerial,
+            probe = refreshRate.probing && timerProbePending,
+            maskMatchesPrevious = feedback.maskMatchesPrevious, glassRegion = buildGlassRegion(root, captureSource))
         feedback.commitMaskSignature()
+        timerProbePending = false
         realtimeCaptureInFlight = request
         realtimeNextCaptureNanos = frameTimeNanos + refreshRate.frameIntervalNanos
         val recipient = WeakReference(this)
@@ -1962,9 +1992,10 @@ internal class LiquidActivityRenderer(
                     // 采用；把它计入熔断计数会让长列表滚动 33ms 就永久关掉整个实时效果。
                     realtimeCaptureFailureCount = 0
                     val bound = realtimeBackdropSource
+                    val comparedAgainstBound = bound != null && bound === request.baseline &&
+                        bound !== captureSource && !bound.isClosed && backends.lastBoundBackdrop === bound
                     val unchanged = LiquidRealtimeCapturePolicy.isUnchanged(
-                        comparedAgainstBoundSource = bound != null && bound === request.baseline &&
-                            bound !== captureSource && !bound.isClosed && backends.lastBoundBackdrop === bound,
+                        comparedAgainstBoundSource = comparedAgainstBound,
                         samplingSuppressed = realtimeSamplingSuppressed
                     ) { request.sameAsBaseline }
                     // 沿用探测结论的截图里是未抑制的原始像素；既然判为有变化要被使用，先恢复成抑制后的
@@ -1984,13 +2015,24 @@ internal class LiquidActivityRenderer(
                         onIdenticalCapture()
                         return
                     }
-                    identicalCaptureStreak = 0
-                    // A changed fallback probe becomes active only after current-ticket validation above.
-                    refreshRate.wake(root)
+                    // 只在玻璃读不到的地方有变化（光标、进度条、页面别处的动画）：照常绑定这张，玻璃逐像素
+                    // 不变、移动中的玻璃也读到最新截图；但按"未变化"走静止门控——不进入逐帧截图、不申请
+                    // 刷新率（2026-10-26：远离玻璃的光标闪烁曾让 CPU ×10、主线程唤醒 ×13）。
+                    val glassUnchanged = LiquidRealtimeCapturePolicy.isUnchanged(
+                        comparedAgainstBoundSource = comparedAgainstBound,
+                        samplingSuppressed = realtimeSamplingSuppressed
+                    ) { request.glassRegionEqual }
+                    if (!glassUnchanged) {
+                        identicalCaptureStreak = 0
+                        // A changed fallback probe becomes active only after current-ticket validation above.
+                        refreshRate.wake(root)
+                    }
                     // 位图刚被改写，立刻提示 HWUI 预上传纹理；否则上传会推迟到下一帧 draw 中间，
                     // 变成 RenderThread 上的一次同步停顿。每帧一张约 3.81 MiB 的实时缓冲。
                     runCatching { captureSource.bitmap.prepareToDraw() }
-                    applyCaptureThroughputSample(request.copyCompletedNanos)
+                    // 玻璃区域没变的这张不代表活跃期的采集吞吐，与相同截图一样只重置统计。
+                    if (glassUnchanged) refreshRate.resetThroughput()
+                    else applyCaptureThroughputSample(request.copyCompletedNanos)
                     realtimeBackdropSource = captureSource
                     // 截图发起后开始的滚动会把这帧变成过期采样：保留缓冲但暂不绑定，
                     // 等位移静默后的下一帧采集再切回实时。
@@ -1998,6 +2040,7 @@ internal class LiquidActivityRenderer(
                         bindPreparedBackendsToBackdrop(captureSource)
                     }
                     invalidateRealtimeCaptureConsumers()
+                    if (glassUnchanged) onIdenticalCapture()
                     return
                 }
             }
@@ -2016,6 +2059,38 @@ internal class LiquidActivityRenderer(
                 System.nanoTime() - workStartedNanos
             )
         }
+    }
+
+    /**
+     * 主线程、发起截图时：本帧全部可见玻璃会读到的截图区域并集（与遮罩同一份已绘制足迹）。只在 REFRACTION
+     * 后端下给出——采样范围的证明只覆盖这条 shader；任一表面在回弹拉伸中或位置未知时返回 null，退回整图比较。
+     * 外部窗口里的表面不读实时截图，不计入。
+     */
+    private fun buildGlassRegion(root: View, captureSource: LiquidBackdropSource): IntArray? {
+        if (backends.current?.backend != LiquidRenderBackend.REFRACTION) return null
+        if (captureSource.isClosed || captureSource.fullWidth <= 0 || captureSource.fullHeight <= 0) return null
+        val bitmap = captureSource.bitmap
+        val scaleX = bitmap.width.toFloat() / captureSource.fullWidth
+        val scaleY = bitmap.height.toFloat() / captureSource.fullHeight
+        var rects = IntArray(16)
+        var index = 0
+        for ((surface, footprint) in surfaceViews) {
+            if (!surface.isAttachedToWindow || !surface.isShown || surface.alpha <= 0f) continue
+            if (surface.rootView !== root.rootView) continue
+            if (!footprint.hasOrigin) return null
+            stretchCoordinates.resolve(surface, root, regionStretch)
+            if (regionStretch[1] > 0f && regionStretch[2] != 0f) return null
+            val mapping = if (footprint.hasTransform) {
+                if (!surfaceCoordinates.sourceToTarget(footprint.screenTransform, root, regionMatrix)) return null
+                regionMatrix
+            } else null
+            if (index + 4 > rects.size) rects = rects.copyOf(rects.size * 2)
+            glassFootprint.bitmapRect(footprint.left, footprint.top, footprint.right, footprint.bottom,
+                (footprint.originX - rootScreenLocation[0]).toFloat(), (footprint.originY - rootScreenLocation[1]).toFloat(),
+                mapping, glassSamplingDeltaPx, scaleX, scaleY, bitmap.width, bitmap.height, rects, index)
+            index += 4
+        }
+        return rects.copyOf(index)
     }
 
     /**

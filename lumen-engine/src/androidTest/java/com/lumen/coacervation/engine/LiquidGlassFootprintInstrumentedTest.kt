@@ -15,6 +15,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import com.lumen.coacervation.engine.liquid.LiquidBackdropSource
 import com.lumen.coacervation.engine.liquid.LiquidEffectProfile
+import com.lumen.coacervation.engine.liquid.LiquidGlassFootprint
+import com.lumen.coacervation.engine.liquid.LiquidGlassFootprintPolicy
 import com.lumen.coacervation.engine.liquid.LiquidRefractionBackendApi33
 import com.lumen.coacervation.engine.liquid.LiquidTokenResolver
 import com.lumen.coacervation.engine.liquid.LiquidVisualTuningPolicy
@@ -24,8 +26,6 @@ import com.lumen.coacervation.engine.model.LumenEffectTuningPolicy
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
-import kotlin.math.ceil
-import kotlin.math.floor
 import kotlin.random.Random
 
 /**
@@ -226,41 +226,37 @@ class LiquidGlassFootprintInstrumentedTest {
 }
 
 /**
- * 候选实现（测试内）：REFRACTION 窗口玻璃会读到的截图位图区域。`params == null` 时只返回玻璃自身
- * 映射到位图的范围（Δ = 0），供灵敏度对照使用。
+ * 证明对象就是生产实现：未拉伸的情形直接走 [LiquidGlassFootprint]（引擎在截图请求时用的同一份代码）；
+ * 回弹拉伸只在测试里按 shader `backdropPoint` 的单调映射补算（引擎遇到拉伸会整体退回整图比较）。
+ * `params == null` 时只返回玻璃自身映射到位图的范围（Δ = 0），供灵敏度对照使用。
  */
 internal object GlassSamplingFootprint {
-    private const val MAX_OPTICAL_INTENSITY = 1.85f
-    private const val INTERIOR_LENS_PEAK = 0.385f
-
-    fun maxOffsetPx(params: LiquidParameters, density: Float): Float = MAX_OPTICAL_INTENSITY * density * (
-        params.refractionAmountDp + INTERIOR_LENS_PEAK * params.interiorDistortionDp +
-            maxOf(params.chromaticShiftDp, params.scatteringRadiusDp))
+    private val production = LiquidGlassFootprint()
 
     fun bitmapRect(
         bounds: Rect, viewX: Int, viewY: Int, localToBackdrop: Matrix?, stretchSampling: FloatArray?,
         params: LiquidParameters?, density: Float, fullWidth: Int, fullHeight: Int, bitmapWidth: Int, bitmapHeight: Int
     ): Rect {
-        val delta = (params?.let { maxOffsetPx(it, density) } ?: 0f) + 1f // +1：抗锯齿边缘像素中心在 bounds 外 0.5px
-        val canvasRect = RectF(bounds.left - delta, bounds.top - delta, bounds.right + delta, bounds.bottom + delta)
-        val root = RectF(canvasRect)
-        if (localToBackdrop != null) localToBackdrop.mapRect(root) else root.offset(viewX.toFloat(), viewY.toFloat())
-        if (stretchSampling != null && stretchSampling[1] > 0f && stretchSampling[2] != 0f) {
-            root.top = stretched(root.top, stretchSampling)
-            root.bottom = stretched(root.bottom, stretchSampling)
-        }
+        val delta = params?.let { LiquidGlassFootprintPolicy.maxOffsetPx(it, density) } ?: 0f
         val sx = bitmapWidth.toFloat() / fullWidth
         val sy = bitmapHeight.toFloat() / fullHeight
-        // LINEAR 读 floor(p−0.5) 及其后一格；各留 2 texel 余量。
-        return Rect(
-            (floor(root.left * sx).toInt() - 2).coerceIn(0, bitmapWidth),
-            (floor(root.top * sy).toInt() - 2).coerceIn(0, bitmapHeight),
-            (ceil(root.right * sx).toInt() + 2).coerceIn(0, bitmapWidth),
-            (ceil(root.bottom * sy).toInt() + 2).coerceIn(0, bitmapHeight)
-        )
+        val out = IntArray(4)
+        if (stretchSampling == null || stretchSampling[1] <= 0f || stretchSampling[2] == 0f) {
+            production.bitmapRect(bounds.left, bounds.top, bounds.right, bounds.bottom, viewX.toFloat(), viewY.toFloat(),
+                localToBackdrop, delta, sx, sy, bitmapWidth, bitmapHeight, out, 0)
+        } else {
+            val expand = delta + LiquidGlassFootprintPolicy.EDGE_COVERAGE_PX
+            val root = RectF(bounds.left - expand, bounds.top - expand, bounds.right + expand, bounds.bottom + expand)
+            if (localToBackdrop != null) localToBackdrop.mapRect(root) else root.offset(viewX.toFloat(), viewY.toFloat())
+            root.top = stretched(root.top, stretchSampling)
+            root.bottom = stretched(root.bottom, stretchSampling)
+            LiquidGlassFootprintPolicy.toBitmapRect(root.left, root.top, root.right, root.bottom, sx, sy,
+                bitmapWidth, bitmapHeight, out, 0)
+        }
+        return Rect(out[0], out[1], out[2], out[3])
     }
 
-    /** 与 shader `backdropPoint` 相同的单调拉伸映射（视口外的 y 由同一公式外推，取两端点即可）。 */
+    /** 与 shader `backdropPoint` 相同的单调拉伸映射（取两端点即可）。 */
     private fun stretched(y: Float, sampling: FloatArray): Float {
         var q = (y - sampling[0]) / sampling[1]
         val bottom = sampling[2] < 0f

@@ -4,6 +4,7 @@ import android.app.Dialog
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.SystemClock
 import android.util.Log
 import android.view.View
@@ -185,9 +186,21 @@ class EngineWorkRegressionTest {
         assertEquals("Unchanged probes must not configure Hz", before.refreshConfigureCalls, probes.refreshConfigureCalls)
         assertEquals("Unchanged probes must not restore Hz again", before.refreshRestoreCalls, probes.refreshRestoreCalls)
         assertEquals("Unchanged probes must not write attributes", before.windowPreferenceWrites, probes.windowPreferenceWrites)
+        // 2026-10-26 按玻璃区域判定：只重绘、玻璃读得到的像素没变时，探测一张就回到静止，不申请刷新率。
         WindowRegressionCapture.main { root.invalidate() }
         WindowRegressionCapture.frame(root)
-        assertTrue("A draw must reapply the current target", requireNotNullOnMain(material).refreshConfigureCalls > probes.refreshConfigureCalls)
+        val untouched = idle()
+        assertEquals("A draw that changes nothing the glass reads must not configure Hz",
+            probes.refreshConfigureCalls, untouched.refreshConfigureCalls)
+        // 玻璃区域真的变化（覆盖全屏的叠层盖住玻璃）：探测截图确认后照常重新申请当前目标。
+        val cover = ColorDrawable(Color.rgb(30, 120, 200)).apply { setBounds(0, 0, root.width, root.height) }
+        WindowRegressionCapture.main { root.overlay.add(cover) }
+        WindowRegressionCapture.frame(root)
+        val deadline = SystemClock.uptimeMillis() + 3000
+        while (requireNotNullOnMain(material).refreshConfigureCalls <= untouched.refreshConfigureCalls &&
+            SystemClock.uptimeMillis() < deadline) SystemClock.sleep(10)
+        assertTrue("A change the glass reads must reapply the current target",
+            requireNotNullOnMain(material).refreshConfigureCalls > untouched.refreshConfigureCalls)
         // A different owner may update the preference while Liquid is active. Restore only our values.
         WindowRegressionCapture.main {
             val attributes = activity.window.attributes
