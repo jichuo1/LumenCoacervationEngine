@@ -491,7 +491,7 @@ root（bindRoot）
   - 长按有自己含义的控件；
   - 可选中文本；
   - 能通过触摸滚动的控件（滚动容器、带 `movementMethod` 的文本）。文字超出自身高度但不能滚动的普通 `TextView` 与按钮（大字号、高密度屏常见）仍参与弹性（自 1.4.4）。
-- **自己处理按压/拖动的控件必须打 `ElasticInteractionController.EXCLUDED_TAG`**，否则两套手势会互相抢。包括：`LumenNavigationBar`、`LumenSegmentScrubBar`、`ItemTouchHelper` 管理的列表行、宿主自己的拖动控件。
+- **自己处理按压/拖动的控件必须打 `ElasticInteractionController.EXCLUDED_TAG`**，否则两套手势会互相抢。包括：`LumenNavigationBar`、`LumenSegmentScrubBar`、`ItemTouchHelper` 管理的列表行、宿主自己的拖动控件。`LumenSlider` 由引擎自动排除（§12.4）。
 - 普通装饰角标**应当**保持不可点击、不消费触摸，让命中继续落到图标或可点击包装；**不应**给它设置 `EXCLUDED_TAG`，该标记会阻断覆盖区域及其可点击祖先的弹性命中。需要图标与角标一起形变时，用共同的可点击包装或表面归属组承载两者；任意兄弟布局不会自动组成一个形变组。有独立手势的角标仍遵守上一条的自管控件排除规则。
 - 弹窗的内容容器会被呈现器打上 `CONTAINER_TAG`：容器可以承载参与弹性的控件，但点空白处时容器自己不形变。
 
@@ -527,6 +527,13 @@ root（bindRoot）
   - 选中框**可以**用 `setPrismSelection(LumenPrismSelectionOptions())` 换成液态选中胶囊（§13.13）；`null` 恢复经典选中框，逐帧不变。
 - **`LumenSegmentScrubBar`**（分段档位条）：与底栏共用手势判定、高光和弹簧；用 `configure(labels, colors, thumbBackground, trackBackground, selectedIndex, onSelect)` 配置，1～8 段（§15.1）。
 - 两者都**必须**满足 §12.1 的 `EXCLUDED_TAG` 和 §12.3 的宿主裁剪。
+- **`LumenSlider`**（通用滑块，自未发布版本）：连续值或离散刻度；胶囊（亮度条式，填充即数值）与细轨两种形态；外观 `Skin`（柔光 / Liquid，槽体为 `SELECTED_ITEM` 表面）、`Fluent`、`Mica`、`Prism`、`Plain`。
+  - 引擎的长按弹性与 `LumenPagePager` **自动**排除本控件（与 `SeekBar` 同等），宿主不需要打 `EXCLUDED_TAG`；打了也无副作用。
+  - 横向超过 slop 才接管手势；竖向先动时让给父级滚动，本次手势不改值。放在 `ScrollView` / `RecyclerView` 里不需要额外处理。
+  - 按压放大、两端拉伸（≤ 6dp）、数值气泡和 Prism 阴影画在边界外：直接宿主容器**必须** `clipChildren = false`、`clipToPadding = false`（§12.3）。
+  - HDR 高光：滑块只在 API 34+ 读取显示器余量并输出扩展范围颜色；窗口的 `COLOR_MODE_HDR` **由宿主决定**，引擎不修改窗口设置。未开启时平台按 SDR 钳制，观感等同 SDR 回退。松手后淡出，静止时不占 HDR 余量。
+  - `Prism()` 的镜片不采样背景、不需要会话：引擎玻璃要求采样来源完全覆盖玻璃，滑块轨道大部分透明，采样只会得到回退色块；镜片改为自绘放大轨道，轨道以外透出真实背景。`Skin(lumen)` 的槽体随轨道层变换自动通知 `lumen.notifyPositionChanged(slider)`。宿主在没有布局的情况下移动滑块时调用 `slider.notifyPositionChanged()`。
+  - 销毁时调用 `slider.dispose()`（关闭它创建的 Fluent 控制器）；值监听在拖动中逐档回调，需要"松手才提交"的设置用 `setOnSlideListener` 的 `onSlideFinished`。
 
 ### 12.5 列表拖拽排序（`lumen-controls`）
 
@@ -889,6 +896,7 @@ API 33+ 读取进程当前的公开动画倍率；API 27–32 通过公开系统
 
 - **已适配**：
   - 翻页方向、底栏与档位条的命中和指示位置、文字链的偏移方向；
+  - `LumenSlider`：最小值在起始侧（RTL 下在右），方向键、图标位置、两端拉伸随之镜像，数值气泡文字不镜像；
   - 弹窗和气泡的几何（按物理坐标计算，天然不受文字方向影响）；
   - 角标弹出的轴心（`MicroMotion.showBadge`，按角标自己的布局方向解析起始侧；挂在起始侧上角时传 `growFromEnd = true`）。
 - **已知限制**：

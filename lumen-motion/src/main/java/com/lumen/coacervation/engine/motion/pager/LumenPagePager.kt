@@ -25,6 +25,7 @@ import android.widget.SeekBar
 import android.widget.Switch
 import com.lumen.coacervation.engine.motion.InterruptibleMotionSession
 import com.lumen.coacervation.engine.motion.AnimatorDurationScale
+import com.lumen.coacervation.engine.widget.LumenSlider
 import java.util.IdentityHashMap
 import kotlin.math.abs
 
@@ -285,7 +286,7 @@ public open class LumenPagePager @JvmOverloads constructor(
                 view.isLaidOut && !view.isLayoutRequested && !view.isDirty,
                 snapshot(parts.first), snapshot(parts.second), configuration.scaledTouchSlop)
         }
-        if (view !== this && (view is CompoundButton || view is SeekBar ||
+        if (view !== this && (view is CompoundButton || view is SeekBar || view is LumenSlider ||
                 view.canScrollHorizontally(-1) || view.canScrollHorizontally(1))) return true
         if (view is ViewGroup) for (index in view.childCount - 1 downTo 0) {
             val child: View = view.getChildAt(index)

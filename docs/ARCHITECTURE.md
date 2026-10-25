@@ -205,7 +205,7 @@ onDestroy → session.close()：注销内存压力监听、关闭两个渲染器
    ├ LumenPagePager + PageTextChain ─ motion/pager/  可打断翻页 + 文字链
    ├ SectionExpansionController ─ motion/expansion/ 手风琴
    ├ LumenReveal ──────────────── motion/reveal/ 定位并高亮
-   └ LumenNavigationBar / LumenSegmentScrubBar ─ widget/ 自带手势与高光的控件
+   └ LumenNavigationBar / LumenSegmentScrubBar / LumenSlider ─ widget/ 自带手势与高光的控件
 
 共同内核（motion/）：InterruptibleMotionSession / Continuation / Policy / Phase、MotionRect、LumenEasing、MicroMotion
 ```

@@ -24,6 +24,9 @@ import com.lumen.coacervation.engine.motion.modal.ModalAnchorStyle
 import com.lumen.coacervation.engine.motion.modal.ModalSubPanelOrigin
 import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
 import com.lumen.coacervation.engine.widget.LumenSegmentScrubBar
+import com.lumen.coacervation.engine.widget.LumenSlider
+import com.lumen.coacervation.engine.widget.LumenSliderAppearance
+import com.lumen.coacervation.engine.widget.LumenSliderRange
 import com.lumen.coacervation.engine.widget.LumenSlidingSelection
 import com.lumen.coacervation.engine.widget.NavigationBarColors
 
@@ -223,6 +226,23 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
         clipToPadding = false
         addView(scrub, LinearLayout.LayoutParams(-1, -2))
         addView(scrubDescription)
+    }, cardParams())
+
+    // 亮度条式滑块：跟随窗口材质（柔光 / Liquid）；引擎自动排除长按弹性，不需要 EXCLUDED_TAG。
+    val sliderDescription = panelText("亮度：60%")
+    content.addView(LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(18), dp(16), dp(18), dp(16))
+        background = lumen.cardBackground(palette.surface)
+        // 按压放大与两端拉伸画到滑块边界外：直接宿主放行两层裁剪（§12.3）。
+        clipChildren = false
+        clipToPadding = false
+        addView(LumenSlider(this@buildMotionPage).apply {
+            contentDescription = "亮度"
+            configure(LumenSliderRange(0f, 100f), palette, LumenSliderAppearance.Skin(lumen), value = 60f)
+            setOnValueChangeListener { _, v, _ -> sliderDescription.text = "亮度：${v.toInt()}%" }
+        }, LinearLayout.LayoutParams(-1, -2))
+        addView(sliderDescription)
     }, cardParams())
 
     // §13.9 微动效：文字切换、角标、显隐过渡、提示条。

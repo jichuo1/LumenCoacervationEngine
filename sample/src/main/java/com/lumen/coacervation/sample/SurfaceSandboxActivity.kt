@@ -113,6 +113,7 @@ class SurfaceSandboxActivity : Activity() {
         parent.addView(Button(this).apply{text="Fluent 亚克力与层级";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,FluentSandboxActivity::class.java))}})
         parent.addView(Button(this).apply{text="Mica 云母与内容分层";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,MicaSandboxActivity::class.java))}})
         parent.addView(Button(this).apply{text="Prism 棱镜玻璃与液态选中框";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,PrismSandboxActivity::class.java))}})
+        parent.addView(Button(this).apply{text="滑块：五种材质与 HDR 高光";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,SliderSandboxActivity::class.java))}})
         parent.addView(Button(this).apply{text="Compose 原生材质与交互";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,ComposeSandboxActivity::class.java))}})
         parent.addView(Button(this).apply{text="下一轮：传感器 / 程序化效果 / 粒子 / 动画资产";setOnClickListener{startActivity(android.content.Intent(this@SurfaceSandboxActivity,P2SandboxActivity::class.java))}})
         fun toggle(label:String,checked:Boolean,change:(Boolean)->Unit) { parent.addView(CheckBox(this).apply { text=label;isChecked=checked;setOnCheckedChangeListener { _,v->change(v) } }) }

@@ -33,6 +33,7 @@ import com.lumen.coacervation.engine.touch.GlowFrame
 import com.lumen.coacervation.engine.touch.GlowState
 import com.lumen.coacervation.engine.touch.TouchGlowRenderer
 import com.lumen.coacervation.engine.touch.reachablePileRoomPx
+import com.lumen.coacervation.engine.widget.LumenSlider
 import java.lang.ref.WeakReference
 
 /**
@@ -878,6 +879,8 @@ public class ElasticInteractionController(
         if (view.visibility != View.VISIBLE || x < 0f || y < 0f || x >= view.width || y >= view.height) return null
         if (depth >= 64 || !view.isEnabled || isExcluded(view) || view.isLongClickable ||
             view.isContextClickable || view is EditText || view is AbsSeekBar ||
+            // 引擎自带的滑块与 SeekBar 同等：自管按住拖动，不参与长按弹性，宿主无需打 EXCLUDED_TAG。
+            view is LumenSlider ||
             // Switch rows keep their native press/toggle semantics; the whole row
             // (track and text alike) opts out of the elastic hold-and-drag gesture.
             // 来源工程判的是 SwitchCompat / Switch；引擎不依赖 AppCompat，改判"开关类 CompoundButton"

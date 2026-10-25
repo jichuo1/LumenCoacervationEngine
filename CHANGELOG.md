@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 新增
+
+- `LumenSlider`（lumen-motion）：通用拖动滑块，连续值或离散刻度（至多 1000 档）。两种形态：亮度条式胶囊（填充即数值、可放图标，越过填充的部分逐像素反色）与细轨 + 滑钮。五种外观：`Skin`（柔光 / Liquid，槽体是窗口材质的 `SELECTED_ITEM` 表面，填充与滑钮沿用引擎开关的软高光）、`Fluent`（WinUI Slider：4dp 轨道、22dp 外圈 + 12dp 强调色内点，内点缩放 0.86 / 1.167 / 0.71 与 167 / 250ms 曲线取自 microsoft-ui-xaml 源码，滑钮描边与阴影来自 `LumenFluentControl`，拖动气泡）、`Mica`（同 Fluent，平面、只留描边，支持高对比度）、`Prism`（细轨上的白胶囊钮，按下变成折射轨道的液态镜片，两轴果冻弹簧与速度挤压；镜片自绘放大轨道、不采样背景也不需要会话，避免引擎玻璃对透明来源采样得到白块；亮边、内阴影、表面色、按压光与外阴影读 `LumenPrismOptions`，默认 `Prism.LENS`；胶囊形态下镜片约 1/4 露在填充之外、跨着边界放大，满值时填充包住镜片；按住放大时镜片中心随缩放向内收，在两端也不伸出槽外）、`Plain`。
+- 滑块交互：横向超过 slop 才接管、竖向先动让给父级滚动；轻点跳值；离散刻度拖动磁吸、越档轻触觉、松手弹簧落到准确刻度；拖过两端有理橡皮筋拉伸（≤ 6dp）并回弹。按住时手势处亮起 HDR 高光（柔光/Liquid 与 Plain 默认开启，收在填充之内）：API 34+ 按显示器 HDR/SDR 余量输出扩展范围颜色（`SliderHdrHighlightApi34` 隔离），窗口 `COLOR_MODE_HDR` 由宿主决定，无 HDR 时 SDR 回退；松手淡出，静止时无帧回调。
+- 滑块无障碍与键盘：节点类名 `SeekBar`、`RangeInfo`、`SCROLL_FORWARD/BACKWARD` 与 `SET_PROGRESS`，API 30+ `stateDescription`；方向键（RTL 镜像）、`+`/`-`、`PAGE_UP/DOWN`、`MOVE_HOME/END`；键盘焦点环。
+- 引擎长按弹性与 `LumenPagePager` 自动排除 `LumenSlider`，宿主无需打 `EXCLUDED_TAG`。
+- Sample：「表面沙盒 → 滑块：五种材质与 HDR 高光」并排展示五种外观，可切换深色、RTL、禁用与窗口 HDR；动效页加入亮度条。JVM 新增 `LumenSliderPolicyTest`、`LumenSliderGestureTest`、`LumenSliderContractTest`，设备新增 `LumenSliderIntegrationTest`。
+
 ### 修复
 
 - 多级手风琴展开后，长按首级标题拖动不再几乎没有形变、也不再逆着手指走：整卡远高于视口时，被视口或窗口藏起且任何可达姿态都露不出来的那一侧，改按可见段形变（拉伸按可见段封顶、以可见段中心为等效 pivot，经平移补偿实现，不写 View pivot）。按压不再把标题推向屏幕外的整卡中心，横向拖动的交叉收缩也不再让标题下沉。整轴可见的控件与只露出一部分的普通行逐位沿用原有形变和裁剪契约。朝被藏起那一侧的行程不再被视口外的邻居卡片或父容器内缘压短。
