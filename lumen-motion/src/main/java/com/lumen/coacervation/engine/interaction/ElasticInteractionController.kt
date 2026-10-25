@@ -737,6 +737,11 @@ public class ElasticInteractionController(
             deformExtentY = height
             deformPivotY = (top + bottom) / 2
         }
+        // 被藏起那一侧的邻居与父容器内缘同样在视口之外：避让它们只会白白压短行程。
+        gapLeft = ElasticVisibleExtent.travelBound(gapLeft, hiddenLeft, limit)
+        gapTop = ElasticVisibleExtent.travelBound(gapTop, hiddenTop, limit)
+        gapRight = ElasticVisibleExtent.travelBound(gapRight, hiddenRight, limit)
+        gapBottom = ElasticVisibleExtent.travelBound(gapBottom, hiddenBottom, limit)
         // 补画条带会把源像素画到原生裁剪之外，由它自己的页面裁剪规则决定；这里只放行原生视口藏起的边。
         if (overflowPortal != null) return
         retainedClipGaps[0] = ElasticVisibleExtent.retainedGap(retainedClipGaps[0], hiddenLeft)

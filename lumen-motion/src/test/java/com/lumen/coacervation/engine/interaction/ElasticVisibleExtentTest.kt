@@ -41,6 +41,14 @@ class ElasticVisibleExtentTest {
         assertEquals(Float.POSITIVE_INFINITY, ElasticVisibleExtent.retainedGap(-9868f, true), 0f)
     }
 
+    @Test fun `travel toward an unreachable hidden edge ignores neighbours beyond the viewport`() {
+        // Sample 实测：首级下邻居远在屏幕外，默认邻居策略仍把向下行程压到 12dp - 2.5dp。
+        assertEquals(limit, ElasticVisibleExtent.travelBound(38f, true, limit), 0f)
+        assertEquals(38f, ElasticVisibleExtent.travelBound(38f, false, limit), 0f)
+        assertEquals(96f, ElasticVisibleExtent.travelBound(96f, true, limit), 0f)
+        assertEquals(0f, ElasticVisibleExtent.travelBound(0f, true, Float.NaN), 0f)
+    }
+
     @Test fun `the old whole group pose reverses a tall header against the finger`() {
         val size = 11568f
         val pressed = .984f

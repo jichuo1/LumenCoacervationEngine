@@ -48,6 +48,13 @@ internal object ElasticVisibleExtent {
     fun retainedGap(gap: Float, unreachableEdge: Boolean): Float =
         if (unreachableEdge && gap < 0f) Float.POSITIVE_INFINITY else gap
 
+    /**
+     * 朝不可达被藏边的行程：那一侧的邻居与父容器内缘都在视口之外，按满额 [limit] 放行；
+     * 原本更宽的边界（PARENT_BOUNDS 下的大间隙）保持。其余情况原样返回。
+     */
+    fun travelBound(bound: Float, unreachableEdge: Boolean, limit: Float): Float =
+        if (unreachableEdge && limit.isFinite() && limit > bound) limit else bound
+
     /** [ElasticMotionPolicy.scale] 的满额交叉收缩。 */
     private const val CROSS_SHRINK = .009f
 }

@@ -39,9 +39,17 @@ class NestedAccordionDragTest {
     @Test fun plainScrollOuterHeaderDeformsLikeItsInnerHeader() = withFixture(paged = false) { compare(it) }
 
     @Test fun neighborPolicyKeepsTheOuterHeaderResponse() = withFixture(paged = true) { f ->
-        WindowRegressionCapture.main { f.controller.travelPolicy = ElasticTravelPolicy.AVOID_NEIGHBORS }
         // 次级卡片朝相邻卡片的行程本就让位给邻居（拉伸随行程变小），这里只比首级。
-        for (sign in listOf(1f, -1f)) checkFollows(f, drag(f, inner = false, dx = 0f, dy = sign * f.dp(80)), sign)
+        // 首级上方留有间距、下邻居远在屏幕外：向下必须与只看父容器时同样满额。
+        for (sign in listOf(1f, -1f)) {
+            WindowRegressionCapture.main { f.controller.travelPolicy = ElasticTravelPolicy.PARENT_BOUNDS }
+            val parent = drag(f, inner = false, dx = 0f, dy = sign * f.dp(80))
+            WindowRegressionCapture.main { f.controller.travelPolicy = ElasticTravelPolicy.AVOID_NEIGHBORS }
+            val neighbor = drag(f, inner = false, dx = 0f, dy = sign * f.dp(80))
+            checkFollows(f, neighbor, sign)
+            if (sign > 0) assertEquals("An offscreen neighbour must not shorten the travel: parent=$parent neighbor=$neighbor",
+                parent.dragY, neighbor.dragY, 1f)
+        }
     }
 
     @Test fun horizontalDragDoesNotSinkTheOuterHeader() = withFixture(paged = true) { f ->
@@ -187,6 +195,8 @@ class NestedAccordionDragTest {
                 // 留白用 padding 而不是占位兄弟：默认邻居策略会把紧贴的占位 View 当成上邻。
                 setPadding(0, dp(24), 0, 0)
                 addView(outer, LinearLayout.LayoutParams(-1, -2).apply { leftMargin = dp(36); rightMargin = dp(36) })
+                // 首级下方的兄弟卡片：展开后远在屏幕外。
+                addView(card(), LinearLayout.LayoutParams(-1, dp(96)).apply { topMargin = dp(12) })
             }
             val height = activity.resources.displayMetrics.heightPixels - dp(160)
             if (paged) {

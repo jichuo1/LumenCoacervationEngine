@@ -196,6 +196,8 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
     content.addView(buildNestedDragCard(palette), cardParams().apply {
         val inset = (resources.displayMetrics.widthPixels * .06f).toInt().coerceAtLeast(dp(12))
         leftMargin = inset; rightMargin = inset
+        // 与次级卡片同样留出间距：默认邻居策略下紧贴说明文字会让向上行程为 0。
+        topMargin = dp(12)
     })
 
     // §12.4 分段档位条：轻点切换、按住拖动滑块跟手、松手弹簧吸附；自管触摸，不参与全局弹性。
