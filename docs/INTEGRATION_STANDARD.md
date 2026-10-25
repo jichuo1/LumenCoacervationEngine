@@ -383,6 +383,8 @@ root（bindRoot）
 
 以下上限由引擎强制执行，宿主不需要配置。列出来是为了让宿主评估自己的预算。
 
+引擎与动效模块随 AAR 提供 Baseline Profile，AGP 自动合并进宿主 APK，宿主不需要额外配置：经商店或 PackageInstaller 安装时热点路径即被 AOT 编译。宿主若用 `adb install` 等命令行方式分发，需自行依赖 `androidx.profileinstaller`，profile 才会在下一次后台 dexopt 时生效；debuggable 构建不使用 profile。
+
 | 项 | 上限 |
 |---|---|
 | 高级材质实时取样 | 三缓冲轮转；按约 100 万像素的预算缩放（下限 24 万像素，缩放倍率不超过 0.72）。1080×2400 与 1440×3200 都收敛到约 671×1490，单缓冲约 3.81 MiB，三缓冲约 11.44 MiB；最高 120 fps |

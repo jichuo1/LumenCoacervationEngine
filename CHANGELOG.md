@@ -4,6 +4,11 @@
 
 ## [Unreleased]
 
+### 性能
+
+- lumen-engine 与 lumen-motion 随 AAR 提供 Baseline Profile（`src/main/baseline-prof.txt`），只覆盖模糊、透镜、实时采样、底图生成与会话入口共 32 个类。宿主经商店或 PackageInstaller 安装时这些方法即被 AOT 编译；API 35 模拟器按真实安装路径实测，底栏透镜作业首批 4.0–6.4ms → 0.38–0.45ms，前 1 秒（36 批）21.8–37.8ms → 9.2–10.1ms，稳态不变。规则由 `BaselineProfileContractTest` / `MotionBaselineProfileContractTest` 守住。
+- 透镜与模糊内核在输出逐位不变的前提下提速（模糊约 1.4 倍、重映射约 4 倍）；柔光与高级材质的自动背景进入进程级缓存（竖屏、横屏与输入法压缩高度各一槽，柔光命中时照常淡入）；高级材质自动底图在 `prepare()` 后由后台预热；实时透镜在回放与已发布输入逐像素相同时沿用已发布纹理，并在两组录制时由第二条透镜线程并行处理。
+
 ## [1.5.5] - 2026-10-25
 
 ### 新增

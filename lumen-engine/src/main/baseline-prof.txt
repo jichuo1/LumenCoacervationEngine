@@ -1,0 +1,90 @@
+# 凝光视效引擎 Baseline Profile：随 AAR 合并进宿主 APK，安装时把下列热点路径 AOT 编译。
+# 只覆盖逐像素计算、采样调度与会话入口；规则过宽会增加宿主的内存与磁盘占用（profileinstaller 说明）。
+# 2026-10-25 API 35 模拟器：底栏透镜作业冷启动首批 9.3ms（解释/JIT）→ 0.44ms（AOT），稳态 0.25ms。
+# 新增或改名热点类时同步本文件；BaselineProfileContractTest 守住每条规则都指向存在的类。
+
+# 模糊与透镜：静态磨砂、实时透镜与云母共用的逐像素内核
+Lcom/lumen/coacervation/engine/material/ModernBackdropBlur;
+HSPLcom/lumen/coacervation/engine/material/ModernBackdropBlur;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/ModernBackdropBlur$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/LensRefractionPolicy;
+HSPLcom/lumen/coacervation/engine/material/LensRefractionPolicy;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/LensRefractionPolicy$*;->**(**)**
+Lcom/lumen/coacervation/engine/liquid/LiquidOpticalSamplingPolicy;
+HSPLcom/lumen/coacervation/engine/liquid/LiquidOpticalSamplingPolicy;->**(**)**
+HSPLcom/lumen/coacervation/engine/liquid/LiquidOpticalSamplingPolicy$*;->**(**)**
+
+# 实时透镜采样：录制、回放、批次拆分与节流
+Lcom/lumen/coacervation/engine/material/LiveBackdropSampler;
+HSPLcom/lumen/coacervation/engine/material/LiveBackdropSampler;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/LiveBackdropSampler$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/LensBatchSplit;
+HSPLcom/lumen/coacervation/engine/material/LensBatchSplit;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/LensBatchSplit$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/LensCaptureGrouping;
+HSPLcom/lumen/coacervation/engine/material/LensCaptureGrouping;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/LensCaptureGrouping$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/LumenSampleCadence;
+HSPLcom/lumen/coacervation/engine/material/LumenSampleCadence;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/LumenSampleCadence$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/LumenSampleBudget;
+HSPLcom/lumen/coacervation/engine/material/LumenSampleBudget;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/LumenSampleBudget$*;->**(**)**
+Lcom/lumen/coacervation/engine/geometry/ViewSamplingMatrix;
+HSPLcom/lumen/coacervation/engine/geometry/ViewSamplingMatrix;->**(**)**
+HSPLcom/lumen/coacervation/engine/geometry/ViewSamplingMatrix$*;->**(**)**
+Lcom/lumen/coacervation/engine/geometry/LocalViewDrawing;
+HSPLcom/lumen/coacervation/engine/geometry/LocalViewDrawing;->**(**)**
+HSPLcom/lumen/coacervation/engine/geometry/LocalViewDrawing$*;->**(**)**
+Lcom/lumen/coacervation/engine/geometry/ScrollSamplingGeometry;
+HSPLcom/lumen/coacervation/engine/geometry/ScrollSamplingGeometry;->**(**)**
+HSPLcom/lumen/coacervation/engine/geometry/ScrollSamplingGeometry$*;->**(**)**
+Lcom/lumen/coacervation/engine/glow/GlowContentProbe;
+HSPLcom/lumen/coacervation/engine/glow/GlowContentProbe;->**(**)**
+HSPLcom/lumen/coacervation/engine/glow/GlowContentProbe$*;->**(**)**
+Lcom/lumen/coacervation/engine/host/ViewSurfaceTarget;
+HSPLcom/lumen/coacervation/engine/host/ViewSurfaceTarget;->**(**)**
+HSPLcom/lumen/coacervation/engine/host/ViewSurfaceTarget$*;->**(**)**
+Lcom/lumen/coacervation/engine/host/SurfaceCaptureApi31;
+HSPLcom/lumen/coacervation/engine/host/SurfaceCaptureApi31;->**(**)**
+HSPLcom/lumen/coacervation/engine/host/SurfaceCaptureApi31$*;->**(**)**
+
+# 底图生成与实时截图后处理
+Lcom/lumen/coacervation/engine/background/AmbientBackdropScene;
+HSPLcom/lumen/coacervation/engine/background/AmbientBackdropScene;->**(**)**
+HSPLcom/lumen/coacervation/engine/background/AmbientBackdropScene$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/ModernBackdropFactory;
+HSPLcom/lumen/coacervation/engine/material/ModernBackdropFactory;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/ModernBackdropFactory$*;->**(**)**
+Lcom/lumen/coacervation/engine/liquid/LiquidBackdropSource;
+HSPLcom/lumen/coacervation/engine/liquid/LiquidBackdropSource;->**(**)**
+HSPLcom/lumen/coacervation/engine/liquid/LiquidBackdropSource$*;->**(**)**
+Lcom/lumen/coacervation/engine/liquid/LiquidFeedbackSuppressor;
+HSPLcom/lumen/coacervation/engine/liquid/LiquidFeedbackSuppressor;->**(**)**
+HSPLcom/lumen/coacervation/engine/liquid/LiquidFeedbackSuppressor$*;->**(**)**
+
+# 会话与渲染器：prepare / bindRoot / 逐帧绘制入口
+Lcom/lumen/coacervation/engine/host/LumenActivityDelegate;
+HSPLcom/lumen/coacervation/engine/host/LumenActivityDelegate;->**(**)**
+HSPLcom/lumen/coacervation/engine/host/LumenActivityDelegate$*;->**(**)**
+Lcom/lumen/coacervation/engine/runtime/ActivitySkinSession;
+HSPLcom/lumen/coacervation/engine/runtime/ActivitySkinSession;->**(**)**
+HSPLcom/lumen/coacervation/engine/runtime/ActivitySkinSession$*;->**(**)**
+Lcom/lumen/coacervation/engine/runtime/PreparedBackdropCache;
+HSPLcom/lumen/coacervation/engine/runtime/PreparedBackdropCache;->**(**)**
+HSPLcom/lumen/coacervation/engine/runtime/PreparedBackdropCache$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/FrostedMaterialRenderer;
+HSPLcom/lumen/coacervation/engine/material/FrostedMaterialRenderer;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/FrostedMaterialRenderer$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/ModernSurfaceDrawable;
+HSPLcom/lumen/coacervation/engine/material/ModernSurfaceDrawable;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/ModernSurfaceDrawable$*;->**(**)**
+Lcom/lumen/coacervation/engine/material/FrostedChromeGlassApi31;
+HSPLcom/lumen/coacervation/engine/material/FrostedChromeGlassApi31;->**(**)**
+HSPLcom/lumen/coacervation/engine/material/FrostedChromeGlassApi31$*;->**(**)**
+Lcom/lumen/coacervation/engine/liquid/LiquidActivityRenderer;
+HSPLcom/lumen/coacervation/engine/liquid/LiquidActivityRenderer;->**(**)**
+HSPLcom/lumen/coacervation/engine/liquid/LiquidActivityRenderer$*;->**(**)**
+Lcom/lumen/coacervation/engine/host/LumenSurfaceSession;
+HSPLcom/lumen/coacervation/engine/host/LumenSurfaceSession;->**(**)**
+HSPLcom/lumen/coacervation/engine/host/LumenSurfaceSession$*;->**(**)**

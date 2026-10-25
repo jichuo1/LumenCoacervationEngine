@@ -1,0 +1,24 @@
+# 凝光交互与动效 Baseline Profile：只覆盖透镜/选中框玻璃与逐窗口的长按交互会话（逐帧运行）。
+# 新增或改名热点类时同步本文件；MotionBaselineProfileContractTest守住每条规则都指向存在的类。
+
+# 透镜与选中框玻璃
+Lcom/lumen/coacervation/engine/widget/PrismSelectionRenderer;
+HSPLcom/lumen/coacervation/engine/widget/PrismSelectionRenderer;->**(**)**
+HSPLcom/lumen/coacervation/engine/widget/PrismSelectionRenderer$*;->**(**)**
+Lcom/lumen/coacervation/engine/widget/PrismSelectionShaderApi33;
+HSPLcom/lumen/coacervation/engine/widget/PrismSelectionShaderApi33;->**(**)**
+HSPLcom/lumen/coacervation/engine/widget/PrismSelectionShaderApi33$*;->**(**)**
+Lcom/lumen/coacervation/engine/widget/NavigationBarMotion;
+HSPLcom/lumen/coacervation/engine/widget/NavigationBarMotion;->**(**)**
+HSPLcom/lumen/coacervation/engine/widget/NavigationBarMotion$*;->**(**)**
+Lcom/lumen/coacervation/engine/widget/BoundedNavigationMotion;
+HSPLcom/lumen/coacervation/engine/widget/BoundedNavigationMotion;->**(**)**
+HSPLcom/lumen/coacervation/engine/widget/BoundedNavigationMotion$*;->**(**)**
+
+# 逐窗口交互会话
+Lcom/lumen/coacervation/engine/interaction/ElasticInteractionController;
+HSPLcom/lumen/coacervation/engine/interaction/ElasticInteractionController;->**(**)**
+HSPLcom/lumen/coacervation/engine/interaction/ElasticInteractionController$*;->**(**)**
+Lcom/lumen/coacervation/engine/interaction/ElasticMotionPolicy;
+HSPLcom/lumen/coacervation/engine/interaction/ElasticMotionPolicy;->**(**)**
+HSPLcom/lumen/coacervation/engine/interaction/ElasticMotionPolicy$*;->**(**)**
