@@ -101,6 +101,13 @@ public class ElasticInteractionController(
     private val retainedOutline = Outline()
     private val retainedOutlineRect = Rect()
     private val visibleCrop = Rect()
+    /** 按下时形变组在视口与窗口内的可见段（组坐标）；见 [ElasticVisibleExtent]。 */
+    private val visibleSpan = FloatArray(4)
+    private var deformExtentX = 0f
+    private var deformExtentY = 0f
+    /** 等效 pivot（组坐标）；NaN 表示整轴可见，沿用 View 自身的 pivot。 */
+    private var deformPivotX = Float.NaN
+    private var deformPivotY = Float.NaN
     private var lease: ElasticTransformLeases.Lease<ElasticInteractionController>? = null
     private var highlight: TouchHighlight? = null
     private var highlightAttached = false
@@ -394,6 +401,7 @@ public class ElasticInteractionController(
         }
         captureGroupGaps(group)
         captureRetainedClipGaps(group)
+        captureDeformExtent()
         gate.begin(event.eventTime)
         motion = Motion.PRESS
         motionStartedAt = SystemClock.uptimeMillis()
@@ -469,17 +477,21 @@ public class ElasticInteractionController(
         val capPx = ElasticMotionGroupPolicy.STRETCH_CAP_DP * density
         var tx = original.translationX + xAxis.value
         var ty = original.translationY + yAxis.value
-        var sx = original.scaleX * ElasticMotionGroupPolicy.cappedScale(
-            ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, capPx)
-        var sy = original.scaleY * ElasticMotionGroupPolicy.cappedScale(
-            ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, capPx)
-        ElasticClipGeometry.fitAxis(xAxis.value, sx, visibleCrop.width().toFloat(), view.pivotX - visibleCrop.left,
+        var sx = original.scaleX * ElasticVisibleExtent.scale(
+            ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, deformExtentX, capPx)
+        var sy = original.scaleY * ElasticVisibleExtent.scale(
+            ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, deformExtentY, capPx)
+        // 裁剪拟合与方向保护都以等效 pivot 为准：拟合出的平移是"可见段中心"的位移，
+        // 写回 View 前再换算回真实 pivot。整轴可见时等效 pivot 就是 View 的 pivot，结果逐位不变。
+        val pivotX = if (deformPivotX.isNaN()) view.pivotX else deformPivotX
+        val pivotY = if (deformPivotY.isNaN()) view.pivotY else deformPivotY
+        ElasticClipGeometry.fitAxis(xAxis.value, sx, visibleCrop.width().toFloat(), pivotX - visibleCrop.left,
             retainedClipGaps[0], retainedClipGaps[2], fittedAxis)
-        tx = original.translationX + fittedAxis.x
+        tx = original.translationX + fittedAxis.x + ElasticVisibleExtent.pivotShift(pivotX, view.pivotX, fittedAxis.y)
         sx = fittedAxis.y
-        ElasticClipGeometry.fitAxis(yAxis.value, sy, visibleCrop.height().toFloat(), view.pivotY - visibleCrop.top,
+        ElasticClipGeometry.fitAxis(yAxis.value, sy, visibleCrop.height().toFloat(), pivotY - visibleCrop.top,
             retainedClipGaps[1], retainedClipGaps[3], fittedAxis)
-        ty = original.translationY + fittedAxis.x
+        ty = original.translationY + fittedAxis.x + ElasticVisibleExtent.pivotShift(pivotY, view.pivotY, fittedAxis.y)
         sy = fittedAxis.y
         val fraction = if (freezeForOutline) 0f else ElasticClipGeometry.roundedFraction(
             tx - original.translationX, ty - original.translationY, sx, sy,
@@ -608,6 +620,10 @@ public class ElasticInteractionController(
         }
         roundedClipCount = 0
         freezeForOutline = false
+        visibleSpan[0] = visibleCrop.left.toFloat()
+        visibleSpan[1] = visibleCrop.top.toFloat()
+        visibleSpan[2] = visibleCrop.right.toFloat()
+        visibleSpan[3] = visibleCrop.bottom.toFloat()
         val original = lease?.original ?: return
         var parent = group.parent as? View ?: return
         var x = group.left + original.translationX - parent.scrollX
@@ -623,6 +639,14 @@ public class ElasticInteractionController(
             val saved = clipReliefs.firstOrNull { it.view === parent }
             var children = saved?.clipChildren ?: container?.clipChildren ?: false
             var padding = saved?.clipToPadding ?: container?.clipToPadding ?: false
+            if (action == ElasticClipAction.STOP) {
+                // 视口与窗口决定用户实际看到哪一段；它们的裁剪从不放行。
+                val inset = padding && container != null
+                visibleSpan[0] = maxOf(visibleSpan[0], (if (inset) parent.paddingLeft else 0) - x)
+                visibleSpan[1] = maxOf(visibleSpan[1], (if (inset) parent.paddingTop else 0) - y)
+                visibleSpan[2] = minOf(visibleSpan[2], parent.width - (if (inset) parent.paddingRight else 0) - x)
+                visibleSpan[3] = minOf(visibleSpan[3], parent.height - (if (inset) parent.paddingBottom else 0) - y)
+            }
             if (borrowing && action != ElasticClipAction.STOP && reliefCount < 32) {
                 if (children || padding) reliefCount++
                 if (action == ElasticClipAction.RELIEVE) children = false
@@ -683,6 +707,42 @@ public class ElasticInteractionController(
             y += parent.top + parent.translationY - outer.scrollY
             parent = outer
         }
+    }
+
+    /**
+     * 形变组某一侧被视口或窗口藏起、且那条边在任何可达姿态下都回不到屏幕上（展开后高过视口的
+     * 首级手风琴）时，这一轴改按可见段形变，见 [ElasticVisibleExtent]。整轴可见、或只是部分露出的
+     * 普通行，保持原有的整组形变与裁剪契约。
+     */
+    private fun captureDeformExtent() {
+        deformExtentX = groupWidth.toFloat()
+        deformExtentY = groupHeight.toFloat()
+        deformPivotX = Float.NaN
+        deformPivotY = Float.NaN
+        val left = visibleSpan[0]
+        val top = visibleSpan[1]
+        val right = visibleSpan[2]
+        val bottom = visibleSpan[3]
+        val width = right - left
+        val height = bottom - top
+        val hiddenLeft = ElasticVisibleExtent.unreachable(left, width, limit, deformation)
+        val hiddenRight = ElasticVisibleExtent.unreachable(groupWidth - right, width, limit, deformation)
+        val hiddenTop = ElasticVisibleExtent.unreachable(top, height, limit, deformation)
+        val hiddenBottom = ElasticVisibleExtent.unreachable(groupHeight - bottom, height, limit, deformation)
+        if (hiddenLeft || hiddenRight) {
+            deformExtentX = width
+            deformPivotX = (left + right) / 2
+        }
+        if (hiddenTop || hiddenBottom) {
+            deformExtentY = height
+            deformPivotY = (top + bottom) / 2
+        }
+        // 补画条带会把源像素画到原生裁剪之外，由它自己的页面裁剪规则决定；这里只放行原生视口藏起的边。
+        if (overflowPortal != null) return
+        retainedClipGaps[0] = ElasticVisibleExtent.retainedGap(retainedClipGaps[0], hiddenLeft)
+        retainedClipGaps[1] = ElasticVisibleExtent.retainedGap(retainedClipGaps[1], hiddenTop)
+        retainedClipGaps[2] = ElasticVisibleExtent.retainedGap(retainedClipGaps[2], hiddenRight)
+        retainedClipGaps[3] = ElasticVisibleExtent.retainedGap(retainedClipGaps[3], hiddenBottom)
     }
 
     private fun scheduleFrame() {

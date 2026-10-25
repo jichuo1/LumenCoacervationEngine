@@ -34,6 +34,7 @@ import com.lumen.coacervation.engine.interaction.ElasticInteractionController
 import com.lumen.coacervation.engine.interaction.LumenElasticInteraction
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SkinId
+import com.lumen.coacervation.engine.motion.expansion.SectionExpansionController
 import com.lumen.coacervation.engine.motion.modal.LumenModalPresenter
 import com.lumen.coacervation.engine.motion.modal.LumenModalStyle
 import com.lumen.coacervation.engine.motion.morph.ContainerMorphLauncher
@@ -67,6 +68,7 @@ class SampleActivity : AppCompatActivity() {
     // 宿主自己的外观设置：强调色、弹窗背景模糊（深浅色由 SampleApplication 在启动时应用）。
     internal val settings by lazy(LazyThreadSafetyMode.NONE) { SampleSettingsStore(this) }
     internal var backgroundPreviewLoader: SampleBackgroundPreviewLoader? = null
+    internal val nestedDragExpansions = ArrayList<SectionExpansionController>()
     // 自定义背景的图片选择：结果交给后台线程导入（LiquidBackgroundStore）。
     internal val backgroundPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) importBackgroundImage(uri)
@@ -445,6 +447,8 @@ class SampleActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        nestedDragExpansions.forEach { it.cancel() }
+        nestedDragExpansions.clear()
         scrolls.forEach { it.onScrollPositionChanged = null }
         backgroundPreviewLoader?.close()
         backgroundPreviewLoader = null

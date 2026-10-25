@@ -74,8 +74,8 @@ class ElasticGlowTuningTest {
         // 形变倍率进入行程上限（邻居钳制在其后）、按压/拉伸缩放（绝对拉伸上限在其后）与接手时的按压反推。
         assertTrue(controller.contains("deformation = tuning.dragDeformation"))
         assertTrue(controller.contains("limit = ElasticDeformationTuning.travelLimit( ElasticMotionPolicy.positionLimit(group.width, group.height, density), deformation) groupWidth"))
-        assertTrue(controller.contains("cappedScale( ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, capPx)"))
-        assertTrue(controller.contains("cappedScale( ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, capPx)"))
+        assertTrue(controller.contains("ElasticVisibleExtent.scale( ElasticDeformationTuning.scale(scale.x, deformation), groupWidth, deformExtentX, capPx)"))
+        assertTrue(controller.contains("ElasticVisibleExtent.scale( ElasticDeformationTuning.scale(scale.y, deformation), groupHeight, deformExtentY, capPx)"))
         assertTrue(controller.contains("ElasticDeformationTuning.pressFromScale( observed.scaleX / owned.original.scaleX, deformation)"))
         // 光晕自己的行程参考不随形变倍率缩放：倍率为 0 时 smoothStep(0, 0, x) 会退化。
         assertTrue(controller.contains("private val limitPx = ElasticMotionPolicy.positionLimit(view.width, view.height, density)"))

@@ -15,7 +15,7 @@ SPEC.loader.exec_module(VERIFIER)
 
 VISUAL_HELPER_CLASSES = ("MicaPreparerIntegrationTest", "DrawableSceneInstrumentedTest", "ViewportContentSourceTest", "SurfaceLegibilityViewportTest",
                          "ViewportSoftwareInvalidationTest", "AcrylicBackdropColorTest", "SurfaceSourceFrameClipTest",
-                         "PrismIntegrationTest", "ExpandedAccordionHeaderTest")
+                         "PrismIntegrationTest", "ExpandedAccordionHeaderTest", "NestedAccordionDragTest")
 
 
 class SmokeResultsTest(unittest.TestCase):

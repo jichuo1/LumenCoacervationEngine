@@ -192,6 +192,12 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
     expansion = SectionExpansionController(accordion, accordionContent, chevron, density,
         notifyPositionChanged = { lumen.notifyPositionChanged() })
 
+    content.addView(caption("多级手风琴拖动对照：展开第一级后，长按首级标题向下拖动；再长按第二级标题对照。"))
+    content.addView(buildNestedDragCard(palette), cardParams().apply {
+        val inset = (resources.displayMetrics.widthPixels * .06f).toInt().coerceAtLeast(dp(12))
+        leftMargin = inset; rightMargin = inset
+    })
+
     // §12.4 分段档位条：轻点切换、按住拖动滑块跟手、松手弹簧吸附；自管触摸，不参与全局弹性。
     val scrubDescription = panelText("当前档位：标准")
     val scrub = LumenSegmentScrubBar(this, null).apply {
@@ -278,6 +284,49 @@ internal fun SampleActivity.buildMotionPage(content: LinearLayout, palette: Lume
     }, cardParams())
     repeat(6) { content.addView(panelText("占位内容 ${it + 1}：让页面足够长，定位才需要滚动。"), cardParams()) }
     content.addView(farTarget, cardParams())
+}
+
+private fun SampleActivity.buildNestedDragCard(palette: LumenPalette): LinearLayout {
+    fun section(title: String, body: LinearLayout, initiallyExpanded: Boolean): LinearLayout {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            background = lumen.cardBackground(palette.surface, 12f)
+        }
+        val arrow = TextView(this).apply { text = "⌄"; setTextColor(palette.textPrimary); textSize = 20f }
+        val header = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = CoverableRippleDrawable.rounded(palette, dp(12).toFloat())
+            addView(TextView(context).apply { text = title; textSize = 14f; setTextColor(palette.textPrimary) },
+                LinearLayout.LayoutParams(0, dp(48), 1f))
+            addView(arrow)
+        }
+        card.addView(header, LinearLayout.LayoutParams(-1, -2))
+        card.addView(body, LinearLayout.LayoutParams(-1, -2))
+        val controller = SectionExpansionController(card, body, arrow, density,
+            notifyPositionChanged = { lumen.notifyPositionChanged() })
+        nestedDragExpansions.add(controller)
+        controller.setExpanded(initiallyExpanded, false)
+        header.setOnClickListener { controller.setExpanded(!controller.expanded) }
+        return card
+    }
+    val content = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), 0, dp(12), dp(12))
+    }
+    repeat(6) { index ->
+        val body = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        repeat(8) { row ->
+            body.addView(TextView(this).apply {
+                text = "第 ${index + 1} 组 · 内容 ${row + 1}"
+                textSize = 14f; setTextColor(palette.textSecondary)
+                setPadding(dp(16), dp(12), dp(16), dp(12))
+            }, LinearLayout.LayoutParams(-1, dp(48)))
+        }
+        content.addView(section("第二级 ${index + 1}：点按收起 / 展开，长按拖动", body, true),
+            LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+    }
+    return section("第一级：点按展开，长按向下拖动", content, false)
 }
 
 // ---------------- 页面 3：长按拖拽排序（lumen-controls） ----------------

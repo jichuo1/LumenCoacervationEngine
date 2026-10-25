@@ -22,6 +22,12 @@ REQUIRED = {
         "invalidationPreservesAForeignCropWhileRestoringTheHeldTransform",
         "aDifferentChildUnderTheScaledCardDoesNotInheritItsGesture",
     },
+    PREFIX + "NestedAccordionDragTest": {
+        "pagedOuterHeaderDeformsLikeItsInnerHeader",
+        "plainScrollOuterHeaderDeformsLikeItsInnerHeader",
+        "neighborPolicyKeepsTheOuterHeaderResponse",
+        "horizontalDragDoesNotSinkTheOuterHeader",
+    },
     PREFIX + "InputOutlineScrollTest": {
         "longSingleLineInputKeepsItsOutlineAtBothSignedScrollOffsets",
         "longMultilineInputKeepsItsOutlineWhileTheCursorScrollsVertically",
