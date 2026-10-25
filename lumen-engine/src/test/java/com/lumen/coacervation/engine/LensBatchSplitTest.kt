@@ -5,6 +5,7 @@ import com.lumen.coacervation.engine.contract.after
 import com.lumen.coacervation.engine.contract.before
 import com.lumen.coacervation.engine.material.LensBatchSplit
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -45,7 +46,15 @@ class LensBatchSplitTest {
         val dispatch = sampler.after("val second = LensBatchSplit.secondHalf(").before("repeat(jobs.size)")
         assertTrue(dispatch.contains("if (remaining.decrementAndGet() == 0) mainHandler.post { onBatchDone(token, jobs, !failed.get()) }"))
         assertTrue(dispatch.contains("if (!offloaded) remaining.set(1)"))
+        // 主线程只提交一次：第二半由第一条透镜线程转交；线程对象仍在主线程取得，close() 才看得到启动标志。
+        assertEquals(1, Regex("""\bworker\.execute\b""").findAll(dispatch.after("} else {")).count())
+        assertTrue(dispatch.contains("val secondExecutor = secondWorker"))
+        assertTrue(dispatch.after("worker.execute {").contains("secondExecutor.execute { half(secondJobs) }"))
         assertTrue(sampler.contains("Thread(task, \"Lumen-LiveLens-2\")"))
         assertTrue(sampler.after("    fun close() {").contains("if (secondWorkerStarted) secondWorker.shutdownNow()"))
+        // 核数只查一次，不得回到每批调用 availableProcessors。
+        assertTrue(dispatch.contains("LensBatchSplit.deviceProcessors"))
+        assertFalse(sampler.contains("availableProcessors"))
+        assertEquals(Runtime.getRuntime().availableProcessors(), LensBatchSplit.deviceProcessors)
     }
 }

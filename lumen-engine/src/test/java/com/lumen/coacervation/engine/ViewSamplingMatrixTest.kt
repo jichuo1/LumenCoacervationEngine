@@ -121,7 +121,10 @@ class ViewSamplingMatrixTest {
         assertTrue(renderer.contains("SamplingMatrixMath.equal(position.source, sourceTransform)"))
         assertFalse(renderer.contains("PixelCopy"))
         val helper = source("geometry/ViewSamplingMatrix")
-        assertTrue(helper.contains("current.matrix.getValues(step)"))
+        // 逐层仍取 View 自己的矩阵（含旋转、缩放与轴心），单位矩阵只是省掉 getValues 拷贝。
+        assertTrue(helper.contains("viewStep(current, step)"))
+        assertTrue(helper.contains("val transform = view.matrix"))
+        assertTrue(helper.contains("if (transform.isIdentity) SamplingMatrixMath.identity(out) else transform.getValues(out)"))
         assertTrue(helper.contains("parent?.scrollX"))
         assertTrue(helper.contains("parent?.scrollY"))
         assertFalse(helper.contains(".transformMatrixToGlobal("))

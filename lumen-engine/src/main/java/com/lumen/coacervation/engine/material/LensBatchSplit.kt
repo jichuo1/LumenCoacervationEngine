@@ -10,6 +10,12 @@ internal object LensBatchSplit {
     const val MIN_PROCESSORS = 4
 
     /**
+     * 进程内只查一次：`availableProcessors` 每次都要读 sysfs（2026-10-25 API 35 实测 1.44µs/次，
+     * 在 pre-draw 采集里占约 8%），而设备配置的核数在进程生命周期内不变。
+     */
+    val deviceProcessors: Int by lazy(LazyThreadSafetyMode.PUBLICATION) { Runtime.getRuntime().availableProcessors() }
+
+    /**
      * @param groups 每个作业的录制对象，按引用相等分组
      * @param costs 每个作业的估计开销（采样图像素数），与 [groups] 一一对应
      * @return 放到第二条线程的作业下标（升序）；不拆分时为 null
