@@ -199,4 +199,15 @@ class MaterialOpacityContractTest {
         assertTrue(draw.contains("gain * materialGain"))
         assertFalse(shadow.after("var materialGain").before("private val xStops").contains("ControlShadowTextureCache"))
     }
+
+    /** A scope drives targets through the one-argument setter: it must not reset a declared TEXT / DECORATIVE. */
+    @Test fun scopeDrivenUpdatesKeepTheDeclaredLegibility() {
+        val session = SourceContract.read("host/LumenSurfaceSession.kt")
+        assertTrue(session.contains("override fun setMaterialOpacity(value: Float) { session.get()?.setMaterialOpacity(id, value, null) }"))
+        assertTrue(session.after("internal fun setMaterialOpacity(id: Long, value: Float, legibility: LumenMaterialLegibility?)")
+            .before("internal fun requestBlurWarm(").contains("val declared = legibility ?: entry.materialLegibility"))
+        for (path in listOf("host/LumenFluentControl.kt", "host/LumenPrismGlass.kt")) {
+            assertTrue(path, SourceContract.read(path).contains("override fun setMaterialOpacity(value: Float) { setMaterialOpacity(value, legibility) }"))
+        }
+    }
 }
