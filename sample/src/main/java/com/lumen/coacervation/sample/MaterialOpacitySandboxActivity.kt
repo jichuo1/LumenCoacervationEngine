@@ -28,7 +28,11 @@ import com.lumen.coacervation.engine.host.LumenMicaBackdrop
 import com.lumen.coacervation.engine.host.LumenMicaImage
 import com.lumen.coacervation.engine.host.LumenPrismGlass
 import com.lumen.coacervation.engine.host.LumenPrismOptions
+import com.lumen.coacervation.engine.host.LumenLocalPressOptions
+import com.lumen.coacervation.engine.host.LumenSurfaceBackend
 import com.lumen.coacervation.engine.host.LumenSurfaceBinding
+import com.lumen.coacervation.engine.host.LumenSurfaceEnhancements
+import com.lumen.coacervation.engine.host.LumenSurfaceSampling
 import com.lumen.coacervation.engine.host.LumenSurfaceMaterial
 import com.lumen.coacervation.engine.host.LumenSurfaceOptions
 import com.lumen.coacervation.engine.host.LumenSurfaceSession
@@ -57,6 +61,8 @@ class MaterialOpacitySandboxActivity : Activity() {
     internal lateinit var prism: LumenPrismGlass
     internal lateinit var mica: LumenMicaBackdrop
     internal lateinit var slider: LumenSlider
+    internal lateinit var direct: LumenSurfaceBinding
+    internal lateinit var software: LumenSurfaceBinding
     private var image: LumenMicaImage? = null
     private var destroyed = false
     private val palette = LumenPalette.neutral(false)
@@ -81,6 +87,8 @@ class MaterialOpacitySandboxActivity : Activity() {
         val fluentTile = tile(grid, "亚克力")
         val prismTile = tile(grid, "棱镜")
         val micaTile = tile(grid, "云母")
+        val directTile = tile(grid, "增强玻璃（AGSL）")
+        val softwareTile = tile(grid, "软件磨砂")
         stage.addView(grid, FrameLayout.LayoutParams(-1, -2))
         root.addView(stage, LinearLayout.LayoutParams(-1, dp(420)))
         status = TextView(this).apply { textSize = 11f; setTextColor(palette.textPrimary); setPadding(dp(12), dp(6), dp(12), dp(6)) }
@@ -103,6 +111,12 @@ class MaterialOpacitySandboxActivity : Activity() {
             radiusDp = 20f), scene)
         fluent = LumenFluentControl(fluentTile, palette, session = session, source = scene)
         prism = LumenPrismGlass(prismTile, palette, LumenPrismOptions(cornerRadiusDp = 20f), session, scene)
+        // Press effect routes this binding through the direct AGSL program (three-input blur interpolation).
+        direct = session.bind(directTile, LumenSurfaceOptions(material = LumenSurfaceMaterial.FROSTED, role = SurfaceRole.CARD,
+            radiusDp = 20f), scene, LumenSurfaceEnhancements(press = LumenLocalPressOptions(enabled = true)))
+        // Forced software backend: cross-fades while dragging, resamples at the real radius once settled.
+        software = session.bind(softwareTile, LumenSurfaceOptions(material = LumenSurfaceMaterial.FROSTED, role = SurfaceRole.CARD,
+            radiusDp = 20f, sampling = LumenSurfaceSampling(backend = LumenSurfaceBackend.SOFTWARE)), scene)
         mica = LumenMicaBackdrop(micaTile, palette)
         prepareMicaImage()
         scene.setOnScrollChangeListener { v, _, _, _, _ -> session.notifyScrollPositionChanged(v) }
@@ -117,7 +131,7 @@ class MaterialOpacitySandboxActivity : Activity() {
         refreshStatus()
     }
 
-    private fun targets(): List<LumenMaterialOpacityTarget> = listOf(frosted, liquid, fluent, prism, mica, slider)
+    private fun targets(): List<LumenMaterialOpacityTarget> = listOf(frosted, liquid, fluent, prism, mica, direct, software, slider)
 
     private fun tile(grid: GridLayout, label: String): FrameLayout {
         val tile = FrameLayout(this)
@@ -125,7 +139,7 @@ class MaterialOpacitySandboxActivity : Activity() {
             text = label; textSize = 16f; gravity = Gravity.CENTER; setTextColor(palette.textPrimary)
         }, FrameLayout.LayoutParams(-1, -1))
         grid.addView(tile, GridLayout.LayoutParams().apply {
-            width = 0; height = dp(92)
+            width = 0; height = dp(72)
             columnSpec = GridLayout.spec(GridLayout.UNDEFINED, 1f)
             setMargins(dp(8), dp(8), dp(8), dp(8))
         })
@@ -196,6 +210,8 @@ class MaterialOpacitySandboxActivity : Activity() {
             setOnCheckedChangeListener { _, text ->
                 val legibility = if (text) LumenMaterialLegibility.AUTO else LumenMaterialLegibility.DECORATIVE
                 frosted.setMaterialOpacity(frosted.materialOpacity(), legibility)
+                direct.setMaterialOpacity(direct.materialOpacity(), legibility)
+                software.setMaterialOpacity(software.materialOpacity(), legibility)
                 liquid.setMaterialOpacity(liquid.materialOpacity(), legibility)
                 fluent.setMaterialOpacity(fluent.materialOpacity(), legibility)
                 prism.setMaterialOpacity(prism.materialOpacity(), legibility)
@@ -216,7 +232,8 @@ class MaterialOpacitySandboxActivity : Activity() {
         status.text = "作用域 ${f(scope.value)} · 录制 ${counters.contentRecordings} · GPU ${counters.gpuDraws} · 软件 ${counters.softwareDraws}\n" +
             "实际浓度：柔光 ${f(frosted.effectiveMaterialOpacity())} · 液态 ${f(liquid.effectiveMaterialOpacity())} · " +
             "亚克力 ${f(fluent.effectiveMaterialOpacity())} · 棱镜 ${f(prism.effectiveMaterialOpacity())} · 云母 ${f(mica.effectiveMaterialOpacity())}\n" +
-            "云母 ${mica.diagnostics().fallbackReason} · 亚克力 ${fluent.diagnostics().fallbackReason}"
+            "云母 ${mica.diagnostics().fallbackReason} · 亚克力 ${fluent.diagnostics().fallbackReason} · " +
+            "增强 ${direct.diagnostics()?.backend} · 软件 ${software.diagnostics()?.backend}"
     }
 
     override fun onStart() { super.onStart(); session.resume() }
@@ -225,7 +242,7 @@ class MaterialOpacitySandboxActivity : Activity() {
         destroyed = true
         scope.close()
         // Close the glass before the session it samples from.
-        fluent.close(); prism.close(); frosted.close(); liquid.close(); mica.close()
+        fluent.close(); prism.close(); frosted.close(); liquid.close(); direct.close(); software.close(); mica.close()
         slider.dispose()
         session.close()
         super.onDestroy()

@@ -7,7 +7,8 @@
 ### 新增
 
 - 材质浓度：所有控件通用的透明度无极调节（`docs/MATERIAL_OPACITY.md`）。`LumenMaterialOpacityTarget` 由局部表面绑定、Fluent、Prism、Mica 与 lumen-motion 的滑块、底栏、档位条实现；`LumenActivityDelegate.setMaterialOpacity(role, value)` 按表面角色调节 Activity 皮肤，`LumenMaterialOpacity.set(drawable, value)` 逐个调节引擎背景；`LumenMaterialOpacityScope` 用一个值和可打断弹簧驱动一组控件。各材质按自己的物理隐喻消退：柔光是雾气散开，液态由磨砂变成保留折射边缘的清玻璃，亚克力先退亮度与色调、低于 0.35 才退模糊，云母只改变壁纸透出度、始终不透明，棱镜按厚度退色调与投影；轮廓最后消失，文字与 `View.alpha` 不受影响。逐帧只写数值与 uniform；背景权重为 0 的表面停止采样与录制。`p = 1` 与原外观逐位相同。
-- Sample：「表面沙盒 → 材质浓度」五种材质与滑块挂在同一个作用域上，可拖动或弹簧过渡，并切换文字表面下限。JVM 新增 `MaterialOpacityPolicyTest`、`MaterialOpacityContractTest`、`MaterialOpacityMotionContractTest`。
+- 材质浓度的模糊半径随浓度变化（`docs/MATERIAL_OPACITY.md` §13）：GPU 节点玻璃按 16 档切换缓存的效果链（同一图层，显存不增加），AGSL 直接路径在清晰、中档与强模糊之间连续插值，软件模糊与柔光静态磨砂在停手后按真实半径重算一次。中低浓度不再透出清晰轮廓。
+- Sample：「表面沙盒 → 材质浓度」五种材质、增强（AGSL）与软件后端两块玻璃以及滑块挂在同一个作用域上，可拖动或弹簧过渡，并切换文字表面下限。JVM 新增 `MaterialOpacityPolicyTest`、`MaterialOpacityContractTest`、`MaterialOpacityMotionContractTest`。
 
 ### 修复
 
