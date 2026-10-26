@@ -60,6 +60,19 @@ internal object MaterialOpacityPolicy {
     fun haze(p: Float, k: Float = HAZE_K): Float =
         if (p <= 0f) 0f else if (p >= 1f) 1f else ((1f - exp(-k * p)) / (1f - exp(-k))).coerceIn(0f, 1f)
     fun floorMix(p: Float, floor: Float): Float = floor + (1f - floor) * p
+
+    /**
+     * Backdrop weight for a fixed-radius blur sample: stays dense through the middle and clears near zero
+     * (`1 - (1 - p)^4`). A linear cross-fade lets sharp content through at mid opacity and reads as a double
+     * exposure; this approximates a shrinking blur radius without rebuilding any effect (§12).
+     */
+    fun clearing(p: Float): Float {
+        if (p <= 0f) return 0f
+        if (p >= 1f) return 1f
+        val q = 1f - p
+        val q2 = q * q
+        return 1f - q2 * q2
+    }
     fun gate(p: Float, start: Float, end: Float): Float {
         if (p <= start) return 0f
         if (p >= end) return 1f
@@ -72,11 +85,11 @@ internal object MaterialOpacityPolicy {
 
     /** Static legibility floors for surfaces that carry text (§6). Mica is opaque at any opacity. */
     fun staticFloor(kind: MaterialKind): Float = when (kind) {
-        MaterialKind.FROSTED -> 0.22f
+        MaterialKind.FROSTED -> 0.30f
         MaterialKind.LIQUID -> 0.12f
         MaterialKind.FLUENT -> 0.30f
         MaterialKind.MICA -> 0f
-        MaterialKind.PRISM -> 0.20f
+        MaterialKind.PRISM -> 0.30f
         MaterialKind.PLAIN -> 0.20f
     }
 
@@ -108,20 +121,21 @@ internal object MaterialOpacityPolicy {
             MaterialKind.FROSTED -> {
                 val h = haze(v)
                 out.fill = h
-                out.backdrop = pow(v, 0.7f)
-                out.edge = 0.4f + 0.6f * h
+                out.backdrop = clearing(v)
+                // The edge never thins below the frost or the haze: it leaves last.
+                out.edge = 0.4f + 0.6f * out.backdrop
                 out.shadow = pow(v, 1.5f)
             }
             MaterialKind.LIQUID -> {
                 out.fill = v
-                out.backdrop = v
+                out.backdrop = clearing(v)
                 out.scatterStrength = v * v
                 out.scatterRadius = v
                 out.refraction = floorMix(v, 0.5f)
                 out.specular = floorMix(v, 0.6f)
                 out.chromatic = floorMix(v, 0.5f)
-                out.edge = floorMix(v, 0.6f)
-                out.highlight = floorMix(v, 0.6f)
+                out.edge = 0.6f + 0.4f * out.backdrop
+                out.highlight = out.edge
                 out.shadow = pow(v, 1.5f)
             }
             MaterialKind.FLUENT -> {
@@ -135,10 +149,10 @@ internal object MaterialOpacityPolicy {
             MaterialKind.MICA -> out.image = v
             MaterialKind.PRISM -> {
                 out.fill = v
-                out.backdrop = v
+                out.backdrop = clearing(v)
                 out.saturation = v
                 out.refraction = floorMix(v, 0.5f)
-                out.highlight = floorMix(v, 0.6f)
+                out.highlight = 0.6f + 0.4f * out.backdrop
                 out.edge = out.highlight
                 out.innerShadow = v
                 out.shadow = pow(v, 1.5f)

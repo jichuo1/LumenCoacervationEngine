@@ -349,7 +349,8 @@ internal class FluentControlDrawable(private val density: Float, private val hos
     override fun getOutline(outline: Outline) {
         if (bounds.isEmpty) return
         outline.setRoundRect(bounds, radius)
-        outline.alpha = alphaValue / 255f
+        // The platform shadow is drawn under the whole outline: a see-through control must not reveal it.
+        outline.alpha = alphaValue / 255f * material.backdrop
     }
 
     override fun setAlpha(alpha: Int) {

@@ -280,3 +280,13 @@ LumenSurfaceSession在完整Activity会话之外复用现有GPU节点与软件�
 - 每帧通过无分配的 `backendOf` 读取绑定的实际后端，`AcrylicAvailability` 以 120ms 滞回判定背景是否可用；不可用只回退本控件。
 - 纯计算（配方、修正系数、亮度推导、层级换算、描边令牌、过渡、滞回）都在 `FluentAcrylicPolicy` / `FluentElevationPolicy` 中，JVM 单测覆盖；`BlendMode` 只出现在 `AcrylicBlendApi29`。
 - 阴影交给平台 `View.elevation` 与 Drawable 轮廓；控件只恢复仍由自己持有的背景、高度和阴影颜色。
+
+## 14. 材质浓度
+
+所有材质共用一条 0..1 的材质浓度（[MATERIAL_OPACITY.md](MATERIAL_OPACITY.md)），与 `Drawable.setAlpha`（整体可见度）分开。
+
+- 纯策略 `runtime/MaterialOpacityPolicy` 把浓度映射为各通道乘数（`MaterialOpacityFrame`），`MaterialOpacityState` 负责单个 Drawable 与其角色浓度相乘、只在乘积变化时重算。
+- 局部表面在 `LumenSurfaceSession.Entry` 上保存背景、色调、边缘、阴影四个权重；背景权重为 0 时该表面跳过 `onPreDraw` 录制并注销软件采样。Fluent、Prism 通过同一组权重控制各自的只绘制绑定。
+- Activity 皮肤经 `GlowEngine.setMaterialOpacity`（默认空实现）按角色下发，`ActivitySkinSession` 同时转给休眠的柔光回退。液态折射后端为全部表面共用一个着色器，每次 `drawBackdrop` 前由渲染器设置该表面的材质，后端只写变化的 uniform。
+- lumen-motion 的 `LumenMaterialOpacityScope` 只通过公开 API 驱动目标，逐帧只遍历注册表。
+

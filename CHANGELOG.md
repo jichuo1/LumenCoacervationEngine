@@ -4,6 +4,15 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 材质浓度：所有控件通用的透明度无极调节（`docs/MATERIAL_OPACITY.md`）。`LumenMaterialOpacityTarget` 由局部表面绑定、Fluent、Prism、Mica 与 lumen-motion 的滑块、底栏、档位条实现；`LumenActivityDelegate.setMaterialOpacity(role, value)` 按表面角色调节 Activity 皮肤，`LumenMaterialOpacity.set(drawable, value)` 逐个调节引擎背景；`LumenMaterialOpacityScope` 用一个值和可打断弹簧驱动一组控件。各材质按自己的物理隐喻消退：柔光是雾气散开，液态由磨砂变成保留折射边缘的清玻璃，亚克力先退亮度与色调、低于 0.35 才退模糊，云母只改变壁纸透出度、始终不透明，棱镜按厚度退色调与投影；轮廓最后消失，文字与 `View.alpha` 不受影响。逐帧只写数值与 uniform；背景权重为 0 的表面停止采样与录制。`p = 1` 与原外观逐位相同。
+- Sample：「表面沙盒 → 材质浓度」五种材质与滑块挂在同一个作用域上，可拖动或弹簧过渡，并切换文字表面下限。JVM 新增 `MaterialOpacityPolicyTest`、`MaterialOpacityContractTest`、`MaterialOpacityMotionContractTest`。
+
+### 修复
+
+- `LumenFluentControl` 与 `LumenPrismGlass` 的 Drawable alpha 现在也作用于采样背景：此前不透明底随 alpha 变淡，模糊或折射背景却照常满强度绘制，淡出动画中控件始终是一块不透明的玻璃。
+
 ### 性能
 
 - lumen-engine 与 lumen-motion 随 AAR 提供 Baseline Profile（`src/main/baseline-prof.txt`），只覆盖模糊、透镜、实时采样、底图生成与会话入口共 32 个类。宿主经商店或 PackageInstaller 安装时这些方法即被 AOT 编译；API 35 模拟器按真实安装路径实测，底栏透镜作业首批 4.0–6.4ms → 0.38–0.45ms，前 1 秒（36 批）21.8–37.8ms → 9.2–10.1ms，稳态不变。规则由 `BaselineProfileContractTest` / `MotionBaselineProfileContractTest` 守住。

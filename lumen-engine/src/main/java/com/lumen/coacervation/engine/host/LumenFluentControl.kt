@@ -110,6 +110,8 @@ public class LumenFluentControl @JvmOverloads constructor(
         materialOpacity = next
         this.legibility = legibility
         if (resolveMaterial()) applyElevation()
+        // The outline alpha follows the backdrop weight (no platform shadow under clear acrylic).
+        host.get()?.invalidateOutline()
     }
 
     override fun materialOpacity(): Float = materialOpacity

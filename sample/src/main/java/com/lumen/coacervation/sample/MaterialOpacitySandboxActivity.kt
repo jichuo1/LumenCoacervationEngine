@@ -2,7 +2,6 @@
 package com.lumen.coacervation.sample
 
 import android.app.Activity
-import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
@@ -19,6 +18,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
+import androidx.core.graphics.createBitmap
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
 import com.lumen.coacervation.engine.host.LumenFluentControl
@@ -144,7 +144,7 @@ class MaterialOpacitySandboxActivity : Activity() {
     /** A small wallpaper-like gradient; the Mica snapshot is prepared off the main thread, as the API requires. */
     private fun prepareMicaImage() {
         Thread({
-            val bitmap = Bitmap.createBitmap(96, 96, Bitmap.Config.ARGB_8888)
+            val bitmap = createBitmap(96, 96)
             Canvas(bitmap).drawRect(0f, 0f, 96f, 96f, Paint().apply {
                 shader = LinearGradient(0f, 0f, 96f, 96f, intArrayOf(0xFFE3A189.toInt(), 0xFF8FD0B8.toInt(), 0xFF9CC3EC.toInt()),
                     null, Shader.TileMode.CLAMP)
@@ -155,6 +155,7 @@ class MaterialOpacitySandboxActivity : Activity() {
                 if (destroyed || prepared == null) return@runOnUiThread
                 image = prepared
                 mica.setImage(prepared)
+                refreshStatus()
             }
         }, "Sample-MicaImage").start()
     }
@@ -214,7 +215,8 @@ class MaterialOpacitySandboxActivity : Activity() {
         val counters = session.diagnostics()
         status.text = "作用域 ${f(scope.value)} · 录制 ${counters.contentRecordings} · GPU ${counters.gpuDraws} · 软件 ${counters.softwareDraws}\n" +
             "实际浓度：柔光 ${f(frosted.effectiveMaterialOpacity())} · 液态 ${f(liquid.effectiveMaterialOpacity())} · " +
-            "亚克力 ${f(fluent.effectiveMaterialOpacity())} · 棱镜 ${f(prism.effectiveMaterialOpacity())} · 云母 ${f(mica.effectiveMaterialOpacity())}"
+            "亚克力 ${f(fluent.effectiveMaterialOpacity())} · 棱镜 ${f(prism.effectiveMaterialOpacity())} · 云母 ${f(mica.effectiveMaterialOpacity())}\n" +
+            "云母 ${mica.diagnostics().fallbackReason} · 亚克力 ${fluent.diagnostics().fallbackReason}"
     }
 
     override fun onStart() { super.onStart(); session.resume() }

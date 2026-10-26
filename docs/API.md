@@ -496,3 +496,18 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 | `LumenPrismDiagnostics` | closed / glassVisible / fallbackReason / backdropBackend / lensActive / dark / draws |
 | `LumenNavigationBar.setPrismSelection(options: LumenPrismSelectionOptions?)` / `isPrismSelectionEnabled` | null 为经典选中框（逐帧不变）；可随时切换或改参 |
 | `LumenPrismSelectionOptions` | pressedScale（1–1.8）/ contentMagnification（1–1.6）/ lensHeightDp、lensAmountDp（0–32）/ dispersion（0–1）/ velocityDeformation（0–2）/ highlightOpacity（0–1）/ shadowOpacity（0–0.4）/ innerShadowOpacity（0–0.6）/ pressedWashOpacity（0–0.2）/ scaleXSpring、scaleYSpring（`LumenSpringSpec`）；`DEFAULT` |
+
+## 23. 材质浓度（自 1.5.6 起，未发布）
+
+所有控件通用的透明度无极调节：0 接近清玻璃（只剩轮廓），1 为默认外观（逐位不变）。只改变材质，不改变文字与 `View.alpha`。设计、各材质映射与取舍见 [MATERIAL_OPACITY.md](MATERIAL_OPACITY.md)。全部主线程调用；逐帧可调，只写数值与 uniform，不分配、不重建着色器或模糊效果；超出 0..1 截断，NaN 忽略。
+
+| 声明 | 公开成员 |
+|---|---|
+| `interface LumenMaterialOpacityTarget`（host） | `setMaterialOpacity(value)` / `materialOpacity()` / `effectiveMaterialOpacity()`（可读性下限、降低透明度生效后的实际值） |
+| `enum LumenMaterialLegibility`（host） | AUTO（按表面角色：卡片、弹窗、栏、标签、按钮承载文字）/ TEXT（启用逐材质浓度下限）/ DECORATIVE（可降到 0） |
+| `object LumenMaterialOpacity`（host） | `set(drawable, value, legibility = AUTO): Boolean` / `get(drawable): Float`：引擎生成的背景（委托 `surface` 一族、`floatingBackground` 等，`LumenControlShadow` 的结果连同其内容）逐个设置，与角色浓度相乘；宿主自己的 Drawable 返回 false、不做修改 |
+| `LumenActivityDelegate` | `setMaterialOpacity(role: SurfaceRole, value)` / `setMaterialOpacity(value)`（全部角色）/ `materialOpacity(role)`；`prepare()` 之前设置的值在会话创建后生效 |
+| `GlowEngine.setMaterialOpacity(role, value)` | 带默认空实现（等同恒为 1）；契约版本不变 |
+| 实现 `LumenMaterialOpacityTarget` | `LumenSurfaceBinding`（另有 `setMaterialOpacity(value, legibility)`）、`LumenFluentControl`、`LumenPrismGlass`（后两者另有 `setMaterialOpacity(value, legibility)`）、`LumenMicaBackdrop`（始终不透明：0 为纯色底，1 为所配置的云母）、`LumenSlider` / `LumenNavigationBar` / `LumenSegmentScrubBar`（lumen-motion，只作用于槽体或栏背景；数值填充、选中框与文字不变） |
+| `LumenMaterialOpacityScope(initial = 1f, stiffness = 260f, dampingRatio = 0.92f)`（lumen-motion，`motion`） | `register(target, base = 1f)` / `unregister(target, restore = 1f)` / `set(value)` / `animateTo(value)` / `value` / `isAnimating` / `close()`；目标收到 `上一级 × 作用域值 × base`；本身也是 `LumenMaterialOpacityTarget`，可嵌套；系统关闭动画时 `animateTo` 等同 `set` |
+
