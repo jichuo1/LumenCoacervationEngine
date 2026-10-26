@@ -65,7 +65,7 @@ class FluentControlContractTest {
         // The Drawable alpha reaches the backdrop, and the opaque base gives way together with the backdrop weight
         // (before 1.5.6 the base faded while the blurred backdrop stayed opaque).
         assertTrue(draw.contains("fill.color = withAlpha(recipe.fallback, (alphaValue * backdrop).roundToInt())"))
-        assertTrue(draw.contains("binding.setMaterialWeights(backdrop, 1f, 1f, 1f)"))
+        assertTrue(draw.contains("binding.setMaterialWeights(backdrop, 1f, 1f, 1f, material.blurRadius, material.radiusBackdrop)"))
         // The crossfade draws the fallback over the acrylic, matching WinUI's CrossFadeEffect weight.
         assertTrue(draw.contains("if (weight < 1f)"))
     }

@@ -36,7 +36,7 @@ class MaterialOpacityContractTest {
         for (path in listOf("fluent/FluentControlDrawable.kt", "prism/PrismGlassDrawable.kt")) {
             val draw = SourceContract.read(path).after("override fun draw(canvas: Canvas)")
             assertTrue(path, draw.contains("binding.draw(canvas, alphaValue / 255f)"))
-            assertTrue(path, draw.contains("binding.setMaterialWeights(backdrop, 1f, 1f, 1f)"))
+            assertTrue(path, draw.contains("binding.setMaterialWeights(backdrop, 1f, 1f, 1f, material.blurRadius, material.radiusBackdrop)"))
             // A clear control leaves its binding unsampled instead of drawing a zero-alpha backdrop.
             assertTrue(path, draw.contains("MaterialOpacityPolicy.needsBackdrop(material)"))
         }
@@ -89,6 +89,22 @@ class MaterialOpacityContractTest {
             assertCheap(path, source.after("override fun setMaterialOpacity(role: SurfaceRole, value: Float)")
                 .before("for (view in "))
         }
+    }
+
+    @Test fun gpuGlassSwitchesCachedBlurLevelsInsteadOfBuildingPerFrame() {
+        val glass = SourceContract.read("glow/GlowChromeGlassApi31.kt")
+        val update = glass.after("private fun updateEffect(").before("private fun remember(")
+        // Same geometry and variant: nothing to do. A known variant comes from the cache; only a new one is built.
+        assertTrue(update.contains("if (sameGeometry && variant == effectVariant) return false"))
+        assertTrue(update.contains("val built = cached ?: effects.create(width, height, paddingPx, radiusPx, intensity, direction, variant)"))
+        assertTrue(update.contains("variantEffects?.fill(null)"))
+        val capture = SourceContract.read("host/SurfaceCaptureApi31.kt")
+        val blurFor = capture.after("private fun blurFor(variant: Int): RenderEffect").before("val renderer = ")
+        assertTrue(blurFor.contains("cache[variant]?.let { return it }"))
+        // The configured radius keeps the original single chain (bit-identical at full opacity).
+        assertTrue(capture.contains("GlowChromeGlassApi31.DEFAULT_VARIANT else blurLevel.coerceAtLeast(0)"))
+        val session = SourceContract.read("host/LumenSurfaceSession.kt")
+        assertTrue(session.contains("group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, gpuAlpha, level)"))
     }
 
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {

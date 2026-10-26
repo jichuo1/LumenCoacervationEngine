@@ -24,10 +24,11 @@ class FilteredLayerRefreshContractTest {
 
     @Test fun glassSwapsOnEveryReRecordWithoutBuildingEffects() {
         val glass = SourceContract.read("glow/GlowChromeGlassApi31.kt")
-        assertTrue(glass.contains("if (!updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY)) swapEquivalentEffect()"))
+        assertTrue(glass.contains("if (!updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY, variant)) swapEquivalentEffect()"))
         val update = glass.after("private fun updateEffect(").before("private fun swapEquivalentEffect()")
         assertTrue(update.contains("val refresh = FilteredLayerRefresh.required()"))
-        assertTrue(update.contains("alias = if (refresh) RenderEffect.createOffsetEffect(0f, 0f, built) else null"))
+        // A cached material-opacity variant reuses its own alias; a new chain gets a new pass-through alias.
+        assertTrue(update.contains("alias = if (refresh) variantAliases?.get(slot) ?: RenderEffect.createOffsetEffect(0f, 0f, built) else null"))
         assertTrue(update.contains("effect = if (refresh) built else null"))
         val swap = glass.after("private fun swapEquivalentEffect()").before("fun releaseDisplayList()")
         assertFalse(swap.contains("RenderEffect."))

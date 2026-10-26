@@ -23,6 +23,7 @@ import com.lumen.coacervation.engine.prism.PrismLensApi33
 import com.lumen.coacervation.engine.prism.PrismPolicy
 import com.lumen.coacervation.engine.prism.PrismRecipe
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import kotlin.math.floor
 import kotlin.math.roundToInt
 
@@ -64,9 +65,13 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         return true
     }
 
-    fun draw(glass: Glass, canvas: Canvas, bounds: Rect, radius: Float, matrix: Matrix, alpha: Float) {
+    fun draw(glass: Glass, canvas: Canvas, bounds: Rect, radius: Float, matrix: Matrix, alpha: Float,
+        blurLevel: Int = MaterialOpacityPolicy.BLUR_LEVELS) {
         matrix.preScale(1f / scaleX, 1f / scaleY)
-        glass.renderer.draw(canvas, bounds, radius, content, 0f, 0f, alpha, 1f, 0f, null, matrix)
+        // The configured radius keeps the original single chain; thinner levels are cached variants of it.
+        val variant = if (!glass.blurControllable || blurLevel >= MaterialOpacityPolicy.BLUR_LEVELS)
+            GlowChromeGlassApi31.DEFAULT_VARIANT else blurLevel.coerceAtLeast(0)
+        glass.renderer.draw(canvas, bounds, radius, content, 0f, 0f, alpha, 1f, 0f, null, matrix, variant)
     }
 
     override fun close() { content.release(); pixels = 0L }
@@ -93,14 +98,29 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
     }
 
     @RequiresApi(31)
-    class Glass(options: LumenSurfaceOptions, density: Float, dark: Boolean, cache: LensCache,
-        counters: LumenGraphicsCounters? = null, preserveBackdropColors: Boolean = false,
-        prism: PrismRecipe? = null) : AutoCloseable {
+    class Glass(private val options: LumenSurfaceOptions, private val density: Float, dark: Boolean, cache: LensCache,
+        counters: LumenGraphicsCounters? = null, private val preserveBackdropColors: Boolean = false,
+        private val prism: PrismRecipe? = null) : AutoCloseable {
         private val sampling = options.sampling
         private val pad = if (prism != null) PrismPolicy.paddingPx(prism, density)
             else (maxOf(20f * sampling.refractionStrength, (if (sampling.blurEnabled) sampling.blurRadiusDp else 0f) * 2f) * density).roundToInt() + 2
+        private val blurRadiusPx = if (sampling.blurEnabled) sampling.blurRadiusDp * density else 0f
         private val blur = if (!sampling.blurEnabled || sampling.blurRadiusDp == 0f) RenderEffect.createOffsetEffect(0f, 0f)
             else GlowChromeBlurApi31.create(sampling.blurRadiusDp * density)
+        /** Material opacity can thin this glass by switching blur levels (MATERIAL_OPACITY.md §13). */
+        val blurControllable: Boolean = blurRadiusPx > 0f
+        /** Base blur per material-opacity level; the full level is [blur] itself. Built once per level. */
+        private var levelBlurs: Array<RenderEffect?>? = null
+
+        private fun blurFor(variant: Int): RenderEffect {
+            if (variant < 0 || variant >= MaterialOpacityPolicy.BLUR_LEVELS || !blurControllable) return blur
+            val cache = levelBlurs ?: arrayOfNulls<RenderEffect>(MaterialOpacityPolicy.BLUR_LEVELS).also { levelBlurs = it }
+            cache[variant]?.let { return it }
+            val radius = blurRadiusPx * MaterialOpacityPolicy.levelFraction(variant)
+            val built = if (radius < MIN_BLUR_PX) RenderEffect.createOffsetEffect(0f, 0f) else GlowChromeBlurApi31.create(radius)
+            cache[variant] = built
+            return built
+        }
         private val liquidParameters = LiquidTokenResolver.resolve(LiquidVisualTuningPolicy.resolve(dark)).let {
             it.copy(refractionAmountDp = it.refractionAmountDp * sampling.refractionStrength,
                 interiorDistortionDp = it.interiorDistortionDp * sampling.refractionStrength)
@@ -117,14 +137,24 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         val prismLensActive: Boolean get() = prismLens != null
         private val prismSaturation = if (prism != null && prism.saturation != 1f)
             ColorMatrixColorFilter(ColorMatrix(PrismPolicy.saturationMatrix(prism.saturation))) else null
-        val renderer = GlowChromeGlassApi31(pad) { width, height, padding, radius, intensity, direction ->
-            var effect = blur
+        val renderer = GlowChromeGlassApi31(pad, object : GlowChromeGlassApi31.Effects {
+            override fun create(width: Int, height: Int, padding: Int, radiusPx: Float, opticalIntensity: Float,
+                stretchDirY: Float): RenderEffect = chain(width, height, padding, radiusPx, opticalIntensity, stretchDirY,
+                GlowChromeGlassApi31.DEFAULT_VARIANT)
+            override fun create(width: Int, height: Int, padding: Int, radiusPx: Float, opticalIntensity: Float,
+                stretchDirY: Float, variant: Int): RenderEffect =
+                chain(width, height, padding, radiusPx, opticalIntensity, stretchDirY, variant)
+        }).apply { this.counters = counters }
+
+        private fun chain(width: Int, height: Int, padding: Int, radius: Float, intensity: Float, direction: Float,
+            variant: Int): RenderEffect {
+            var effect = blurFor(variant)
             if (prism != null) {
                 // Prism: blur → saturation → rounded-rect refraction. No frosted gain, no fade.
                 if (prismSaturation != null) effect = RenderEffect.createColorFilterEffect(prismSaturation, effect)
                 if (prismLens != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
                     effect = PrismLensApi33.effect(prismLens, effect, width, height, padding, radius, prism, density)
-                return@GlowChromeGlassApi31 effect
+                return effect
             }
             if(options.material==LumenSurfaceMaterial.FROSTED&&lens==null&&!preserveBackdropColors) {
                 val gain=com.lumen.coacervation.engine.material.LensRefractionPolicy.LUMINANCE_GAIN
@@ -150,8 +180,14 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
                 val mask = LinearGradient(0f, padding.toFloat(), 0f, padding + height.toFloat(), colors, positions, Shader.TileMode.CLAMP)
                 effect = RenderEffect.createBlendModeEffect(effect, RenderEffect.createShaderEffect(mask), BlendMode.DST_IN)
             }
-            effect
-        }.apply { this.counters = counters }
-        override fun close() = renderer.close()
+            return effect
+        }
+
+        override fun close() { renderer.close(); levelBlurs = null }
+    }
+
+    private companion object {
+        /** Below a third of a pixel a blur is invisible; a pass-through keeps the chain without the blur pass. */
+        const val MIN_BLUR_PX = 0.35f
     }
 }

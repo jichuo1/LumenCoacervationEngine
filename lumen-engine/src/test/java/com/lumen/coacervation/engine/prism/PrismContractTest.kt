@@ -58,7 +58,7 @@ class PrismContractTest {
         val glass = SourceContract.read("host/SurfaceCaptureApi31.kt").after("class Glass(")
         assertTrue(glass.contains("private val lens: Any? = if (prism == null && !preserveBackdropColors"))
         val prism = glass.after("if (prism != null) {").before("if(options.material==LumenSurfaceMaterial.FROSTED")
-        assertTrue(prism.contains("return@GlowChromeGlassApi31 effect"))
+        assertTrue(prism.contains("return effect"))
         assertFalse(prism.contains("LUMINANCE_GAIN"))
         assertFalse(prism.contains("fadeEnabled"))
         val session = SourceContract.read("host/LumenSurfaceSession.kt")

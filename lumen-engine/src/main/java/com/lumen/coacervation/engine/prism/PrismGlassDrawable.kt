@@ -163,7 +163,7 @@ internal class PrismGlassDrawable(private val density: Float, private val host: 
         try {
             canvas.clipPath(clip)
             val backdrop = material.backdrop
-            if (binding != null) binding.setMaterialWeights(backdrop, 1f, 1f, 1f)
+            if (binding != null) binding.setMaterialWeights(backdrop, 1f, 1f, 1f, material.blurRadius, material.radiusBackdrop)
             if (binding != null && !binding.isRecordingContent && MaterialOpacityPolicy.needsBackdrop(material)) {
                 // The Drawable alpha (a motion fade) applies to the sampled glass as well as to its own layers.
                 binding.draw(canvas, alphaValue / 255f)

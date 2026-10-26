@@ -168,7 +168,7 @@ internal class FluentControlDrawable(private val density: Float, private val hos
             // WinUI composites the backdrop over an opaque fallback so the blur never mixes with transparency.
             fill.color = withAlpha(recipe.fallback, (alphaValue * backdrop).roundToInt())
             canvas.drawRect(rect, fill)
-            if (binding != null) binding.setMaterialWeights(backdrop, 1f, 1f, 1f)
+            if (binding != null) binding.setMaterialWeights(backdrop, 1f, 1f, 1f, material.blurRadius, material.radiusBackdrop)
             if (binding != null && !binding.isRecordingContent && sampling) {
                 // The Drawable alpha (a motion fade) applies to the backdrop as well as to the acrylic layers.
                 binding.draw(canvas, alphaValue / 255f)

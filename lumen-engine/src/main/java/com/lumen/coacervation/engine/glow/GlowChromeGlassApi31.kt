@@ -46,6 +46,20 @@ internal class GlowChromeGlassApi31(
             opticalIntensity: Float,
             stretchDirY: Float
         ): RenderEffect
+
+        /**
+         * One of up to [MAX_VARIANTS] variants of the same chain (material-opacity blur levels, MATERIAL_OPACITY.md §13);
+         * [DEFAULT_VARIANT] is the configured chain. Factories without variants ignore it.
+         */
+        fun create(
+            width: Int,
+            height: Int,
+            padding: Int,
+            radiusPx: Float,
+            opticalIntensity: Float,
+            stretchDirY: Float,
+            variant: Int
+        ): RenderEffect = create(width, height, padding, radiusPx, opticalIntensity, stretchDirY)
     }
 
     private val node = RenderNode("Lumen-GlowChromeGlass")
@@ -56,6 +70,13 @@ internal class GlowChromeGlassApi31(
     private var effectRadius = Float.NaN
     private var effectIntensity = Float.NaN
     private var effectDirection = Float.NaN
+    private var effectVariant = DEFAULT_VARIANT
+    /**
+     * Chains (and their API 31 aliases) per variant for the current geometry. A material-opacity drag only switches
+     * between them, so after one sweep it allocates nothing; a geometry change drops them. Null until a variant is used.
+     */
+    private var variantEffects: Array<RenderEffect?>? = null
+    private var variantAliases: Array<RenderEffect?>? = null
     /** 仅 API 31：当前效果与一个像素等价的另一个滤镜对象（[FilteredLayerRefresh]）。 */
     private var effect: RenderEffect? = null
     private var alias: RenderEffect? = null
@@ -94,8 +115,26 @@ internal class GlowChromeGlassApi31(
         stretchDirY: Float,
         underlay: ((Canvas, RectF) -> Unit)?,
         contentToHost: Matrix?
+    ) = draw(canvas, bounds, radiusPx, content, contentOffsetX, contentOffsetY, alpha, opticalIntensity, stretchDirY,
+        underlay, contentToHost, DEFAULT_VARIANT)
+
+    /** As above, selecting effect [variant] (0 until [MAX_VARIANTS], or [DEFAULT_VARIANT]). */
+    fun draw(
+        canvas: Canvas,
+        bounds: Rect,
+        radiusPx: Float,
+        content: GlowContentCaptureApi31,
+        contentOffsetX: Float,
+        contentOffsetY: Float,
+        alpha: Float,
+        opticalIntensity: Float,
+        stretchDirY: Float,
+        underlay: ((Canvas, RectF) -> Unit)?,
+        contentToHost: Matrix?,
+        variant: Int
     ) {
         check(!closed) { "Chrome glass is closed" }
+        require(variant == DEFAULT_VARIANT || variant in 0 until MAX_VARIANTS) { "variant $variant" }
         val width = bounds.width()
         val height = bounds.height()
         if (width <= 0 || height <= 0) return
@@ -120,7 +159,7 @@ internal class GlowChromeGlassApi31(
         }
         counters?.proxyRecorded()
         // 每次重录都可能换了内容（新的内容节点、新的取样矩阵），API 31 必须换一个没缓存过的滤镜。
-        if (!updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY)) swapEquivalentEffect()
+        if (!updateEffect(width, height, radiusPx, opticalIntensity, stretchDirY, variant)) swapEquivalentEffect()
         outline.setRoundRect(pad, pad, pad + width, pad + height, radiusPx)
         node.setOutline(outline)
         node.setClipToOutline(true)
@@ -132,26 +171,45 @@ internal class GlowChromeGlassApi31(
      * RenderEffect 在创建时快照 shader uniform，参数变了只能换新对象。回弹强度按
      * [INTENSITY_STEP] 量化后比对，回弹拖动中不会逐帧新建。返回是否换了新对象。
      */
-    private fun updateEffect(width: Int, height: Int, radiusPx: Float, opticalIntensity: Float, stretchDirY: Float): Boolean {
+    private fun updateEffect(width: Int, height: Int, radiusPx: Float, opticalIntensity: Float, stretchDirY: Float,
+        variant: Int): Boolean {
         val intensity = (opticalIntensity / INTENSITY_STEP).roundToInt() * INTENSITY_STEP
         val direction = stretchDirY.coerceIn(-1f, 1f)
-        if (width == effectWidth && height == effectHeight && radiusPx == effectRadius &&
+        val sameGeometry = width == effectWidth && height == effectHeight && radiusPx == effectRadius &&
             abs(intensity - effectIntensity) < 1e-4f && direction == effectDirection
-        ) return false
-        effectWidth = width
-        effectHeight = height
-        effectRadius = radiusPx
-        effectIntensity = intensity
-        effectDirection = direction
-        val built = effects.create(width, height, paddingPx, radiusPx, intensity, direction)
+        if (sameGeometry && variant == effectVariant) return false
+        if (!sameGeometry) {
+            effectWidth = width
+            effectHeight = height
+            effectRadius = radiusPx
+            effectIntensity = intensity
+            effectDirection = direction
+            // Cached variants were built for the previous geometry.
+            variantEffects?.fill(null)
+            variantAliases?.fill(null)
+        }
+        effectVariant = variant
+        val slot = variant + 1
+        val cached = variantEffects?.get(slot)
+        val built = cached ?: effects.create(width, height, paddingPx, radiusPx, intensity, direction, variant)
+        if (cached == null) counters?.effectBuilt()
         val refresh = FilteredLayerRefresh.required()
         effect = if (refresh) built else null
         // 整数零偏移是直通：输出与 built 逐像素相同，只是另一个滤镜对象。
-        alias = if (refresh) RenderEffect.createOffsetEffect(0f, 0f, built) else null
+        alias = if (refresh) variantAliases?.get(slot) ?: RenderEffect.createOffsetEffect(0f, 0f, built) else null
+        if (variant != DEFAULT_VARIANT || variantEffects != null) remember(slot, built, alias)
         aliasActive = false
         node.setRenderEffect(built)
-        counters?.effectBuilt()
         return true
+    }
+
+    private fun remember(slot: Int, built: RenderEffect, alias: RenderEffect?) {
+        val effects = variantEffects ?: arrayOfNulls<RenderEffect>(MAX_VARIANTS + 1).also { variantEffects = it }
+        effects[slot] = built
+        if (alias != null) {
+            val aliases = variantAliases ?: arrayOfNulls<RenderEffect>(MAX_VARIANTS + 1).also { variantAliases = it }
+            aliases[slot] = alias
+        }
     }
 
     /** API 31 以外 [alias] 为 null，什么也不做。切换不计入效果构建次数。 */
@@ -172,10 +230,16 @@ internal class GlowChromeGlassApi31(
         node.setRenderEffect(null)
         effect = null
         alias = null
+        variantEffects = null
+        variantAliases = null
         node.discardDisplayList()
     }
 
-    private companion object {
-        const val INTENSITY_STEP = 0.05f
+    companion object {
+        private const val INTENSITY_STEP = 0.05f
+        /** The configured chain, with no material-opacity variant. */
+        const val DEFAULT_VARIANT = -1
+        /** Upper bound on cached variants per glass (`MaterialOpacityPolicy.BLUR_LEVELS + 1` fits). */
+        const val MAX_VARIANTS = 32
     }
 }

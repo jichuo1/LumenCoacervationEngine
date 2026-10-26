@@ -243,11 +243,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
      * Material weights for one binding (MATERIAL_OPACITY.md §5): backdrop sample, tint, edge and shadow.
      * Stores floats only; a backdrop weight of zero stops this binding's sampling until it rises again.
      */
-    internal fun setMaterialWeights(id: Long, backdrop: Float, fill: Float, edge: Float, shadow: Float) {
+    internal fun setMaterialWeights(id: Long, backdrop: Float, fill: Float, edge: Float, shadow: Float,
+        blur: Float = 1f, radiusBackdrop: Float = backdrop) {
         if (closed) return
         checkMain()
         val entry = entries.firstOrNull { it.id == id } ?: return
-        entry.applyMaterialWeights(backdrop, fill, edge, shadow)
+        entry.applyMaterialWeights(backdrop, fill, edge, shadow, blur, radiusBackdrop)
     }
 
     /** Public binding opacity: resolves the binding's own material (frosted, liquid or static) through the policy. */
@@ -904,12 +905,19 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         var materialFill = 1f
         var materialEdge = 1f
         var materialShadow = 1f
-        fun needsBackdrop(): Boolean = materialBackdrop > MaterialOpacityPolicy.SAMPLING_EPSILON
-        fun applyMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float) {
+        /** Radius fraction and its backdrop weight, for the GPU glass that switches blur levels (MATERIAL_OPACITY.md §13). */
+        var materialBlur = 1f
+        var materialRadiusBackdrop = 1f
+        fun needsBackdrop(): Boolean = maxOf(materialBackdrop, materialRadiusBackdrop) > MaterialOpacityPolicy.SAMPLING_EPSILON
+        fun applyMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float, blur: Float = 1f,
+            radiusBackdrop: Float = backdrop) {
             val b = backdrop.coerceIn(0f, 1f); val f = fill.coerceIn(0f, 1f); val e = edge.coerceIn(0f, 1f); val s = shadow.coerceIn(0f, 1f)
-            if (b == materialBackdrop && f == materialFill && e == materialEdge && s == materialShadow) return
+            val r = blur.coerceIn(0f, 1f); val rb = radiusBackdrop.coerceIn(0f, 1f)
+            if (b == materialBackdrop && f == materialFill && e == materialEdge && s == materialShadow &&
+                r == materialBlur && rb == materialRadiusBackdrop) return
             val wasSampling = needsBackdrop()
             materialBackdrop = b; materialFill = f; materialEdge = e; materialShadow = s
+            materialBlur = r; materialRadiusBackdrop = rb
             if (wasSampling && !needsBackdrop()) group?.sampler?.unregister(target)
             else if (!wasSampling && needsBackdrop()) group?.dirty = true
             invalidateFrame()
@@ -923,7 +931,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val text = materialLegibility.carriesText(appearance.role)
             MaterialOpacityPolicy.resolve(kind, materialOpacity, text, enhancements.material.reduceTransparency, materialFrame)
             val f = materialFrame
-            applyMaterialWeights(f.backdrop, f.fill, f.edge, f.shadow)
+            applyMaterialWeights(f.backdrop, f.fill, f.edge, f.shadow, f.blurRadius, f.radiusBackdrop)
         }
         val drawable = SurfaceDrawable(this)
         fun invalidateFrame(){drawable.invalidateSelf();target.invalidate()}
@@ -1190,7 +1198,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     entry.gpuPixels = pixels
                                     val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics,
                                         preserveBackdropColors = entry.preserveBackdropColors, prism = entry.prism).also { entry.gpu = it }
-                                    group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, backdropAlpha)
+                                    // The node glass changes its blur radius by level, so its sample stays opaque until the
+                                    // last tenth instead of cross-fading a full-radius blur over the content.
+                                    val level = MaterialOpacityPolicy.blurLevel(entry.materialBlur)
+                                    val gpuAlpha = if (glass.blurControllable) alpha * c.backdropOpacity * entry.materialRadiusBackdrop
+                                        else backdropAlpha
+                                    group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, gpuAlpha, level)
                                     backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(entry.target)
                                     }
                                 } else reason = LumenSurfaceFailure.INVALID_GEOMETRY
@@ -1316,8 +1329,9 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
     override fun materialOpacity(): Float = session.get()?.materialOpacityOf(id) ?: 1f
     override fun effectiveMaterialOpacity(): Float = session.get()?.effectiveMaterialOpacityOf(id) ?: 1f
     internal fun draw(canvas: Canvas, alpha: Float) { session.get()?.draw(id, canvas, alpha) }
-    internal fun setMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float) {
-        session.get()?.setMaterialWeights(id, backdrop, fill, edge, shadow)
+    internal fun setMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float, blur: Float = 1f,
+        radiusBackdrop: Float = backdrop) {
+        session.get()?.setMaterialWeights(id, backdrop, fill, edge, shadow, blur, radiusBackdrop)
     }
     internal fun lastBackend(): LumenSurfaceBackend = session.get()?.backendOf(id) ?: LumenSurfaceBackend.STATIC
     internal val isRecordingContent: Boolean get() = session.get()?.isRecordingContent == true
