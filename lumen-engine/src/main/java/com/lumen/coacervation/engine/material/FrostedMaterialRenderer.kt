@@ -25,6 +25,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.core.graphics.ColorUtils
@@ -234,18 +235,29 @@ internal class FrostedMaterialRenderer(
     private var thinShader: BitmapShader? = null
     private var thinWork: Future<*>? = null
     private var thinToken = 0L
-    private val materialSettle = Runnable {
-        if (closed || materialSettled) return@Runnable
-        materialSettled = true
-        for (view in surfaces.keys) view.invalidate()
+    /** Touched only on the frost worker. */
+    @Volatile private var thinPixels: IntArray? = null
+    @Volatile private var thinScratch: IntArray? = null
+    /** Uptime of the last material change; the settle runnable is posted once and re-arms itself. */
+    private var materialChangedAt = 0L
+    private var settlePosted = false
+    private val materialSettle: Runnable = object : Runnable {
+        override fun run() {
+            settlePosted = false
+            if (closed || materialSettled) return
+            val wait = materialChangedAt + MaterialOpacityPolicy.SETTLE_MILLIS - SystemClock.uptimeMillis()
+            if (wait > 0L) { settlePosted = true; handler.postDelayed(this, wait); return }
+            materialSettled = true
+            for (view in surfaces.keys) view.invalidate()
+        }
     }
 
     internal fun onMaterialChanged() {
         if (closed) return
         materialSettled = false
         thinRequested = false
-        handler.removeCallbacks(materialSettle)
-        handler.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS)
+        materialChangedAt = SystemClock.uptimeMillis()
+        if (!settlePosted) { settlePosted = true; handler.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS) }
     }
 
     /**
@@ -267,9 +279,11 @@ internal class FrostedMaterialRenderer(
         thinWork = worker.submit {
             val result = runCatching {
                 val w = source.width; val h = source.height
-                val pixels = IntArray(w * h)
+                // Worker-only buffers, reused across settles (the frost worker is single-threaded).
+                val pixels = thinPixels?.takeIf { it.size == w * h } ?: IntArray(w * h).also { thinPixels = it }
+                val scratch = thinScratch?.takeIf { it.size == w * h } ?: IntArray(w * h).also { thinScratch = it }
                 source.getPixels(pixels, 0, w, 0, 0, w, h)
-                val blurred = if (radius == 0) pixels else ModernBackdropBlur.blur(pixels, w, h, radius)
+                val blurred = if (radius == 0) pixels else ModernBackdropBlur.blurInto(pixels, scratch, w, h, radius)
                 createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
                     setPixels(blurred, 0, w, 0, 0, w, h); prepareToDraw()
                 }
@@ -293,6 +307,8 @@ internal class FrostedMaterialRenderer(
         thinWork?.cancel(true); thinWork = null
         thinToken++
         thinBitmap = null; thinShader = null; thinLevel = -1; thinRequested = false
+        // A cancelled job may still be running: dropping the references is enough, it keeps its own until it ends.
+        thinPixels = null; thinScratch = null
     }
 
     internal fun setLiveBlurScale(view: View, scale: Float) { live.setBlurScale(view, scale) }

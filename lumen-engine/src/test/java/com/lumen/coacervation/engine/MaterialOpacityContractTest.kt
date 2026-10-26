@@ -131,7 +131,11 @@ class MaterialOpacityContractTest {
         assertTrue(setScale.contains("if (next == entry.blurScale) return"))
         val session = SourceContract.read("host/LumenSurfaceSession.kt")
         assertTrue(session.contains("if (!materialSettled || !appearance.sampling.blurEnabled) 1f else MaterialOpacityPolicy.settledBlurScale(materialBlur)"))
-        assertTrue(session.contains("main.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS)"))
+        // Debounced by timestamp: posted once, re-armed by the runnable itself (no remove/post per frame).
+        assertTrue(session.contains("if (!settlePosted) { settlePosted = true; main.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS) }"))
+        assertFalse(session.after("fun applyMaterialWeights(").before("fun resolveMaterialOpacity()").contains("removeCallbacks"))
+        // A GPU-only binding needs no extra frame when the opacity settles.
+        assertTrue(session.contains("if (stateBackend == LumenSurfaceBackend.SOFTWARE || warmLevel > 0) invalidateFrame()"))
         assertTrue(session.contains("main.removeCallbacks(entry.materialSettle)"))
         val frosted = SourceContract.read("material/FrostedMaterialRenderer.kt")
         val thin = frosted.after("internal fun thinFrost(level: Int): BitmapShader?").before("private fun acceptThinFrost(")
@@ -140,6 +144,9 @@ class MaterialOpacityContractTest {
         assertTrue(thin.contains("thinWork = worker.submit {"))
         assertTrue(thin.contains("val source = current.original"))
         assertTrue(frosted.contains("handler.removeCallbacks(materialSettle)"))
+        assertFalse(frosted.after("internal fun onMaterialChanged()").before("internal fun thinFrost(").contains("removeCallbacks"))
+        // The thin frost re-blurs into reused worker buffers.
+        assertTrue(thin.contains("ModernBackdropBlur.blurInto(pixels, scratch, w, h, radius)"))
     }
 
     @Test fun blurLevelsArePrecompiledOnceWhileIdleAndOnlyWhenRequested() {

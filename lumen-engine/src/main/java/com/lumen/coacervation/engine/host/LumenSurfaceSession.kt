@@ -18,6 +18,7 @@ import android.graphics.drawable.Drawable
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.View
 import android.view.ViewTreeObserver
 import androidx.annotation.MainThread
@@ -920,7 +921,25 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         fun needsBackdrop(): Boolean = maxOf(materialBackdrop, materialRadiusBackdrop) > MaterialOpacityPolicy.SAMPLING_EPSILON
         /** False while the material opacity is moving; the software sample then keeps its full radius. */
         var materialSettled = true
-        val materialSettle = Runnable { if (!materialSettled) { materialSettled = true; invalidateFrame() } }
+        /** Uptime of the last weight change; the settle runnable is posted once and re-arms itself (no per-frame post). */
+        private var materialChangedAt = 0L
+        private var settlePosted = false
+        val materialSettle: Runnable = object : Runnable {
+            override fun run() {
+                settlePosted = false
+                val wait = materialChangedAt + MaterialOpacityPolicy.SETTLE_MILLIS - SystemClock.uptimeMillis()
+                if (wait > 0L) { settlePosted = true; main.postDelayed(this, wait); return }
+                if (materialSettled) return
+                materialSettled = true
+                // Only a software sample (resample at the real radius) or pending warm-up needs a frame now.
+                if (stateBackend == LumenSurfaceBackend.SOFTWARE || warmLevel > 0) invalidateFrame()
+            }
+        }
+        fun markMaterialChanged() {
+            materialSettled = false
+            materialChangedAt = SystemClock.uptimeMillis()
+            if (!settlePosted) { settlePosted = true; main.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS) }
+        }
         /** Next blur level to pre-compile, counting down; 0 = nothing (never requested, or done). */
         var warmLevel = 0
         private var warmRequested = false
@@ -943,9 +962,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val wasSampling = needsBackdrop()
             materialBackdrop = b; materialFill = f; materialEdge = e; materialShadow = s
             materialBlur = r; materialRadiusBackdrop = rb
-            materialSettled = false
-            main.removeCallbacks(materialSettle)
-            main.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS)
+            markMaterialChanged()
             if (wasSampling && !needsBackdrop()) group?.sampler?.unregister(target)
             else if (!wasSampling && needsBackdrop()) group?.dirty = true
             invalidateFrame()
