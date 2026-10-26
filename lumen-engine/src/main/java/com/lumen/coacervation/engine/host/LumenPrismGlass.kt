@@ -12,6 +12,7 @@ import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.prism.PrismGlassDrawable
 import com.lumen.coacervation.engine.prism.PrismPolicy
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import java.lang.ref.WeakReference
 
 /**
@@ -34,7 +35,7 @@ public class LumenPrismGlass @JvmOverloads constructor(
     options: LumenPrismOptions = LumenPrismOptions(),
     private val session: LumenSurfaceSession? = null,
     source: View? = null
-) : AutoCloseable {
+) : AutoCloseable, LumenMaterialOpacityTarget {
     private val host = WeakReference(view)
     private val sourceRef: WeakReference<View>? = source?.let(::WeakReference)
     private val density = view.resources.displayMetrics.density
@@ -45,6 +46,8 @@ public class LumenPrismGlass @JvmOverloads constructor(
     private var binding: LumenSurfaceBinding? = null
     private var bindRejected = false
     private var observer: ViewTreeObserver? = null
+    private var materialOpacity = 1f
+    private var legibility = LumenMaterialLegibility.AUTO
     private var closed = false
     public val isClosed: Boolean get() = closed
 
@@ -78,7 +81,33 @@ public class LumenPrismGlass @JvmOverloads constructor(
         // One session call: the GPU glass is rebuilt at most once per update.
         binding?.updatePrism(PrismPolicy.recipe(value), surfaceOptions())
         drawable.configure(value, palette)
+        resolveMaterial()
         refreshPolicy()
+    }
+
+    override fun setMaterialOpacity(value: Float) { setMaterialOpacity(value, legibility) }
+
+    /**
+     * As [setMaterialOpacity]; [legibility] declares whether the glass carries text (default: it does).
+     * Tint, blur, inner and outer shadow and the highlight follow continuously; the GPU refraction and
+     * saturation stay as configured (they are part of the platform effect chain, rebuilt only by [update]).
+     */
+    public fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
+        if (closed) return
+        checkMain()
+        val next = MaterialOpacityPolicy.sanitize(value, materialOpacity)
+        if (next == materialOpacity && legibility == this.legibility) return
+        materialOpacity = next
+        this.legibility = legibility
+        resolveMaterial()
+    }
+
+    override fun materialOpacity(): Float = materialOpacity
+
+    override fun effectiveMaterialOpacity(): Float = drawable.material.effective
+
+    private fun resolveMaterial() {
+        drawable.setMaterialOpacity(materialOpacity, legibility.carriesText(null), options.reduceTransparency)
     }
 
     /** Live theme switch: the tint and fallback defaults follow `palette.background` luminance. */

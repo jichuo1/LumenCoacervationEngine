@@ -48,6 +48,14 @@ internal class ControlShadowDrawable(
         options.blurRadiusDp * density, density, offsetYPx)
     private val contactMetrics = ControlShadowPolicy.textureMetrics(
         Layer.CONTACT, cornerRadiusPx + spreadPx.coerceAtLeast(0f), 0f, density)
+    /** Material opacity multiplier: a thinner surface casts a lighter shadow (MATERIAL_OPACITY.md §4.6). */
+    var materialGain = 1f
+        set(value) {
+            val next = value.coerceIn(0f, 1f)
+            if (next == field) return
+            field = next
+            invalidateSelf()
+        }
     private val xStops = FloatArray(4)
     private val yStops = FloatArray(4)
     private val srcStops = IntArray(4)
@@ -80,8 +88,8 @@ internal class ControlShadowDrawable(
             (callback as? View)?.let(::siblingShadowOverlaps) == true
         val gain = ControlShadowPolicy.overlapGain(
             options.softenOverlap, overlap, options.overlapAttenuation)
-        castPaint.alpha = (alphas[0] * 255f * gain).toInt().coerceIn(0, 255)
-        contactPaint.alpha = (alphas[1] * 255f * gain).toInt().coerceIn(0, 255)
+        castPaint.alpha = (alphas[0] * 255f * gain * materialGain).toInt().coerceIn(0, 255)
+        contactPaint.alpha = (alphas[1] * 255f * gain * materialGain).toInt().coerceIn(0, 255)
 
         // 阴影画在内容之下、只在边界之外；控件边缘保持自己的干净轮廓。
         val cast = if (castPaint.alpha > 0) ControlShadowTextureCache.obtain(castMetrics) else null

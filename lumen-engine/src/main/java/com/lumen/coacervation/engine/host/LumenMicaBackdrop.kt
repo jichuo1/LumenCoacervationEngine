@@ -20,6 +20,9 @@ import com.lumen.coacervation.engine.fluent.opaque
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.runtime.LumenMemoryPressureHub
 import com.lumen.coacervation.engine.runtime.LumenMemoryPressureListener
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import java.lang.ref.WeakReference
 
 /**
@@ -34,7 +37,7 @@ public class LumenMicaBackdrop @JvmOverloads constructor(
     palette: LumenPalette,
     options: LumenMicaOptions = LumenMicaOptions(),
     image: LumenMicaImage? = null
-) : AutoCloseable {
+) : AutoCloseable, LumenMaterialOpacityTarget {
     private val host = WeakReference(view)
     private val context = view.context.applicationContext
     private val density = view.resources.displayMetrics.density
@@ -50,6 +53,8 @@ public class LumenMicaBackdrop @JvmOverloads constructor(
     private var receiverRegistered = false
     private var reason = LumenMicaFallbackReason.NO_BACKGROUND
     private var closed = false
+    private var materialOpacity = 1f
+    private val materialFrame = MaterialOpacityFrame()
     public val isClosed: Boolean get() = closed
 
     private val focus = ViewTreeObserver.OnWindowFocusChangeListener { refreshPolicy() }
@@ -79,6 +84,24 @@ public class LumenMicaBackdrop @JvmOverloads constructor(
         if (view.isAttachedToWindow) observe(view)
         refreshPolicy()
     }
+
+    /**
+     * Mica stays opaque: 0 shows the solid base colour, 1 the configured Mica (or Mica Alt) material.
+     * Nothing behind the window ever shows through.
+     */
+    override fun setMaterialOpacity(value: Float) {
+        if (closed) return
+        checkMain()
+        val next = MaterialOpacityPolicy.sanitize(value, materialOpacity)
+        if (next == materialOpacity) return
+        materialOpacity = next
+        MaterialOpacityPolicy.resolve(MaterialKind.MICA, next, carriesText = false, reduceTransparency = false, out = materialFrame)
+        drawable.imageWeight = materialFrame.image
+    }
+
+    override fun materialOpacity(): Float = materialOpacity
+
+    override fun effectiveMaterialOpacity(): Float = materialFrame.effective
 
     public fun update(value: LumenMicaOptions) {
         if (closed) return

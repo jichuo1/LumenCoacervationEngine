@@ -34,6 +34,14 @@ internal class MicaBackdropDrawable : Drawable() {
     private var shader: BitmapShader? = null
     private var released = false
     private var alphaValue = 255
+    /** Material opacity: weight of the wallpaper material over the opaque base (MATERIAL_OPACITY.md §4.4). */
+    var imageWeight = 1f
+        set(value) {
+            val next = value.coerceIn(0f, 1f)
+            if (next == field) return
+            field = next
+            invalidateSelf()
+        }
     var draws = 0L
         private set
     var micaVisible = false
@@ -115,9 +123,11 @@ internal class MicaBackdropDrawable : Drawable() {
         if (motionDisabled()) transition.snap(transition.target)
         val now = now()
         val weight = transition.value(now, eased = true)
-        micaVisible = weight > 0f && shader != null
+        // The base stays opaque at any material opacity; only the wallpaper material thins out over it.
+        val imageAlpha = (weight * alphaValue * imageWeight).roundToInt()
+        micaVisible = weight > 0f && shader != null && imageAlpha > 0
         if (micaVisible) {
-            imagePaint.alpha = (weight * alphaValue).roundToInt()
+            imagePaint.alpha = imageAlpha
             canvas.drawRect(rect, imagePaint)
         }
         if (transition.isRunning(now)) invalidateSelf()

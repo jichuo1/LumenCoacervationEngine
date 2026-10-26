@@ -30,6 +30,9 @@ import com.lumen.coacervation.engine.host.LumenPrismOptions
 import com.lumen.coacervation.engine.host.LumenSurfaceBackend
 import com.lumen.coacervation.engine.host.LumenSurfaceBinding
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import kotlin.math.roundToInt
 
 /**
@@ -68,6 +71,8 @@ internal class PrismGlassDrawable(private val density: Float, private val host: 
     private var fallbackColor = 0
     private var radius = 0f
     private var alphaValue = 255
+    /** Material opacity multipliers (MATERIAL_OPACITY.md §4.5); all 1 by default. */
+    val material = MaterialOpacityFrame()
 
     private var policy = LumenPrismFallbackReason.NONE
     private val availability = AcrylicAvailability()
@@ -133,6 +138,12 @@ internal class PrismGlassDrawable(private val density: Float, private val host: 
         invalidateSelf()
     }
 
+    fun setMaterialOpacity(requested: Float, carriesText: Boolean, reduceTransparency: Boolean) {
+        if (released) return
+        MaterialOpacityPolicy.resolve(MaterialKind.PRISM, requested, carriesText, reduceTransparency, material)
+        invalidateSelf()
+    }
+
     fun release() {
         if (released) return
         released = true
@@ -151,8 +162,11 @@ internal class PrismGlassDrawable(private val density: Float, private val host: 
         val save = canvas.save()
         try {
             canvas.clipPath(clip)
-            if (binding != null && !binding.isRecordingContent) {
-                binding.draw(canvas)
+            val backdrop = material.backdrop
+            if (binding != null) binding.setMaterialWeights(backdrop, 1f, 1f, 1f)
+            if (binding != null && !binding.isRecordingContent && MaterialOpacityPolicy.needsBackdrop(material)) {
+                // The Drawable alpha (a motion fade) applies to the sampled glass as well as to its own layers.
+                binding.draw(canvas, alphaValue / 255f)
                 lastBackend = binding.lastBackend()
                 if (availability.report(lastBackend != LumenSurfaceBackend.STATIC, now)) retargetCrossfade(now)
                 val pending = availability.pendingLossIn(now)
@@ -168,20 +182,21 @@ internal class PrismGlassDrawable(private val density: Float, private val host: 
             lastWeight = weight
             // The glass layer keeps its full tint; only the opaque fallback fades over it.
             if (weight > 0f && alpha(tint) > 0) {
-                fill.color = withAlpha(tint, alpha(tint) * alphaValue / 255)
+                fill.color = withAlpha(tint, (alpha(tint) * alphaValue / 255f * material.fill).roundToInt())
                 canvas.drawRect(rect, fill)
             }
             if (weight < 1f) {
-                fill.color = withAlpha(fallbackColor, ((1f - weight) * alphaValue).roundToInt())
+                // The fallback stands in for the sampled glass, so it thins out with the backdrop weight.
+                fill.color = withAlpha(fallbackColor, ((1f - weight) * alphaValue * material.backdrop).roundToInt())
                 canvas.drawRect(rect, fill)
             }
             drawPress(canvas, now)
             if (options.innerShadow.enabled && inner.shader != null) {
-                inner.alpha = alphaValue
-                canvas.drawRect(rect, inner)
+                inner.alpha = (alphaValue * material.innerShadow).roundToInt()
+                if (inner.alpha > 0) canvas.drawRect(rect, inner)
             }
             if (options.highlight.enabled && options.highlight.widthDp > 0f && options.highlight.opacity > 0f) {
-                val highlightAlpha = (options.highlight.opacity * alphaValue).roundToInt()
+                val highlightAlpha = (options.highlight.opacity * alphaValue * material.highlight).roundToInt()
                 if (highlight.shader == null) highlight.color = withAlpha(options.highlight.color, highlightAlpha)
                 else highlight.alpha = highlightAlpha
                 canvas.drawRoundRect(rect, radius, radius, highlight)
@@ -195,7 +210,7 @@ internal class PrismGlassDrawable(private val density: Float, private val host: 
     private fun drawShadow(canvas: Canvas) {
         val options = options.shadow
         if (!options.enabled || options.opacity <= 0f || Build.VERSION.SDK_INT < 28) return
-        val shadowAlpha = (options.opacity * alphaValue).roundToInt()
+        val shadowAlpha = (options.opacity * alphaValue * material.shadow).roundToInt()
         if (shadowAlpha <= 0) return
         shadow.alpha = shadowAlpha
         // Outside the glass only: the shadow never darkens what shows through it.
