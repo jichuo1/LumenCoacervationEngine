@@ -24,6 +24,9 @@ import com.lumen.coacervation.engine.host.LumenFluentControlOptions
 import com.lumen.coacervation.engine.host.LumenSurfaceBackend
 import com.lumen.coacervation.engine.host.LumenSurfaceBinding
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -64,6 +67,8 @@ internal class FluentControlDrawable(private val density: Float, private val hos
     private var stroke = FluentElevationPolicy.stroke(dark = false, accent = false, enabled = true)
     private var radius = 0f
     private var alphaValue = 255
+    /** Material opacity multipliers (MATERIAL_OPACITY.md §4.3); all 1 by default. */
+    val material = MaterialOpacityFrame()
 
     private var enabled = true
     private var pressed = false
@@ -130,6 +135,15 @@ internal class FluentControlDrawable(private val density: Float, private val hos
         invalidateSelf()
     }
 
+    /** Resolves the material opacity; returns true when the elevation multiplier changed. */
+    fun setMaterialOpacity(requested: Float, carriesText: Boolean, reduceTransparency: Boolean): Boolean {
+        if (released) return false
+        val elevation = material.elevation
+        MaterialOpacityPolicy.resolve(MaterialKind.FLUENT, requested, carriesText, reduceTransparency, material)
+        invalidateSelf()
+        return elevation != material.elevation
+    }
+
     fun release() {
         if (released) return
         released = true
@@ -145,14 +159,19 @@ internal class FluentControlDrawable(private val density: Float, private val hos
         draws++
         val now = now()
         val binding = if (policy == LumenAcrylicFallbackReason.NONE) host.backdrop else null
+        // Below the blur gate the backdrop (and the opaque base under it) gives way to the real content.
+        val backdrop = material.backdrop
+        val sampling = MaterialOpacityPolicy.needsBackdrop(material)
         val save = canvas.save()
         try {
             canvas.clipPath(clip)
             // WinUI composites the backdrop over an opaque fallback so the blur never mixes with transparency.
-            fill.color = withAlpha(recipe.fallback, alphaValue)
+            fill.color = withAlpha(recipe.fallback, (alphaValue * backdrop).roundToInt())
             canvas.drawRect(rect, fill)
-            if (binding != null && !binding.isRecordingContent) {
-                binding.draw(canvas)
+            if (binding != null) binding.setMaterialWeights(backdrop, 1f, 1f, 1f)
+            if (binding != null && !binding.isRecordingContent && sampling) {
+                // The Drawable alpha (a motion fade) applies to the backdrop as well as to the acrylic layers.
+                binding.draw(canvas, alphaValue / 255f)
                 lastBackend = binding.lastBackend()
                 if (availability.report(lastBackend != LumenSurfaceBackend.STATIC, now)) retargetCrossfade(now)
                 // A static view may not redraw on its own; make sure a pending loss is confirmed.
@@ -168,7 +187,8 @@ internal class FluentControlDrawable(private val density: Float, private val hos
             lastWeight = weight
             if (weight > 0f) drawAcrylic(canvas)
             if (weight < 1f) {
-                fill.color = withAlpha(recipe.fallback, ((1f - weight) * alphaValue).roundToInt())
+                // The fallback stands in for the backdrop, so it thins out with the backdrop weight.
+                fill.color = withAlpha(recipe.fallback, ((1f - weight) * alphaValue * backdrop).roundToInt())
                 canvas.drawRect(rect, fill)
             }
             if (options.stateLayerEnabled) {
@@ -194,8 +214,8 @@ internal class FluentControlDrawable(private val density: Float, private val hos
 
     private fun drawAcrylic(canvas: Canvas) {
         val exact = blend
-        val luminosity = withAlpha(recipe.luminosity, alpha(recipe.luminosity) * alphaValue / 255)
-        val tint = withAlpha(recipe.tint, alpha(recipe.tint) * alphaValue / 255)
+        val luminosity = withAlpha(recipe.luminosity, (alpha(recipe.luminosity) * alphaValue / 255f * material.luminosity).roundToInt())
+        val tint = withAlpha(recipe.tint, (alpha(recipe.tint) * alphaValue / 255f * material.fill).roundToInt())
         if (exact != null && Build.VERSION.SDK_INT >= 29) {
             exact.drawLuminosity(canvas, rect, luminosity)
             if (alpha(tint) > 0) exact.drawColor(canvas, rect, tint)
@@ -207,7 +227,10 @@ internal class FluentControlDrawable(private val density: Float, private val hos
                 canvas.drawRect(rect, wash)
             }
         }
-        if (noise != null && noisePaint.alpha > 0) canvas.drawRect(rect, noisePaint)
+        if (noise != null) {
+            noisePaint.alpha = (recipe.noiseAlpha * material.noise * alphaValue / 255f).roundToInt()
+            if (noisePaint.alpha > 0) canvas.drawRect(rect, noisePaint)
+        }
     }
 
     private fun drawFocus(canvas: Canvas) {

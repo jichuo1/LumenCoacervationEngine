@@ -59,9 +59,13 @@ class FluentControlContractTest {
     @Test fun backdropIsCompositedOverAnOpaqueBaseAndRecordingIsSkipped() {
         val draw = drawable.after("override fun draw(canvas: Canvas)").before("private fun drawAcrylic")
         val base = draw.indexOf("canvas.drawRect(rect, fill)")
-        val backdrop = draw.indexOf("binding.draw(canvas)")
+        val backdrop = draw.indexOf("binding.draw(canvas, alphaValue / 255f)")
         assertTrue(base in 0 until backdrop)
         assertTrue(draw.contains("binding != null && !binding.isRecordingContent"))
+        // The Drawable alpha reaches the backdrop, and the opaque base gives way together with the backdrop weight
+        // (before 1.5.6 the base faded while the blurred backdrop stayed opaque).
+        assertTrue(draw.contains("fill.color = withAlpha(recipe.fallback, (alphaValue * backdrop).roundToInt())"))
+        assertTrue(draw.contains("binding.setMaterialWeights(backdrop, 1f, 1f, 1f)"))
         // The crossfade draws the fallback over the acrylic, matching WinUI's CrossFadeEffect weight.
         assertTrue(draw.contains("if (weight < 1f)"))
     }

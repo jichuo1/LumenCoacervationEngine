@@ -26,7 +26,8 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
     fun draw(canvas: Canvas,bounds: RectF,c: LumenSurfaceOptions,e: LumenSurfaceEnhancements,
         state: LumenSurfaceRenderState,palette: LumenPalette,density: Float,
         clear: Shader,weak: Shader,strong: Shader,scale: Float,margin: Float,inputWidth: Float,inputHeight: Float,
-        alpha: Float,detail: LumenDetailMode): Boolean {
+        alpha: Float,detail: LumenDetailMode,
+        materialBackdrop: Float=1f,materialFill: Float=1f,materialEdge: Float=1f,materialShadow: Float=1f): Boolean {
         val s=shader?:return false
         if(!canvas.isHardwareAccelerated)return false
         val width=bounds.width();val height=bounds.height()
@@ -78,7 +79,7 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
         s.setFloatUniform("lightStyle",if(detail==LumenDetailMode.LOW)0f else light.specularStrength,light.specularPower,lightEdge,
             if(light.transformNormals)1f else 0f)
         s.setColorUniform("tintColor",c.color?:palette.surface)
-        s.setFloatUniform("backdropOpacity",c.backdropOpacity)
+        s.setFloatUniform("backdropOpacity",c.backdropOpacity*materialBackdrop)
         s.setFloatUniform("softLens",if(c.material==LumenSurfaceMaterial.FROSTED)1f else 0f,
             if(c.sampling.refractionEnabled)c.sampling.refractionStrength else 0f,
             LensRefractionPolicy.LUMINANCE_GAIN,LensRefractionPolicy.LUMINANCE_BIAS/255f)
@@ -87,13 +88,13 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
         s.setColorUniform("edgeColor",topEdge)
         s.setColorUniform("edgeColorBottom",c.edgeBottomColor?:topEdge)
         val strokeWidth=if(e.material.normalizeBySize)minOf(c.edgeWidthDp*density,short*e.material.maxEdgeFraction)else c.edgeWidthDp*density
-        s.setFloatUniform("style",if(c.tintEnabled)c.tintOpacity else 0f,if(c.edgeEnabled)strokeWidth else 0f,
-            (if(customEdge)1f else 70f/255f)*c.edgeIntensity,alpha)
+        s.setFloatUniform("style",if(c.tintEnabled)c.tintOpacity*materialFill else 0f,if(c.edgeEnabled)strokeWidth else 0f,
+            (if(customEdge)1f else 70f/255f)*c.edgeIntensity*materialEdge,alpha)
         s.setFloatUniform("fade",if(c.sampling.fadeEnabled)1f else 0f,c.sampling.fadeHold,c.sampling.fadeEnd,
             if(c.sampling.fadeDirection==LumenSurfaceFadeDirection.BOTTOM_TO_TOP)1f else 0f)
         s.setFloatUniform("fadeLinear",if(c.sampling.fadeCurve==LumenSurfaceFadeCurve.LINEAR)1f else 0f)
         val shadowWidth=if(e.material.normalizeBySize)minOf(geometry.shadowRadiusDp*density,short*.25f)else geometry.shadowRadiusDp*density
-        s.setFloatUniform("shadow",if(geometry.shadowEnabled&&detail!=LumenDetailMode.LOW)shadowWidth else 0f,geometry.shadowOpacity)
+        s.setFloatUniform("shadow",if(geometry.shadowEnabled&&detail!=LumenDetailMode.LOW)shadowWidth else 0f,geometry.shadowOpacity*materialShadow)
         val now=if(state.manualClock)state.frameNanos else System.nanoTime()
         for(i in 0..3){
             val born=state.rippleBorn[i]

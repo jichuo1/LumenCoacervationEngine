@@ -41,6 +41,9 @@ import com.lumen.coacervation.engine.runtime.LumenMemoryPressureListener
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import com.lumen.coacervation.engine.runtime.LumenSourceTimeline
 import com.lumen.coacervation.engine.runtime.LumenSourceGraph
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import java.util.IdentityHashMap
 import java.lang.ref.WeakReference
 import kotlin.math.roundToInt
@@ -224,14 +227,50 @@ public class LumenSurfaceSession @JvmOverloads constructor(
     /** True while a source is being recorded; composite drawables must not draw their binding then. */
     internal val isRecordingContent: Boolean get() = recordingDepth > 0
 
-    internal fun draw(id: Long, canvas: Canvas) {
+    internal fun draw(id: Long, canvas: Canvas, alpha: Float = 1f) {
         if (closed) return
         checkMain()
         val entry = entries.firstOrNull { it.id == id } ?: return
         if (entry.installsBackground) return
         if (entry.drawable.bounds.width() != entry.target.width || entry.drawable.bounds.height() != entry.target.height)
             entry.drawable.setBounds(0, 0, entry.target.width, entry.target.height)
-        entry.drawable.draw(canvas)
+        // The composite owner's Drawable alpha (a motion fade) applies to its backdrop too, not only to its own layers.
+        entry.drawAlpha = alpha.coerceIn(0f, 1f)
+        try { entry.drawable.draw(canvas) } finally { entry.drawAlpha = 1f }
+    }
+
+    /**
+     * Material weights for one binding (MATERIAL_OPACITY.md §5): backdrop sample, tint, edge and shadow.
+     * Stores floats only; a backdrop weight of zero stops this binding's sampling until it rises again.
+     */
+    internal fun setMaterialWeights(id: Long, backdrop: Float, fill: Float, edge: Float, shadow: Float) {
+        if (closed) return
+        checkMain()
+        val entry = entries.firstOrNull { it.id == id } ?: return
+        entry.applyMaterialWeights(backdrop, fill, edge, shadow)
+    }
+
+    /** Public binding opacity: resolves the binding's own material (frosted, liquid or static) through the policy. */
+    internal fun setMaterialOpacity(id: Long, value: Float, legibility: LumenMaterialLegibility) {
+        if (closed) return
+        checkMain()
+        val entry = entries.firstOrNull { it.id == id } ?: return
+        val requested = MaterialOpacityPolicy.sanitize(value, entry.materialOpacity)
+        if (requested == entry.materialOpacity && legibility == entry.materialLegibility) return
+        entry.materialOpacity = requested; entry.materialLegibility = legibility
+        entry.resolveMaterialOpacity()
+    }
+
+    internal fun materialOpacityOf(id: Long): Float {
+        if (closed) return 1f
+        for (entry in entries) if (entry.id == id) return entry.materialOpacity
+        return 1f
+    }
+
+    internal fun effectiveMaterialOpacityOf(id: Long): Float {
+        if (closed) return 1f
+        for (entry in entries) if (entry.id == id) return entry.materialFrame.effective
+        return 1f
     }
 
     internal fun positionChanged(id: Long) {
@@ -522,6 +561,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 entry.rebuild()
                 entry.install()
             }
+            // The material or role may have changed; a binding at full opacity has nothing to re-resolve.
+            if (entry.materialOpacity < 1f) entry.resolveMaterialOpacity()
         }
     }
 
@@ -706,6 +747,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 val host = entry.host.get() ?: continue
                 if (entry.group !== this || !entry.config.enabled || !entry.config.sampling.enabled ||
                     entry.config.material == LumenSurfaceMaterial.STATIC || entry.config.opacity == 0f) continue
+                // A clear surface (zero backdrop weight) needs no content recording.
+                if (!entry.needsBackdrop()) continue
                 if(entry.enhanced()&&!entry.nodeCompatible())continue
                 if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(entry.target); entry.releaseGpu(); continue }
                 if (LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, entry.config.sampling.backend, true, entry.gpuFailed)) {
@@ -852,6 +895,36 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             rawSampling=sampling.copy(maxSoftwarePixels=minOf(sampling.maxSoftwarePixels,cap),minIntervalMs=interval)
         }
         var appearance=config
+        /** Owner's Drawable alpha for the current draw-only draw (1 otherwise). */
+        var drawAlpha = 1f
+        var materialOpacity = 1f
+        var materialLegibility = LumenMaterialLegibility.AUTO
+        val materialFrame = MaterialOpacityFrame()
+        var materialBackdrop = 1f
+        var materialFill = 1f
+        var materialEdge = 1f
+        var materialShadow = 1f
+        fun needsBackdrop(): Boolean = materialBackdrop > MaterialOpacityPolicy.SAMPLING_EPSILON
+        fun applyMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float) {
+            val b = backdrop.coerceIn(0f, 1f); val f = fill.coerceIn(0f, 1f); val e = edge.coerceIn(0f, 1f); val s = shadow.coerceIn(0f, 1f)
+            if (b == materialBackdrop && f == materialFill && e == materialEdge && s == materialShadow) return
+            val wasSampling = needsBackdrop()
+            materialBackdrop = b; materialFill = f; materialEdge = e; materialShadow = s
+            if (wasSampling && !needsBackdrop()) group?.sampler?.unregister(target)
+            else if (!wasSampling && needsBackdrop()) group?.dirty = true
+            invalidateFrame()
+        }
+        fun resolveMaterialOpacity() {
+            val kind = when (appearance.material) {
+                LumenSurfaceMaterial.FROSTED -> MaterialKind.FROSTED
+                LumenSurfaceMaterial.LIQUID -> MaterialKind.LIQUID
+                LumenSurfaceMaterial.STATIC -> MaterialKind.PLAIN
+            }
+            val text = materialLegibility.carriesText(appearance.role)
+            MaterialOpacityPolicy.resolve(kind, materialOpacity, text, enhancements.material.reduceTransparency, materialFrame)
+            val f = materialFrame
+            applyMaterialWeights(f.backdrop, f.fill, f.edge, f.shadow)
+        }
         val drawable = SurfaceDrawable(this)
         fun invalidateFrame(){drawable.invalidateSelf();target.invalidate()}
         var gpu: SurfaceCaptureApi31.Glass? = null
@@ -1033,7 +1106,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             if (recordingDepth > 0 || closed || entry.detached || !options.enabled || !c.enabled || c.opacity == 0f || entry.target.alpha <= 0f || bounds.isEmpty) return
             var reason = when { !c.sampling.enabled || c.material == LumenSurfaceMaterial.STATIC || c.sampling.backend == LumenSurfaceBackend.STATIC -> LumenSurfaceFailure.NONE; paused -> LumenSurfaceFailure.PAUSED; memoryReleased -> LumenSurfaceFailure.MEMORY_PRESSURE; else -> failure(host, entry) }
             var backend = LumenSurfaceBackend.STATIC
-            val alpha = c.opacity * alphaValue / 255f
+            val alpha = c.opacity * alphaValue / 255f * entry.drawAlpha
+            val backdropAlpha = alpha * c.backdropOpacity * entry.materialBackdrop
             var visibleEffect = false
             var enhancedPainted=false
             var sampleGeometryReady = false
@@ -1045,7 +1119,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             }
             try {
                 if (reason == LumenSurfaceFailure.NONE && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC &&
-                    c.sampling.backend != LumenSurfaceBackend.STATIC) {
+                    c.sampling.backend != LumenSurfaceBackend.STATIC && entry.needsBackdrop()) {
                     val group = entry.group!!
                     if (group.failed) reason = LumenSurfaceFailure.GPU_FAILED
                     else if (group.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
@@ -1069,7 +1143,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                         updateNormalTransform(host)
                                         enhancedPainted=program.draw(canvas,rectangle,c,entry.enhancements,entry.frame,palette,density,clear,
                                             group.sampler.rawShader(entry.target,1)?:clear,group.sampler.rawShader(entry.target,2)?:clear,
-                                            group.sampler.rawScale(entry.target),group.sampler.rawMargin(entry.target),group.sampler.rawWidth(entry.target),group.sampler.rawHeight(entry.target),alpha,detail)
+                                            group.sampler.rawScale(entry.target),group.sampler.rawMargin(entry.target),group.sampler.rawWidth(entry.target),group.sampler.rawHeight(entry.target),alpha,detail,
+                                            entry.materialBackdrop,entry.materialFill,entry.materialEdge,entry.materialShadow)
                                         if(enhancedPainted){entry.gpuPixels=execution;backend=LumenSurfaceBackend.GPU;gpuDraws++}
                                     }catch(_:Throwable){entry.gpuFailed=true;entry.direct?.close();entry.direct=null;reason=LumenSurfaceFailure.GPU_FAILED}
                                 }
@@ -1079,7 +1154,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     val source=group.sampler.rawShader(entry.target,2)?:clear
                                     rawMatrix.setScale(group.sampler.rawScale(entry.target),group.sampler.rawScale(entry.target))
                                     rawMatrix.postTranslate(-group.sampler.rawMargin(entry.target),-group.sampler.rawMargin(entry.target))
-                                    source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*alpha*c.backdropOpacity).roundToInt()
+                                    source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*backdropAlpha).roundToInt()
                                     canvas.drawRect(rectangle,rawPaint);backend=LumenSurfaceBackend.SOFTWARE;softwareDraws++
                                 }
                             } else reason=if(group.sampler.hasFailed)LumenSurfaceFailure.SOFTWARE_FAILED else if(group.sampler.budgetRejected)LumenSurfaceFailure.BUDGET_EXCEEDED else LumenSurfaceFailure.FRAME_PENDING
@@ -1115,7 +1190,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     entry.gpuPixels = pixels
                                     val glass = entry.gpu ?: SurfaceCaptureApi31.Glass(c, density, ColorUtils.calculateLuminance(palette.background) < .5, entry.lenses ?: SurfaceCaptureApi31.LensCache().also { entry.lenses = it },entry.graphics,
                                         preserveBackdropColors = entry.preserveBackdropColors, prism = entry.prism).also { entry.gpu = it }
-                                    group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, alpha * c.backdropOpacity)
+                                    group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, backdropAlpha)
                                     backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(entry.target)
                                     }
                                 } else reason = LumenSurfaceFailure.INVALID_GEOMETRY
@@ -1123,7 +1198,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         }
                         if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling)) {
                             group.sampler.register(entry.target, c.sampling, preserveBackdropColors = entry.preserveBackdropColors)
-                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * alpha * c.backdropOpacity).roundToInt())) {
+                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * backdropAlpha).roundToInt())) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
                             } else if (group.sampler.hasFailed) reason = LumenSurfaceFailure.SOFTWARE_FAILED
                             else if (group.sampler.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
@@ -1131,23 +1206,28 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         }
                     }
                 }
+                // A clear (zero backdrop weight) dynamic surface is intentionally unsampled, not pending.
+                val clearGlass = !entry.needsBackdrop() && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC &&
+                    c.sampling.backend != LumenSurfaceBackend.STATIC
                 if (backend == LumenSurfaceBackend.STATIC) {
                     staticDraws++
                     if (reason == LumenSurfaceFailure.NONE && c.sampling.enabled && c.material != LumenSurfaceMaterial.STATIC &&
-                        c.sampling.backend != LumenSurfaceBackend.STATIC) reason = LumenSurfaceFailure.FRAME_PENDING
+                        c.sampling.backend != LumenSurfaceBackend.STATIC && !clearGlass) reason = LumenSurfaceFailure.FRAME_PENDING
                 }
-                val tint = if (!c.tintEnabled) 0f else if (backend == LumenSurfaceBackend.STATIC) c.fallbackTintOpacity else c.tintOpacity
+                // The static fallback stands in for the backdrop, so it thins out with the backdrop weight.
+                val tint = (if (!c.tintEnabled) 0f else if (backend == LumenSurfaceBackend.STATIC)
+                    c.tintOpacity + (c.fallbackTintOpacity - c.tintOpacity) * entry.materialBackdrop else c.tintOpacity) * entry.materialFill
                 visibleEffect = backend != LumenSurfaceBackend.STATIC || c.tintEnabled && tint > 0f && colorAlpha > 0 ||
                     c.edgeEnabled && c.edgeWidthDp > 0f && edgeAlpha > 0
                 // Static fallback deliberately remains readable; opacity affects background only.
                 if(!enhancedPainted){
                 if(entry.enhanced()){configureEnhancedPath(c,host);if(c.clipBackground)canvas.clipPath(shapeA)}
-                fill.shader = if (backend == LumenSurfaceBackend.STATIC) staticGradient else gradient
-                fill.alpha = if (fill.shader != null) (if (c.tintEnabled) 255 * alpha else 0f).roundToInt() else
+                fill.shader = if (backend == LumenSurfaceBackend.STATIC && !clearGlass) staticGradient else gradient
+                fill.alpha = if (fill.shader != null) (if (c.tintEnabled) 255 * alpha * entry.materialFill else 0f).roundToInt() else
                     (colorAlpha * tint * alpha).roundToInt()
                 if(entry.enhanced())canvas.drawPath(shapeA,fill)else canvas.drawRoundRect(rectangle, c.radiusDp * density, c.radiusDp * density, fill)
                 if (c.edgeEnabled && c.edgeWidthDp > 0f) {
-                    edge.alpha = ((if (edgeGradient != null) 255 else edgeAlpha) * alpha).roundToInt()
+                    edge.alpha = ((if (edgeGradient != null) 255 else edgeAlpha) * alpha * entry.materialEdge).roundToInt()
                     if(entry.enhanced())canvas.drawPath(shapeA,edge)else canvas.drawRoundRect(rectangle, c.radiusDp * density, c.radiusDp * density, edge)
                 }
                 }
@@ -1211,7 +1291,8 @@ public class LumenSurfaceSession @JvmOverloads constructor(
 
 /** A binding owns only the background it installed. Closing it cannot undo an unrelated host change. */
 @MainThread
-public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSession?, public val id: Long) : AutoCloseable {
+public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSession?, public val id: Long) : AutoCloseable,
+    LumenMaterialOpacityTarget {
     private val session = WeakReference(session)
     public val isBound: Boolean get()=session.get()?.isBound(id)==true
     /** Draw-only bindings share the View renderer without installing a background. */
@@ -1229,6 +1310,15 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
     public fun clearTransientEffects() {session.get()?.clearTransient(id)}
     public fun setQualityPressure(pressure: Float) {session.get()?.qualityHint(id,pressure)}
     public fun diagnostics(): LumenSurfaceState? = session.get()?.state(id)
+    override fun setMaterialOpacity(value: Float) { setMaterialOpacity(value, LumenMaterialLegibility.AUTO) }
+    /** As [setMaterialOpacity], declaring whether this surface carries text (legibility floor, MATERIAL_OPACITY.md §6). */
+    public fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) { session.get()?.setMaterialOpacity(id, value, legibility) }
+    override fun materialOpacity(): Float = session.get()?.materialOpacityOf(id) ?: 1f
+    override fun effectiveMaterialOpacity(): Float = session.get()?.effectiveMaterialOpacityOf(id) ?: 1f
+    internal fun draw(canvas: Canvas, alpha: Float) { session.get()?.draw(id, canvas, alpha) }
+    internal fun setMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float) {
+        session.get()?.setMaterialWeights(id, backdrop, fill, edge, shadow)
+    }
     internal fun lastBackend(): LumenSurfaceBackend = session.get()?.backendOf(id) ?: LumenSurfaceBackend.STATIC
     internal val isRecordingContent: Boolean get() = session.get()?.isRecordingContent == true
     internal fun updatePrism(prism: PrismRecipe?, surface: LumenSurfaceOptions? = null) { session.get()?.updatePrism(id, prism, surface) }
