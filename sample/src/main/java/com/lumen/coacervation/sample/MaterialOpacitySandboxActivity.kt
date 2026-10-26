@@ -112,8 +112,10 @@ class MaterialOpacitySandboxActivity : Activity() {
         fluent = LumenFluentControl(fluentTile, palette, session = session, source = scene)
         prism = LumenPrismGlass(prismTile, palette, LumenPrismOptions(cornerRadiusDp = 20f), session, scene)
         // Press effect routes this binding through the direct AGSL program (three-input blur interpolation).
+        // A large 32dp blur exercises the capped ring blur of the synthesised middle level.
         direct = session.bind(directTile, LumenSurfaceOptions(material = LumenSurfaceMaterial.FROSTED, role = SurfaceRole.CARD,
-            radiusDp = 20f), scene, LumenSurfaceEnhancements(press = LumenLocalPressOptions(enabled = true)))
+            radiusDp = 20f, sampling = LumenSurfaceSampling(blurRadiusDp = 32f)), scene,
+            LumenSurfaceEnhancements(press = LumenLocalPressOptions(enabled = true)))
         // Forced software backend: cross-fades while dragging, resamples at the real radius once settled.
         software = session.bind(softwareTile, LumenSurfaceOptions(material = LumenSurfaceMaterial.FROSTED, role = SurfaceRole.CARD,
             radiusDp = 20f, sampling = LumenSurfaceSampling(backend = LumenSurfaceBackend.SOFTWARE)), scene)

@@ -190,16 +190,31 @@ half4 background(float2 p){
     float b=ramp(y,progressiveEnd.x,progressiveEnd.y)*progressive.x;
     return clearInput.eval(pixel)*half((1.0-b)*(1.0-a))+weakInput.eval(pixel)*half((1.0-b)*a)+strongInput.eval(pixel)*half(b);
 }
-// Box-like blur of the clear input at radius r (target pixels): centre plus an 8-tap ring at 0.7 r.
+// Eight taps on a ring of radius d, rotated by half a step when odd (so two rings interleave).
+half4 ring(float2 p,float d,float odd){
+    float a=d*0.70710678;
+    half4 s=half4(0.0);
+    if(odd<0.5){
+        s=clearInput.eval(imagePoint(p+float2(d,0.0)))+clearInput.eval(imagePoint(p-float2(d,0.0)))+
+          clearInput.eval(imagePoint(p+float2(0.0,d)))+clearInput.eval(imagePoint(p-float2(0.0,d)))+
+          clearInput.eval(imagePoint(p+float2(a,a)))+clearInput.eval(imagePoint(p-float2(a,a)))+
+          clearInput.eval(imagePoint(p+float2(a,-a)))+clearInput.eval(imagePoint(p+float2(-a,a)));
+    }else{
+        float b=d*0.92387953;float c=d*0.38268343;
+        s=clearInput.eval(imagePoint(p+float2(b,c)))+clearInput.eval(imagePoint(p-float2(b,c)))+
+          clearInput.eval(imagePoint(p+float2(c,b)))+clearInput.eval(imagePoint(p-float2(c,b)))+
+          clearInput.eval(imagePoint(p+float2(-c,b)))+clearInput.eval(imagePoint(p+float2(c,-b)))+
+          clearInput.eval(imagePoint(p+float2(-b,c)))+clearInput.eval(imagePoint(p+float2(b,-c)));
+    }
+    return s;
+}
+// Blur of the clear input at radius r (target pixels), capped at RING_MAX: centre, an inner ring at 0.35 r and an
+// interleaved outer ring at 0.8 r. Seventeen taps never spread further apart than about a third of r, so sharp edges
+// do not split into visible copies (MATERIAL_OPACITY.md §14).
 half4 ringBlur(float2 p,float r){
     if(r<0.35)return clearInput.eval(imagePoint(p));
-    float d=r*0.7;float e=d*0.70710678;
-    half4 sum=clearInput.eval(imagePoint(p))*half(0.2);
-    sum+=(clearInput.eval(imagePoint(p+float2(d,0.0)))+clearInput.eval(imagePoint(p-float2(d,0.0)))+
-        clearInput.eval(imagePoint(p+float2(0.0,d)))+clearInput.eval(imagePoint(p-float2(0.0,d))))*half(0.1);
-    sum+=(clearInput.eval(imagePoint(p+float2(e,e)))+clearInput.eval(imagePoint(p-float2(e,e)))+
-        clearInput.eval(imagePoint(p+float2(e,-e)))+clearInput.eval(imagePoint(p+float2(-e,e))))*half(0.1);
-    return sum;
+    float radius=min(r,12.0);
+    return clearInput.eval(imagePoint(p))*half(0.12)+ring(p,radius*0.35,0.0)*half(0.05)+ring(p,radius*0.8,1.0)*half(0.06);
 }
 // Material opacity: clear → middle → strong by radius fraction instead of cross-fading the full blur.
 half4 materialBackground(float2 p){
@@ -209,7 +224,8 @@ half4 materialBackground(float2 p){
         float k=materialBlur.x;return mix(clearInput.eval(imagePoint(p)),background(p),half(k));
     }
     float wanted=materialBlur.x*materialBlur.y;
-    float middle=materialBlur.z>0.0?materialBlur.z:materialBlur.y/3.0;
+    // Without a weak input the middle level is synthesised from the clear input, so it stays within the ring cap.
+    float middle=materialBlur.z>0.0?materialBlur.z:min(materialBlur.y/3.0,12.0);
     if(wanted<=middle){
         if(materialBlur.z>0.0)return mix(clearInput.eval(imagePoint(p)),weakInput.eval(imagePoint(p)),half(wanted/middle));
         return ringBlur(p,wanted);

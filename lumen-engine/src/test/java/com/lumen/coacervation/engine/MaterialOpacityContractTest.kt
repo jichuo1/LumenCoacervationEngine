@@ -116,6 +116,9 @@ class MaterialOpacityContractTest {
         assertTrue(material.contains("if(materialBlur.w<0.5)return background(p);"))
         assertTrue(material.contains("return mix(mid,strongInput.eval(imagePoint(p)),half(t));"))
         assertTrue(direct.contains("if(materialBlur<1f&&materialRadius>0f)1f else 0f"))
+        // Large radii must not spread a handful of taps tens of pixels apart (visible copies of sharp edges).
+        assertTrue(direct.contains("float radius=min(r,12.0);"))
+        assertTrue(direct.contains("float middle=materialBlur.z>0.0?materialBlur.z:min(materialBlur.y/3.0,12.0);"))
     }
 
     @Test fun softwareBlursResampleOnlyAfterTheOpacitySettles() {
