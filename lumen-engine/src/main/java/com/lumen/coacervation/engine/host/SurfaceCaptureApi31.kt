@@ -13,6 +13,7 @@ import android.graphics.Shader
 import android.os.Build
 import androidx.annotation.RequiresApi
 import com.lumen.coacervation.engine.glow.GlowChromeBlurApi31
+import com.lumen.coacervation.engine.glow.GlowChromeBlurPolicy
 import com.lumen.coacervation.engine.glow.GlowChromeGlassApi31
 import com.lumen.coacervation.engine.glow.GlowContentCaptureApi31
 import com.lumen.coacervation.engine.liquid.LiquidChromeLensApi33
@@ -74,6 +75,13 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         glass.renderer.draw(canvas, bounds, radius, content, 0f, 0f, alpha, 1f, 0f, null, matrix, variant)
     }
 
+    /** Pre-compiles one blur level of [glass] (see `GlowChromeGlassApi31.drawWarm`). */
+    fun drawWarm(glass: Glass, canvas: Canvas, bounds: Rect, radius: Float, matrix: Matrix, level: Int) {
+        if (!glass.blurControllable || level !in 1 until MaterialOpacityPolicy.BLUR_LEVELS) return
+        matrix.preScale(1f / scaleX, 1f / scaleY)
+        glass.renderer.drawWarm(canvas, bounds, radius, content, matrix, level)
+    }
+
     override fun close() { content.release(); pixels = 0L }
 
     @RequiresApi(31)
@@ -111,13 +119,15 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         val blurControllable: Boolean = blurRadiusPx > 0f
         /** Base blur per material-opacity level; the full level is [blur] itself. Built once per level. */
         private var levelBlurs: Array<RenderEffect?>? = null
+        private val levelSpec = FloatArray(2)
 
         private fun blurFor(variant: Int): RenderEffect {
             if (variant < 0 || variant >= MaterialOpacityPolicy.BLUR_LEVELS || !blurControllable) return blur
             val cache = levelBlurs ?: arrayOfNulls<RenderEffect>(MaterialOpacityPolicy.BLUR_LEVELS).also { levelBlurs = it }
             cache[variant]?.let { return it }
-            val radius = blurRadiusPx * MaterialOpacityPolicy.levelFraction(variant)
-            val built = if (radius < MIN_BLUR_PX) RenderEffect.createOffsetEffect(0f, 0f) else GlowChromeBlurApi31.create(radius)
+            // Half-octave steps of the main sigma: Skia's downscale then reuses a few blur programs (§14).
+            GlowChromeBlurPolicy.level(blurRadiusPx, MaterialOpacityPolicy.levelFraction(variant), levelSpec)
+            val built = GlowChromeBlurApi31.createLevel(levelSpec[0] > 0.5f, levelSpec[1])
             cache[variant] = built
             return built
         }
@@ -186,8 +196,4 @@ internal class SurfaceCaptureApi31 : AutoCloseable {
         override fun close() { renderer.close(); levelBlurs = null }
     }
 
-    private companion object {
-        /** Below a third of a pixel a blur is invisible; a pass-through keeps the chain without the blur pass. */
-        const val MIN_BLUR_PX = 0.35f
-    }
 }

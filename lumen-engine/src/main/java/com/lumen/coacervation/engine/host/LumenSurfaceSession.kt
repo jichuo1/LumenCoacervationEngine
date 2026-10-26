@@ -256,10 +256,17 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         if (closed) return
         checkMain()
         val entry = entries.firstOrNull { it.id == id } ?: return
+        entry.requestWarm()
         val requested = MaterialOpacityPolicy.sanitize(value, entry.materialOpacity)
         if (requested == entry.materialOpacity && legibility == entry.materialLegibility) return
         entry.materialOpacity = requested; entry.materialLegibility = legibility
         entry.resolveMaterialOpacity()
+    }
+
+    /** The host uses material opacity on this binding: compile its blur levels while idle (MATERIAL_OPACITY.md §14). */
+    internal fun requestBlurWarm(id: Long) {
+        if (closed) return
+        for (entry in entries) if (entry.id == id) { entry.requestWarm(); return }
     }
 
     internal fun materialOpacityOf(id: Long): Float {
@@ -582,6 +589,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         entry.group?.sampler?.unregister(entry.target)
         main.removeCallbacks(entry.dispatch)
         main.removeCallbacks(entry.materialSettle)
+        main.removeCallbacks(entry.warmStep)
         retiredGraphics.absorb(entry.graphics)
         entry.releaseGpu(); entry.lenses = null; entries.remove(entry)
         if (entries.isEmpty()) unregisterTrim()
@@ -913,6 +921,16 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         /** False while the material opacity is moving; the software sample then keeps its full radius. */
         var materialSettled = true
         val materialSettle = Runnable { if (!materialSettled) { materialSettled = true; invalidateFrame() } }
+        /** Next blur level to pre-compile, counting down; 0 = nothing (never requested, or done). */
+        var warmLevel = 0
+        private var warmRequested = false
+        val warmStep = Runnable { invalidateFrame() }
+        fun requestWarm() {
+            if (warmRequested) return
+            warmRequested = true
+            warmLevel = MaterialOpacityPolicy.BLUR_LEVELS - 1
+            invalidateFrame()
+        }
         /** Blur scale the software sample should carry now. */
         fun softwareBlurScale(): Float =
             if (!materialSettled || !appearance.sampling.blurEnabled) 1f else MaterialOpacityPolicy.settledBlurScale(materialBlur)
@@ -1216,6 +1234,13 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     val gpuAlpha = if (glass.blurControllable) alpha * c.backdropOpacity * entry.materialRadiusBackdrop
                                         else backdropAlpha
                                     group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, gpuAlpha, level)
+                                    // Idle and requested: compile one more blur level per frame, then stop for good.
+                                    if (entry.warmLevel > 0 && entry.materialSettled && glass.blurControllable) {
+                                        sampleMatrix.setValues(scrollGeometryValues)
+                                        group.capture!!.drawWarm(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, entry.warmLevel)
+                                        entry.warmLevel--
+                                        if (entry.warmLevel > 0) main.post(entry.warmStep) else glass.renderer.endWarm()
+                                    }
                                     backend = LumenSurfaceBackend.GPU; gpuDraws++; group.sampler.unregister(entry.target)
                                     }
                                 } else reason = LumenSurfaceFailure.INVALID_GEOMETRY
@@ -1351,6 +1376,7 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
         radiusBackdrop: Float = backdrop) {
         session.get()?.setMaterialWeights(id, backdrop, fill, edge, shadow, blur, radiusBackdrop)
     }
+    internal fun requestBlurWarm() { session.get()?.requestBlurWarm(id) }
     internal fun lastBackend(): LumenSurfaceBackend = session.get()?.backendOf(id) ?: LumenSurfaceBackend.STATIC
     internal val isRecordingContent: Boolean get() = session.get()?.isRecordingContent == true
     internal fun updatePrism(prism: PrismRecipe?, surface: LumenSurfaceOptions? = null) { session.get()?.updatePrism(id, prism, surface) }

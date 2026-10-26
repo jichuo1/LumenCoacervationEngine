@@ -137,6 +137,23 @@ class MaterialOpacityContractTest {
         assertTrue(frosted.contains("handler.removeCallbacks(materialSettle)"))
     }
 
+    @Test fun blurLevelsArePrecompiledOnceWhileIdleAndOnlyWhenRequested() {
+        val session = SourceContract.read("host/LumenSurfaceSession.kt")
+        val warm = session.after("// Idle and requested: compile one more blur level per frame, then stop for good.")
+            .before("} else reason = LumenSurfaceFailure.INVALID_GEOMETRY")
+        assertTrue(warm.contains("if (entry.warmLevel > 0 && entry.materialSettled && glass.blurControllable)"))
+        assertTrue(warm.contains("entry.warmLevel--"))
+        assertTrue(warm.contains("if (entry.warmLevel > 0) main.post(entry.warmStep) else glass.renderer.endWarm()"))
+        // Requested by the opacity APIs only: a host that never thins its glass compiles nothing extra.
+        val request = session.after("fun requestWarm()").before("/** Blur scale the software sample should carry now. */")
+        assertTrue(request.contains("if (warmRequested) return"))
+        val glass = SourceContract.read("glow/GlowChromeGlassApi31.kt")
+        val drawWarm = glass.after("fun drawWarm(").before("fun endWarm()")
+        assertTrue(drawWarm.contains("node.setAlpha(WARM_ALPHA)"))
+        assertFalse(drawWarm.contains("remember("))
+        assertFalse(drawWarm.contains("variantEffects"))
+    }
+
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {
         val shadow = SourceContract.read("material/ControlShadowDrawable.kt")
         val draw = shadow.after("override fun draw(canvas: Canvas)").before("private fun siblingShadowOverlaps")

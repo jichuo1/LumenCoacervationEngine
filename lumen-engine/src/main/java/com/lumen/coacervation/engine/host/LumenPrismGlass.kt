@@ -47,6 +47,8 @@ public class LumenPrismGlass @JvmOverloads constructor(
     private var bindRejected = false
     private var observer: ViewTreeObserver? = null
     private var materialOpacity = 1f
+    /** The host has set a material opacity: a binding created later still pre-compiles its blur levels. */
+    private var materialUsed = false
     private var legibility = LumenMaterialLegibility.AUTO
     private var closed = false
     public val isClosed: Boolean get() = closed
@@ -95,6 +97,8 @@ public class LumenPrismGlass @JvmOverloads constructor(
     public fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
         if (closed) return
         checkMain()
+        materialUsed = true
+        binding?.requestBlurWarm()
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity)
         if (next == materialOpacity && legibility == this.legibility) return
         materialOpacity = next
@@ -174,6 +178,7 @@ public class LumenPrismGlass @JvmOverloads constructor(
         try {
             binding = owner.bindViewDrawOnly(view, surfaceOptions(), content, preserveBackdropColors = true,
                 prism = PrismPolicy.recipe(options)).takeIf { it.isBound }
+            if (materialUsed) binding?.requestBlurWarm()
         } catch (_: IllegalArgumentException) {
             // The host's session surface budget is full; the glass falls back on its own, the page is unaffected.
             bindRejected = true

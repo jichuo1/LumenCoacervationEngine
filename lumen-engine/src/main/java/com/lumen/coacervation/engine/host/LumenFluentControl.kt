@@ -46,6 +46,8 @@ public class LumenFluentControl @JvmOverloads constructor(
     private var observer: ViewTreeObserver? = null
     private var pressed = false
     private var materialOpacity = 1f
+    /** The host has set a material opacity: a binding created later still pre-compiles its blur levels. */
+    private var materialUsed = false
     private var legibility = LumenMaterialLegibility.AUTO
     private var closed = false
     public val isClosed: Boolean get() = closed
@@ -105,6 +107,8 @@ public class LumenFluentControl @JvmOverloads constructor(
     public fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
         if (closed) return
         checkMain()
+        materialUsed = true
+        binding?.requestBlurWarm()
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity)
         if (next == materialOpacity && legibility == this.legibility) return
         materialOpacity = next
@@ -181,6 +185,7 @@ public class LumenFluentControl @JvmOverloads constructor(
         if (owner.isClosed || bindRejected) return
         try {
             binding = owner.bindViewDrawOnly(view, surfaceOptions(), content, preserveBackdropColors = true).takeIf { it.isBound }
+            if (materialUsed) binding?.requestBlurWarm()
         } catch (_: IllegalArgumentException) {
             // The host's session surface budget is full; acrylic falls back on its own, the page is unaffected.
             bindRejected = true

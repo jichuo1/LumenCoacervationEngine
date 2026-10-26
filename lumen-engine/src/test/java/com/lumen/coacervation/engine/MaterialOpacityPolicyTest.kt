@@ -139,7 +139,7 @@ class MaterialOpacityPolicyTest {
         assertEquals(0.5f, state.own, 0f)
     }
 
-    @Test fun blurLevelsAreQuantisedInSquareRootSpace() {
+    @Test fun blurLevelsAreHalfAnOctaveApart() {
         assertEquals(0, MaterialOpacityPolicy.blurLevel(0f))
         assertEquals(0, MaterialOpacityPolicy.blurLevel(Float.NaN))
         assertEquals(MaterialOpacityPolicy.BLUR_LEVELS, MaterialOpacityPolicy.blurLevel(1f))
@@ -153,9 +153,11 @@ class MaterialOpacityPolicyTest {
         }
         for (level in 0..MaterialOpacityPolicy.BLUR_LEVELS)
             assertEquals(level, MaterialOpacityPolicy.blurLevel(MaterialOpacityPolicy.levelFraction(level)))
-        // Finer near zero: the first step is under 1% of the radius, the last about 12%.
-        assertTrue(MaterialOpacityPolicy.levelFraction(1) < 0.01f)
-        assertTrue(1f - MaterialOpacityPolicy.levelFraction(MaterialOpacityPolicy.BLUR_LEVELS - 1) < 0.13f)
+        for (level in 2..MaterialOpacityPolicy.BLUR_LEVELS)
+            assertEquals(Math.sqrt(2.0).toFloat(), MaterialOpacityPolicy.levelFraction(level) / MaterialOpacityPolicy.levelFraction(level - 1), 1e-5f)
+        // The smallest level is a twelfth of the radius; well below it the blur is off.
+        assertEquals(1f / 11.3137f, MaterialOpacityPolicy.levelFraction(1), 1e-4f)
+        assertEquals(0, MaterialOpacityPolicy.blurLevel(0.05f))
     }
 
     @Test fun radiusPathsFollowTheMockupRadii() {

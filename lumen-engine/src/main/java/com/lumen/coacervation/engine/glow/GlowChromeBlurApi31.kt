@@ -14,4 +14,13 @@ internal object GlowChromeBlurApi31 {
         val mainRadius = GlowChromeBlurPolicy.mainRadius(radiusPx)
         return RenderEffect.createBlurEffect(mainRadius, mainRadius, prefilter, Shader.TileMode.CLAMP)
     }
+
+    /** A material-opacity level: optional fixed 3px prefilter, then [mainRadiusPx] (see `GlowChromeBlurPolicy.level`). */
+    fun createLevel(prefilter: Boolean, mainRadiusPx: Float): RenderEffect {
+        if (mainRadiusPx <= 0f) return RenderEffect.createOffsetEffect(0f, 0f)
+        if (!prefilter) return RenderEffect.createBlurEffect(mainRadiusPx, mainRadiusPx, Shader.TileMode.CLAMP)
+        val pre = GlowChromeBlurPolicy.prefilterRadius(GlowChromeBlurPolicy.PREFILTER_FLOOR_PX)
+        val first = RenderEffect.createBlurEffect(pre, pre, Shader.TileMode.CLAMP)
+        return RenderEffect.createBlurEffect(mainRadiusPx, mainRadiusPx, first, Shader.TileMode.CLAMP)
+    }
 }

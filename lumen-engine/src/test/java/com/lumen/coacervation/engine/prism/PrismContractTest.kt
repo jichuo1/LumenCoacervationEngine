@@ -84,7 +84,7 @@ class PrismContractTest {
 
     @Test fun sessionUpdateRebuildsOnce() {
         val controller = SourceContract.read("host/LumenPrismGlass.kt")
-        val update = controller.after("public fun update(value: LumenPrismOptions) {").before("public fun updatePalette(")
+        val update = controller.after("public fun update(value: LumenPrismOptions) {").before("override fun setMaterialOpacity(value: Float)")
         assertEquals(1, Regex("binding\\?\\.").findAll(update).count())
         assertTrue(update.contains("binding?.updatePrism(PrismPolicy.recipe(value), surfaceOptions())"))
         assertTrue(controller.contains("refractionStrength = 0f"))

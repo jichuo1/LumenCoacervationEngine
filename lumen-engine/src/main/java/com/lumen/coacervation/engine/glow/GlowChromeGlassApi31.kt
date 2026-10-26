@@ -77,6 +77,8 @@ internal class GlowChromeGlassApi31(
      */
     private var variantEffects: Array<RenderEffect?>? = null
     private var variantAliases: Array<RenderEffect?>? = null
+    /** Tiny node that draws one variant at 1/255 alpha so its blur program is compiled before it is needed. */
+    private var warmNode: RenderNode? = null
     /** 仅 API 31：当前效果与一个像素等价的另一个滤镜对象（[FilteredLayerRefresh]）。 */
     private var effect: RenderEffect? = null
     private var alias: RenderEffect? = null
@@ -219,6 +221,37 @@ internal class GlowChromeGlassApi31(
         node.setRenderEffect(next)
     }
 
+    /**
+     * Pre-compiles [variant]'s blur program (MATERIAL_OPACITY.md §14): records [content] into a [WARM_PX] node at
+     * the centre of [bounds] with that variant's chain and draws it at 1/255 alpha — invisible, but rendered, so the
+     * first real use of the level does not stall the RenderThread. The chain is not cached; nothing else changes.
+     */
+    fun drawWarm(canvas: Canvas, bounds: Rect, radiusPx: Float, content: GlowContentCaptureApi31, contentToHost: Matrix?,
+        variant: Int) {
+        if (closed || variant !in 0 until MAX_VARIANTS || bounds.width() < WARM_PX || bounds.height() < WARM_PX) return
+        val node = warmNode ?: RenderNode("Lumen-GlowChromeWarm").also { warmNode = it }
+        val left = bounds.centerX() - WARM_PX / 2
+        val top = bounds.centerY() - WARM_PX / 2
+        node.setPosition(left, top, left + WARM_PX, top + WARM_PX)
+        val recording = node.beginRecording(WARM_PX, WARM_PX)
+        try {
+            recording.translate(-left.toFloat(), -top.toFloat())
+            if (contentToHost != null) recording.concat(contentToHost)
+            recording.drawRenderNode(content.node)
+        } finally {
+            node.endRecording()
+        }
+        node.setRenderEffect(effects.create(WARM_PX, WARM_PX, 0, minOf(radiusPx, WARM_PX / 2f), 1f, 0f, variant))
+        node.setAlpha(WARM_ALPHA)
+        canvas.drawRenderNode(node)
+    }
+
+    /** Warming finished: drop the warm node's display list and effect. */
+    fun endWarm() {
+        warmNode?.let { it.setRenderEffect(null); it.discardDisplayList() }
+        warmNode = null
+    }
+
     /** 内存压力：丢掉 display list（下次绘制重录），效果对象留着——它们只是参数快照。 */
     fun releaseDisplayList() {
         if (!closed) node.discardDisplayList()
@@ -232,6 +265,7 @@ internal class GlowChromeGlassApi31(
         alias = null
         variantEffects = null
         variantAliases = null
+        endWarm()
         node.discardDisplayList()
     }
 
@@ -241,5 +275,7 @@ internal class GlowChromeGlassApi31(
         const val DEFAULT_VARIANT = -1
         /** Upper bound on cached variants per glass (`MaterialOpacityPolicy.BLUR_LEVELS + 1` fits). */
         const val MAX_VARIANTS = 32
+        private const val WARM_PX = 24
+        private const val WARM_ALPHA = 1f / 255f
     }
 }

@@ -1,6 +1,7 @@
 package com.lumen.coacervation.engine.runtime
 
 import kotlin.math.exp
+import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
@@ -62,8 +63,12 @@ internal object MaterialOpacityPolicy {
     const val FLUENT_BLUR_GATE = 0.35f
     /** Below this effective backdrop weight a surface needs no backdrop sample at all. */
     const val SAMPLING_EPSILON = 1f / 255f
-    /** Blur radius levels above zero; a GPU glass caches at most `BLUR_LEVELS + 1` effect chains. */
-    const val BLUR_LEVELS = 16
+    /**
+     * Blur levels above zero, half an octave apart (level k scales the blur by `2^-(BLUR_LEVELS-k)/2`). A GPU glass
+     * caches at most `BLUR_LEVELS + 1` chains; Skia's power-of-two downscale maps half-octave sigmas onto two
+     * recurring kernel widths, so a sweep compiles few blur programs (MATERIAL_OPACITY.md §14).
+     */
+    const val BLUR_LEVELS = 8
     /** Radius paths fade the (already almost sharp) sample out below this opacity. */
     const val RADIUS_FADE_END = 0.1f
     /**
@@ -76,18 +81,22 @@ internal object MaterialOpacityPolicy {
     fun settledBlurScale(blurRadius: Float): Float =
         if (blurRadius >= 1f) 1f else levelFraction(blurLevel(blurRadius))
 
-    /** Level for a radius fraction, quantised in square-root space: small radii, where steps show, get finer steps. */
+    /** Nearest level for a blur fraction, in log space; below a quarter octave under the smallest level it is 0. */
     fun blurLevel(fraction: Float): Int {
         if (!(fraction > 0f)) return 0
         if (fraction >= 1f) return BLUR_LEVELS
-        return (sqrt(fraction) * BLUR_LEVELS).roundToInt().coerceIn(0, BLUR_LEVELS)
+        val level = BLUR_LEVELS + (2.0 * ln(fraction.toDouble()) / LN2).roundToInt()
+        return level.coerceIn(0, BLUR_LEVELS)
     }
 
-    /** Radius fraction of [level]; [BLUR_LEVELS] is exactly the configured radius. */
+    /** Blur scale of [level]: 1 at [BLUR_LEVELS], half an octave per step below, 0 at level 0. */
     fun levelFraction(level: Int): Float {
-        val t = level.coerceIn(0, BLUR_LEVELS).toFloat() / BLUR_LEVELS
-        return t * t
+        val k = level.coerceIn(0, BLUR_LEVELS)
+        if (k == 0) return 0f
+        return 2.0.pow(-(BLUR_LEVELS - k) / 2.0).toFloat()
     }
+
+    private val LN2 = ln(2.0)
 
     fun linear(p: Float): Float = p
     fun pow(p: Float, gamma: Float): Float = if (p <= 0f) 0f else if (p >= 1f) 1f else p.pow(gamma)
