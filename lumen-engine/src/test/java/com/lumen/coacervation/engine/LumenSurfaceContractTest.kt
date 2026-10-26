@@ -13,7 +13,7 @@ class LumenSurfaceContractTest {
         assertTrue(shader.contains("(pressSlope+waves)*sigma"))
         assertTrue(shader.contains("displacement+=softPoint(p)-p"))
         assertTrue(shader.indexOf("displacement+=softPoint(p)-p") < shader.indexOf("float travel=length(displacement)"))
-        assertTrue(shader.contains("background(p+displacement)"))
+        assertTrue(shader.contains("materialBackground(p+displacement)"))
         assertFalse(shader.contains("background(softLens.x>0.5?softPoint(p)"))
     }
     @Test fun allFadeBackendsUseTheConfiguredCurve() {

@@ -107,6 +107,17 @@ class MaterialOpacityContractTest {
         assertTrue(session.contains("group.capture!!.draw(glass, canvas, nodeBounds, c.radiusDp * density, sampleMatrix, gpuAlpha, level)"))
     }
 
+    @Test fun directShaderInterpolatesTheBlurInsteadOfCrossFading() {
+        val direct = SourceContract.read("host/DirectSurfaceProgramApi33.kt")
+        val main = direct.after("half4 main(float2 coord){").before("color=saturation(color);")
+        assertTrue(main.contains("half4 color=materialBackground(p+displacement);"))
+        val material = direct.after("half4 materialBackground(float2 p){").before("float2 rippleSlope(")
+        // Off (full opacity or no blur): the original background, bit for bit.
+        assertTrue(material.contains("if(materialBlur.w<0.5)return background(p);"))
+        assertTrue(material.contains("return mix(mid,strongInput.eval(imagePoint(p)),half(t));"))
+        assertTrue(direct.contains("if(materialBlur<1f&&materialRadius>0f)1f else 0f"))
+    }
+
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {
         val shadow = SourceContract.read("material/ControlShadowDrawable.kt")
         val draw = shadow.after("override fun draw(canvas: Canvas)").before("private fun siblingShadowOverlaps")

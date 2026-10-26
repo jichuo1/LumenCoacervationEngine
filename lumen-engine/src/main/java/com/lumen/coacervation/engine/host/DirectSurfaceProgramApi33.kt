@@ -27,7 +27,8 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
         state: LumenSurfaceRenderState,palette: LumenPalette,density: Float,
         clear: Shader,weak: Shader,strong: Shader,scale: Float,margin: Float,inputWidth: Float,inputHeight: Float,
         alpha: Float,detail: LumenDetailMode,
-        materialBackdrop: Float=1f,materialFill: Float=1f,materialEdge: Float=1f,materialShadow: Float=1f): Boolean {
+        materialBackdrop: Float=1f,materialFill: Float=1f,materialEdge: Float=1f,materialShadow: Float=1f,
+        materialBlur: Float=1f): Boolean {
         val s=shader?:return false
         if(!canvas.isHardwareAccelerated)return false
         val width=bounds.width();val height=bounds.height()
@@ -80,6 +81,12 @@ internal class DirectSurfaceProgramApi33(private val counters: LumenGraphicsCoun
             if(light.transformNormals)1f else 0f)
         s.setColorUniform("tintColor",c.color?:palette.surface)
         s.setFloatUniform("backdropOpacity",c.backdropOpacity*materialBackdrop)
+        // Material opacity thins the blur itself (MATERIAL_OPACITY.md §13): x radius fraction, y full radius and
+        // z weak radius in target pixels (z = 0: no weak input, a 9-tap ring of the clear input stands in), w on.
+        val materialRadius=if(c.sampling.blurEnabled)c.sampling.blurRadiusDp*density else 0f
+        s.setFloatUniform("materialBlur",materialBlur.coerceIn(0f,1f),materialRadius,
+            if(e.progressiveBlur.enabled)e.progressiveBlur.weakRadiusDp*density else 0f,
+            if(materialBlur<1f&&materialRadius>0f)1f else 0f)
         s.setFloatUniform("softLens",if(c.material==LumenSurfaceMaterial.FROSTED)1f else 0f,
             if(c.sampling.refractionEnabled)c.sampling.refractionStrength else 0f,
             LensRefractionPolicy.LUMINANCE_GAIN,LensRefractionPolicy.LUMINANCE_BIAS/255f)
@@ -134,6 +141,7 @@ uniform float4 normalMap;
 uniform float4 lightStyle;
 layout(color) uniform half4 tintColor;
 uniform float backdropOpacity;
+uniform float4 materialBlur;
 uniform float4 softLens;
 layout(color) uniform half4 edgeColor;
 layout(color) uniform half4 edgeColorBottom;
@@ -182,6 +190,34 @@ half4 background(float2 p){
     float b=ramp(y,progressiveEnd.x,progressiveEnd.y)*progressive.x;
     return clearInput.eval(pixel)*half((1.0-b)*(1.0-a))+weakInput.eval(pixel)*half((1.0-b)*a)+strongInput.eval(pixel)*half(b);
 }
+// Box-like blur of the clear input at radius r (target pixels): centre plus an 8-tap ring at 0.7 r.
+half4 ringBlur(float2 p,float r){
+    if(r<0.35)return clearInput.eval(imagePoint(p));
+    float d=r*0.7;float e=d*0.70710678;
+    half4 sum=clearInput.eval(imagePoint(p))*half(0.2);
+    sum+=(clearInput.eval(imagePoint(p+float2(d,0.0)))+clearInput.eval(imagePoint(p-float2(d,0.0)))+
+        clearInput.eval(imagePoint(p+float2(0.0,d)))+clearInput.eval(imagePoint(p-float2(0.0,d))))*half(0.1);
+    sum+=(clearInput.eval(imagePoint(p+float2(e,e)))+clearInput.eval(imagePoint(p-float2(e,e)))+
+        clearInput.eval(imagePoint(p+float2(e,-e)))+clearInput.eval(imagePoint(p+float2(-e,e))))*half(0.1);
+    return sum;
+}
+// Material opacity: clear → middle → strong by radius fraction instead of cross-fading the full blur.
+half4 materialBackground(float2 p){
+    if(materialBlur.w<0.5)return background(p);
+    if(progressiveEnd.z>0.5){
+        // Progressive bands already vary the blur; thin them towards the clear input.
+        float k=materialBlur.x;return mix(clearInput.eval(imagePoint(p)),background(p),half(k));
+    }
+    float wanted=materialBlur.x*materialBlur.y;
+    float middle=materialBlur.z>0.0?materialBlur.z:materialBlur.y/3.0;
+    if(wanted<=middle){
+        if(materialBlur.z>0.0)return mix(clearInput.eval(imagePoint(p)),weakInput.eval(imagePoint(p)),half(wanted/middle));
+        return ringBlur(p,wanted);
+    }
+    half4 mid=materialBlur.z>0.0?weakInput.eval(imagePoint(p)):ringBlur(p,middle);
+    float t=clamp((wanted-middle)/max(materialBlur.y-middle,0.0001),0.0,1.0);
+    return mix(mid,strongInput.eval(imagePoint(p)),half(t));
+}
 float2 rippleSlope(float2 p,float4 ring){
     if(ring.w<0.5)return float2(0.0);
     float2 delta=p-ring.xy;float distance=length(delta);
@@ -225,11 +261,11 @@ half4 main(float2 coord){
     float2 displacement=direction*optics.x*edgeWeight+(pressSlope+waves)*sigma;
     if(softLens.x>0.5)displacement+=softPoint(p)-p;
     float travel=length(displacement);if(travel>warpLimit)displacement*=warpLimit/travel;
-    half4 color=background(p+displacement);
+    half4 color=materialBackground(p+displacement);
     if(softLens.x>0.5)color=half4(clamp(color.rgb*half(softLens.z)+half(softLens.w)*color.a,half3(0.0),half3(color.a)),color.a);
     if(softLens.x<0.5&&optics.z>0.001&&edgeWeight>0.01){
-        half4 red=background(p+displacement+direction*optics.z*edgeWeight);
-        half4 blue=background(p+displacement-direction*optics.z*edgeWeight);
+        half4 red=materialBackground(p+displacement+direction*optics.z*edgeWeight);
+        half4 blue=materialBackground(p+displacement-direction*optics.z*edgeWeight);
         color=half4(min(red.r,color.a),color.g,min(blue.b,color.a),color.a);
     }
     color=saturation(color);

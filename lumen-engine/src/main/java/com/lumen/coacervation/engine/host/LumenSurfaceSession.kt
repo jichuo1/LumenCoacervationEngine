@@ -1152,7 +1152,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                         enhancedPainted=program.draw(canvas,rectangle,c,entry.enhancements,entry.frame,palette,density,clear,
                                             group.sampler.rawShader(entry.target,1)?:clear,group.sampler.rawShader(entry.target,2)?:clear,
                                             group.sampler.rawScale(entry.target),group.sampler.rawMargin(entry.target),group.sampler.rawWidth(entry.target),group.sampler.rawHeight(entry.target),alpha,detail,
-                                            entry.materialBackdrop,entry.materialFill,entry.materialEdge,entry.materialShadow)
+                                            // The shader thins the blur itself, so it takes the radius-path weight.
+                                            if(entry.appearance.sampling.blurEnabled)entry.materialRadiusBackdrop else entry.materialBackdrop,
+                                            entry.materialFill,entry.materialEdge,entry.materialShadow,entry.materialBlur)
                                         if(enhancedPainted){entry.gpuPixels=execution;backend=LumenSurfaceBackend.GPU;gpuDraws++}
                                     }catch(_:Throwable){entry.gpuFailed=true;entry.direct?.close();entry.direct=null;reason=LumenSurfaceFailure.GPU_FAILED}
                                 }
