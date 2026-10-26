@@ -66,6 +66,15 @@ internal object MaterialOpacityPolicy {
     const val BLUR_LEVELS = 16
     /** Radius paths fade the (already almost sharp) sample out below this opacity. */
     const val RADIUS_FADE_END = 0.1f
+    /**
+     * Software blurs resample at the real radius once the opacity has been still for this long; while it moves
+     * they cross-fade the full-radius sample (one resample per settle instead of one per frame).
+     */
+    const val SETTLE_MILLIS = 150L
+
+    /** Blur scale a settled software sample should use (1 = configured radius). */
+    fun settledBlurScale(blurRadius: Float): Float =
+        if (blurRadius >= 1f) 1f else levelFraction(blurLevel(blurRadius))
 
     /** Level for a radius fraction, quantised in square-root space: small radii, where steps show, get finer steps. */
     fun blurLevel(fraction: Float): Int {

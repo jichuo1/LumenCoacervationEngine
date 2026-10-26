@@ -581,6 +581,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         }
         entry.group?.sampler?.unregister(entry.target)
         main.removeCallbacks(entry.dispatch)
+        main.removeCallbacks(entry.materialSettle)
         retiredGraphics.absorb(entry.graphics)
         entry.releaseGpu(); entry.lenses = null; entries.remove(entry)
         if (entries.isEmpty()) unregisterTrim()
@@ -909,6 +910,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         var materialBlur = 1f
         var materialRadiusBackdrop = 1f
         fun needsBackdrop(): Boolean = maxOf(materialBackdrop, materialRadiusBackdrop) > MaterialOpacityPolicy.SAMPLING_EPSILON
+        /** False while the material opacity is moving; the software sample then keeps its full radius. */
+        var materialSettled = true
+        val materialSettle = Runnable { if (!materialSettled) { materialSettled = true; invalidateFrame() } }
+        /** Blur scale the software sample should carry now. */
+        fun softwareBlurScale(): Float =
+            if (!materialSettled || !appearance.sampling.blurEnabled) 1f else MaterialOpacityPolicy.settledBlurScale(materialBlur)
         fun applyMaterialWeights(backdrop: Float, fill: Float, edge: Float, shadow: Float, blur: Float = 1f,
             radiusBackdrop: Float = backdrop) {
             val b = backdrop.coerceIn(0f, 1f); val f = fill.coerceIn(0f, 1f); val e = edge.coerceIn(0f, 1f); val s = shadow.coerceIn(0f, 1f)
@@ -918,6 +925,9 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             val wasSampling = needsBackdrop()
             materialBackdrop = b; materialFill = f; materialEdge = e; materialShadow = s
             materialBlur = r; materialRadiusBackdrop = rb
+            materialSettled = false
+            main.removeCallbacks(materialSettle)
+            main.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS)
             if (wasSampling && !needsBackdrop()) group?.sampler?.unregister(target)
             else if (!wasSampling && needsBackdrop()) group?.dirty = true
             invalidateFrame()
@@ -1213,7 +1223,13 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         }
                         if (backend != LumenSurfaceBackend.GPU && LumenSurfacePolicy.softwareAllowed(c.sampling)) {
                             group.sampler.register(entry.target, c.sampling, preserveBackdropColors = entry.preserveBackdropColors)
-                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * backdropAlpha).roundToInt())) {
+                            // Settled: resample once at the real radius; once that sample is on screen it stays opaque
+                            // (radius weight) instead of cross-fading the full-radius blur.
+                            val wantedScale = entry.softwareBlurScale()
+                            group.sampler.setBlurScale(entry.target, wantedScale)
+                            val thinned = wantedScale < 1f && group.sampler.publishedBlurScale(entry.target) == wantedScale
+                            val softwareAlpha = if (thinned) alpha * c.backdropOpacity * entry.materialRadiusBackdrop else backdropAlpha
+                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * softwareAlpha).roundToInt())) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
                             } else if (group.sampler.hasFailed) reason = LumenSurfaceFailure.SOFTWARE_FAILED
                             else if (group.sampler.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED

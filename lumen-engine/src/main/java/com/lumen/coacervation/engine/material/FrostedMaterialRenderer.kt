@@ -196,10 +196,88 @@ internal class FrostedMaterialRenderer(
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
         if (next == materialOpacity[index]) return
         materialOpacity[index] = next
+        onMaterialChanged()
         for (view in surfaces.keys) view.invalidate()
     }
 
     internal fun materialOpacityOf(role: SurfaceRole): Float = materialOpacity[role.ordinal]
+
+    // ---- Material opacity: real blur radius once the opacity is still (MATERIAL_OPACITY.md §13) ----
+
+    /** False while any material opacity is moving: surfaces cross-fade the full-radius frost meanwhile. */
+    internal var materialSettled = true
+        private set
+    /** One thinner frost per settle: several roles at different opacities must not keep evicting each other. */
+    private var thinRequested = false
+    private var thinLevel = -1
+    private var thinBitmap: Bitmap? = null
+    private var thinShader: BitmapShader? = null
+    private var thinWork: Future<*>? = null
+    private var thinToken = 0L
+    private val materialSettle = Runnable {
+        if (closed || materialSettled) return@Runnable
+        materialSettled = true
+        for (view in surfaces.keys) view.invalidate()
+    }
+
+    internal fun onMaterialChanged() {
+        if (closed) return
+        materialSettled = false
+        thinRequested = false
+        handler.removeCallbacks(materialSettle)
+        handler.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS)
+    }
+
+    /**
+     * The static frost re-blurred at [level], or null while it is not ready (the caller then cross-fades the full
+     * frost). Requests it on the frost worker once per settle; at most one thinner frost (≤ 640 KiB) is kept.
+     */
+    internal fun thinFrost(level: Int): BitmapShader? {
+        if (level == thinLevel) return thinShader
+        if (!materialSettled || thinRequested || closed || !lifecycle.canWork) return null
+        val current = frame ?: return null
+        thinRequested = true
+        thinWork?.cancel(true)
+        val token = ++thinToken
+        val source = current.original
+        val fullRadius = ModernMaterialPolicy.blurRadius(source.width, width, density)
+        val radius = (fullRadius * MaterialOpacityPolicy.levelFraction(level)).roundToInt().coerceIn(0, 32)
+        val recipient = WeakReference(this)
+        workerStarted = true
+        thinWork = worker.submit {
+            val result = runCatching {
+                val w = source.width; val h = source.height
+                val pixels = IntArray(w * h)
+                source.getPixels(pixels, 0, w, 0, 0, w, h)
+                val blurred = if (radius == 0) pixels else ModernBackdropBlur.blur(pixels, w, h, radius)
+                createBitmap(w, h, Bitmap.Config.ARGB_8888).apply {
+                    setPixels(blurred, 0, w, 0, 0, w, h); prepareToDraw()
+                }
+            }.getOrNull()
+            handler.post { recipient.get()?.acceptThinFrost(token, current, level, result) }
+        }
+        return null
+    }
+
+    private fun acceptThinFrost(token: Long, source: ModernBackdropFrame, level: Int, bitmap: Bitmap?) {
+        if (closed || token != thinToken || frame !== source || bitmap == null) return
+        thinWork = null
+        // The previous thin bitmap may still be in a display list: drop the reference, never recycle.
+        thinBitmap = bitmap
+        thinShader = BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
+        thinLevel = level
+        for (view in surfaces.keys) view.invalidate()
+    }
+
+    private fun releaseThinFrost() {
+        thinWork?.cancel(true); thinWork = null
+        thinToken++
+        thinBitmap = null; thinShader = null; thinLevel = -1; thinRequested = false
+    }
+
+    internal fun setLiveBlurScale(view: View, scale: Float) { live.setBlurScale(view, scale) }
+
+    internal fun liveBlurScale(view: View): Float = live.publishedBlurScale(view)
 
     /** A clear surface stops its live lens: nothing of the sample would be visible. */
     internal fun stopLiveSample(view: View) { live.unregister(view) }
@@ -262,6 +340,7 @@ internal class FrostedMaterialRenderer(
                 result.original.allocationByteCount.toLong() + result.blurred.allocationByteCount)
         }
         rootBackdrop = result.original
+        releaseThinFrost()
         sampleShader = BitmapShader(result.blurred, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         samplePaint.shader = sampleShader
         revealAnimator?.cancel()
@@ -283,14 +362,19 @@ internal class FrostedMaterialRenderer(
         surfaces.keys.forEach(View::invalidate)
     }
 
-    internal fun drawSample(canvas: Canvas, bounds: RectF, radius: Float, view: View?, opacity: Int): Boolean {
+    internal fun drawSample(canvas: Canvas, bounds: RectF, radius: Float, view: View?, opacity: Int,
+        thin: BitmapShader? = null): Boolean {
         if (closed || view == null) return false
         val current = frame ?: return false
         val sourceRoot = root ?: return false
         if (!samplingMatrices.bitmapToTarget(sourceRoot, view, current.blurred.width, current.blurred.height, shaderMatrix)) return false
-        sampleShader?.setLocalMatrix(shaderMatrix)
+        // The thinner frost has the blurred frost's size, so it shares the mapping.
+        val shader = thin ?: sampleShader
+        shader?.setLocalMatrix(shaderMatrix)
+        if (thin != null) samplePaint.shader = thin
         samplePaint.alpha = opacity
         canvas.drawRoundRect(bounds, radius, radius, samplePaint)
+        if (thin != null) samplePaint.shader = sampleShader
         return true
     }
 
@@ -482,6 +566,7 @@ internal class FrostedMaterialRenderer(
         }
         // Never recycle a bitmap that can still be referenced by a hardware display list.
         frame = null; sampleShader = null; samplePaint.shader = null
+        releaseThinFrost()
         live.releaseAll()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             chromeGlass.values.forEach { (it.glass as GlowChromeGlassApi31).releaseDisplayList() }
@@ -519,6 +604,7 @@ internal class FrostedMaterialRenderer(
     override fun close() {
         if (closed) return
         lifecycle.close()
+        handler.removeCallbacks(materialSettle)
         releaseMemory()
         live.close()
         root?.removeOnLayoutChangeListener(layoutListener)
@@ -600,7 +686,7 @@ private class ModernSurfaceDrawable(
     }
 
     override fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
-        if (materialState.set(value, legibility.carriesText(role))) invalidateSelf()
+        if (materialState.set(value, legibility.carriesText(role))) { renderer?.onMaterialChanged(); invalidateSelf() }
     }
 
     override fun materialOpacity(): Float = materialState.own
@@ -653,11 +739,23 @@ private class ModernSurfaceDrawable(
         val overlayAlpha = (tintFull * fillWeight).roundToInt()
         // Preserve the host's ARGB opacity without allocating an offscreen saveLayer for each frame.
         // Material opacity thins the frost (sample) and the haze (tint) separately: the fog clears.
-        val sampleAlpha = (FrostedMotionSurfaceAlpha.sampleAlpha(frameAlpha, tintFull) * backdropWeight).roundToInt()
-        val sampling = backdropWeight > MaterialOpacityPolicy.SAMPLING_EPSILON
-        var sampled = tintOnly || sampling && renderer?.drawSample(canvas, rect, drawRadius, view, sampleAlpha) == true
+        // While it moves the full-radius frost cross-fades; once settled a frost at the real radius stays opaque.
+        val radiusWeight = material?.radiusBackdrop ?: 1f
+        val fullSample = FrostedMotionSurfaceAlpha.sampleAlpha(frameAlpha, tintFull)
+        val level = if (material == null) MaterialOpacityPolicy.BLUR_LEVELS else MaterialOpacityPolicy.blurLevel(material.blurRadius)
+        val thin = if (level < MaterialOpacityPolicy.BLUR_LEVELS) renderer?.thinFrost(level) else null
+        val sampleAlpha = (fullSample * (if (thin != null) radiusWeight else backdropWeight)).roundToInt()
+        val sampling = maxOf(backdropWeight, radiusWeight) > MaterialOpacityPolicy.SAMPLING_EPSILON
+        var sampled = tintOnly || sampling && renderer?.drawSample(canvas, rect, drawRadius, view, sampleAlpha, thin) == true
         // 悬浮表面再叠一层实时透镜采样：静态磨砂在下，穿过胶囊的内容在上，色罩最后。
-        if (style.live && sampling && renderer?.drawLiveSample(canvas, rect, drawRadius, view, sampleAlpha) == true) sampled = true
+        if (style.live && sampling && view != null && renderer != null) {
+            val wanted = if (material == null || !renderer.materialSettled) 1f
+                else MaterialOpacityPolicy.settledBlurScale(material.blurRadius)
+            val liveThin = wanted < 1f && renderer.liveBlurScale(view) == wanted
+            val liveAlpha = (fullSample * (if (liveThin) radiusWeight else backdropWeight)).roundToInt()
+            if (renderer.drawLiveSample(canvas, rect, drawRadius, view, liveAlpha)) sampled = true
+            renderer.setLiveBlurScale(view, wanted)
+        }
         if (style.live && !sampling && view != null) renderer?.stopLiveSample(view)
         // Unsampled, the fallback stands in for the frost and thins out with it.
         val unsampledAlpha = (tintFull * fillWeight + (frameAlpha - tintFull) * backdropWeight).roundToInt()

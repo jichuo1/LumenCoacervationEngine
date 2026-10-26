@@ -48,7 +48,7 @@ class LiveLensMemoContractTest {
     @Test fun unchangedJobsSkipUploadOnlyWhileThePublishedTextureIsStillValid() {
         val done = sampler.after("private fun onBatchDone(").before("private fun rememberPublishedInput(")
         val skip = done.before("texture.setPixels(job.out")
-        assertTrue(skip.contains("if (job.unchanged && entry.valid) continue"))
+        assertTrue(skip.contains("if (job.unchanged && entry.valid) { entry.publishedBlurScale = job.blurScale; continue }"))
         assertTrue(done.after("texture.setPixels(job.out").contains("rememberPublishedInput(entry, job)"))
         // 比对基准只来自同参数的已发布结果。
         val job = sampler.after("private fun job(").before("private fun onBatchDone(")

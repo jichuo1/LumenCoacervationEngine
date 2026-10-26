@@ -123,6 +123,9 @@ internal class LiveBackdropSampler(
         var publishedRadius = 0
         var publishedWeakRadius = 0
         var publishedStrongRadius = 0
+        /** Material opacity: fraction of the blur radius requested, and the one the published texture carries. */
+        var blurScale = 1f
+        var publishedBlurScale = 1f
 
         fun publishedWith(scale: Int, margin: Int, radius: Int, weakRadius: Int, strongRadius: Int): Boolean =
             hasPublishedInput && publishedScale == scale && publishedMargin == margin && publishedRadius == radius &&
@@ -249,6 +252,7 @@ internal class LiveBackdropSampler(
         val outWidth: Int,
         val outHeight: Int,
         val blurRadius: Int,
+        val blurScale: Float,
         val profile: LumenSurfaceSampling?,
         val preserveBackdropColors: Boolean,
         val raw: LumenRawSampleProfile?,
@@ -389,6 +393,30 @@ internal class LiveBackdropSampler(
     fun unregister(view: LumenSurfaceTarget) {
         val entry = entries.remove(view) ?: return
         entry.release()
+    }
+
+    fun setBlurScale(view: View, scale: Float) { viewTargets[view]?.let { setBlurScale(it, scale) } }
+
+    /**
+     * Material opacity (MATERIAL_OPACITY.md §13): resample [view] once with its blur radius scaled by [scale].
+     * Keeps the buffers and the published texture, which stays on screen until the new one is published.
+     */
+    fun setBlurScale(view: LumenSurfaceTarget, scale: Float) {
+        val entry = entries[view] ?: return
+        val next = if (scale.isNaN()) 1f else scale.coerceIn(0f, 1f)
+        if (next == entry.blurScale) return
+        entry.blurScale = next
+        entry.cadence.invalidate()
+        dirty = true
+        scheduleTrailingSample(0L)
+    }
+
+    fun publishedBlurScale(view: View): Float = viewTargets[view]?.let(::publishedBlurScale) ?: 1f
+
+    /** Blur scale of the texture on screen (1 until a scaled sample has been published). */
+    fun publishedBlurScale(view: LumenSurfaceTarget): Float {
+        val entry = entries[view] ?: return 1f
+        return if (entry.valid) entry.publishedBlurScale else 1f
     }
 
     /**
@@ -666,11 +694,14 @@ internal class LiveBackdropSampler(
     }
 
     private fun job(view: LumenSurfaceTarget, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob {
+        val scaleBlur = entry.blurScale
         val blurRadius = entry.profile?.let {
-            val radius = if (it.blurEnabled) (it.softwareBlurRadiusDp ?: it.blurRadiusDp) * density / entry.scale else 0f
-            (if (it.softwareBlurRadiusDp != null) radius.roundToInt() else radius.toInt()).coerceIn(0, 32)
+            val radius = if (it.blurEnabled) (it.softwareBlurRadiusDp ?: it.blurRadiusDp) * density / entry.scale * scaleBlur else 0f
+            (if (it.softwareBlurRadiusDp != null || scaleBlur < 1f) radius.roundToInt() else radius.toInt()).coerceIn(0, 32)
         }
-            ?: LensRefractionPolicy.blurRadius(entry.scale, density)
+            ?: LensRefractionPolicy.blurRadius(entry.scale, density).let {
+                if (scaleBlur < 1f) (it * scaleBlur).roundToInt().coerceIn(0, 32) else it
+            }
         val weakRadius = ((entry.raw?.weakBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32)
         val strongRadius = ((entry.raw?.strongBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32)
         val reference = entry.reference?.takeIf {
@@ -695,6 +726,7 @@ internal class LiveBackdropSampler(
             outWidth = entry.outWidth,
             outHeight = entry.outHeight,
             blurRadius = blurRadius,
+            blurScale = scaleBlur,
             profile = entry.profile,
             preserveBackdropColors = entry.preserveBackdropColors,
             raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
@@ -728,12 +760,14 @@ internal class LiveBackdropSampler(
             val texture = entry.texture ?: continue
             if (texture.isRecycled) continue
             // 输入与已发布的那次逐像素相同：纹理里已经是本批的结果，不重传、不重绘。
-            if (job.unchanged && entry.valid) continue
+            // Same pixels at the same rounded radius: the texture already carries this scale.
+            if (job.unchanged && entry.valid) { entry.publishedBlurScale = job.blurScale; continue }
             val tw=if(job.raw!=null)job.sampleWidth else job.outWidth;val th=if(job.raw!=null)job.sampleHeight else job.outHeight
             texture.setPixels(job.out, 0, tw, 0, 0, tw, th)
             job.weakPixels?.let {entry.weakTexture?.setPixels(it,0,tw,0,0,tw,th)}
             job.strongPixels?.let {entry.strongTexture?.setPixels(it,0,tw,0,0,tw,th)}
             entry.valid = true
+            entry.publishedBlurScale = job.blurScale
             rememberPublishedInput(entry, job)
             target.invalidate()
             if (!dirty && isInside(job.view, source)) ignoreSelfInflictedDirty = true

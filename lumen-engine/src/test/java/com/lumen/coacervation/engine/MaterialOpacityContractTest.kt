@@ -118,6 +118,25 @@ class MaterialOpacityContractTest {
         assertTrue(direct.contains("if(materialBlur<1f&&materialRadius>0f)1f else 0f"))
     }
 
+    @Test fun softwareBlursResampleOnlyAfterTheOpacitySettles() {
+        val sampler = SourceContract.read("material/LiveBackdropSampler.kt")
+        val setScale = sampler.after("fun setBlurScale(view: LumenSurfaceTarget, scale: Float)").before("fun publishedBlurScale(view: View)")
+        // One resample, keeping buffers and the texture on screen (no release, no flash of the static fallback).
+        assertFalse(setScale.contains("release()"))
+        assertTrue(setScale.contains("if (next == entry.blurScale) return"))
+        val session = SourceContract.read("host/LumenSurfaceSession.kt")
+        assertTrue(session.contains("if (!materialSettled || !appearance.sampling.blurEnabled) 1f else MaterialOpacityPolicy.settledBlurScale(materialBlur)"))
+        assertTrue(session.contains("main.postDelayed(materialSettle, MaterialOpacityPolicy.SETTLE_MILLIS)"))
+        assertTrue(session.contains("main.removeCallbacks(entry.materialSettle)"))
+        val frosted = SourceContract.read("material/FrostedMaterialRenderer.kt")
+        val thin = frosted.after("internal fun thinFrost(level: Int): BitmapShader?").before("private fun acceptThinFrost(")
+        // Once per settle, off the main thread, from the unblurred original.
+        assertTrue(thin.contains("if (!materialSettled || thinRequested || closed || !lifecycle.canWork) return null"))
+        assertTrue(thin.contains("thinWork = worker.submit {"))
+        assertTrue(thin.contains("val source = current.original"))
+        assertTrue(frosted.contains("handler.removeCallbacks(materialSettle)"))
+    }
+
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {
         val shadow = SourceContract.read("material/ControlShadowDrawable.kt")
         val draw = shadow.after("override fun draw(canvas: Canvas)").before("private fun siblingShadowOverlaps")
