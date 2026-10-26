@@ -653,7 +653,26 @@ internal class LiquidActivityRenderer(
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
         if (next == materialOpacity[index]) return
         materialOpacity[index] = next
-        for (view in surfaceViews.keys) view.invalidate()
+        invalidateRoles(1 shl index)
+    }
+
+    /** Every role at once ([values] by role ordinal): one pass over the surfaces instead of one per role. */
+    internal fun setMaterialOpacities(values: FloatArray) {
+        if (closed) return
+        var changed = 0
+        for (i in materialOpacity.indices) {
+            val next = MaterialOpacityPolicy.sanitize(values.getOrElse(i) { 1f }, materialOpacity[i])
+            if (next != materialOpacity[i]) { materialOpacity[i] = next; changed = changed or (1 shl i) }
+        }
+        if (changed != 0) invalidateRoles(changed)
+    }
+
+    /** Redraws only the surfaces of the changed roles (a footprint without a role is redrawn to be safe). */
+    private fun invalidateRoles(roles: Int) {
+        for ((view, footprint) in surfaceViews) {
+            val role = footprint.role
+            if (role == null || (roles shr role.ordinal) and 1 != 0) view.invalidate()
+        }
     }
 
     internal fun materialOpacityOf(role: SurfaceRole): Float = materialOpacity[role.ordinal]
@@ -1407,7 +1426,8 @@ internal class LiquidActivityRenderer(
         bounds: Rect,
         radiusPx: Float,
         originX: Int,
-        originY: Int
+        originY: Int,
+        role: SurfaceRole? = null
     ) {
         if (closed) return
         registerRefreshWindow(view.rootView)
@@ -1415,6 +1435,7 @@ internal class LiquidActivityRenderer(
         val footprint = existing ?: LiquidSurfaceFootprint().also {
             surfaceViews[view] = it
         }
+        if (role != null) footprint.role = role
         // 形变表面（二级页容器展开/收回、预测式返回）：View 本身不动，只有内部矩形在变，
         // 滚动那条"原点变了就抑制"的判定抓不到。形变期继续折射实时截图，截图里的反馈抑制
         // 遮罩还是之前某一帧的轮廓，玻璃里就会留下一道旧轮廓的圆角缝，上下两块折射的是

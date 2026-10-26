@@ -90,6 +90,8 @@ internal class FrostedMaterialRenderer(
     private class SurfaceTransform {
         val target = FloatArray(9)
         val source = FloatArray(9)
+        /** Role of the surface drawn on this View; a material-opacity change redraws only its role. */
+        var role: SurfaceRole? = null
     }
     private val surfaces = WeakHashMap<View, SurfaceTransform>()
     /** Material opacity per role (MATERIAL_OPACITY.md §4.1); each surface multiplies it with its own value. */
@@ -196,8 +198,26 @@ internal class FrostedMaterialRenderer(
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
         if (next == materialOpacity[index]) return
         materialOpacity[index] = next
+        materialChanged(1 shl index)
+    }
+
+    /** Every role at once ([values] by role ordinal): one pass over the surfaces instead of one per role. */
+    internal fun setMaterialOpacities(values: FloatArray) {
+        if (closed) return
+        var changed = 0
+        for (i in materialOpacity.indices) {
+            val next = MaterialOpacityPolicy.sanitize(values.getOrElse(i) { 1f }, materialOpacity[i])
+            if (next != materialOpacity[i]) { materialOpacity[i] = next; changed = changed or (1 shl i) }
+        }
+        if (changed != 0) materialChanged(changed)
+    }
+
+    private fun materialChanged(roles: Int) {
         onMaterialChanged()
-        for (view in surfaces.keys) view.invalidate()
+        for ((view, transform) in surfaces) {
+            val role = transform.role
+            if (role == null || (roles shr role.ordinal) and 1 != 0) view.invalidate()
+        }
     }
 
     internal fun materialOpacityOf(role: SurfaceRole): Float = materialOpacity[role.ordinal]
@@ -460,9 +480,10 @@ internal class FrostedMaterialRenderer(
         }.isSuccess
     }
 
-    internal fun register(view: View) {
+    internal fun register(view: View, role: SurfaceRole? = null) {
         if (!lifecycle.canWork) return
         val position = surfaces[view] ?: SurfaceTransform().also { surfaces[view] = it }
+        if (role != null) position.role = role
         // 与批量比对使用相同的自上而下乘法次序，避免浮点结合顺序差异把静止表面误判为移动。
         samplingMatrices.withAncestorMemo {
             if (!samplingMatrices.localToScreen(view, position.target)) position.target.fill(Float.NaN)
@@ -729,7 +750,7 @@ private class ModernSurfaceDrawable(
         // register 记录的是"上一次**硬件**绘制时"的位置，供位移通知判断要不要重录显示列表。
         // 透镜采集的离屏软件回放不能写它：既是每表面 60–90µs 的重复矩阵计算，又会用当前位置
         // 覆盖掉显示列表真正录制时的位置——滚动通知在 pre-draw 之后才发，比对就会误判"没动"。
-        if (view != null && canvas.isHardwareAccelerated) renderer?.register(view)
+        if (view != null && canvas.isHardwareAccelerated) renderer?.register(view, role)
         val tintAlpha = if (tintOnly) style.tintAlpha
             else (255 + (style.tintAlpha - 255) * (renderer?.revealFraction ?: 0f)).toInt()
         val material = materialState.frame(if (role != null) renderer?.materialOpacityOf(role) ?: 1f else 1f)

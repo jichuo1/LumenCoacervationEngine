@@ -170,6 +170,14 @@ internal class ActivitySkinSession private constructor(
         for (i in engines.indices) engines[i].setMaterialOpacity(role, value)
     }
 
+    /** Every role at once (by role ordinal): each built-in engine redraws its surfaces in a single pass. */
+    @MainThread
+    fun setMaterialOpacities(values: FloatArray) {
+        if (isClosed) return
+        liquidRenderer?.setMaterialOpacities(values)
+        materialRenderer.setMaterialOpacities(values)
+    }
+
     @MainThread
     fun notifyPositionChanged(changedView: View) {
         if (!isClosed) activeEngine.notifyPositionChanged(changedView)

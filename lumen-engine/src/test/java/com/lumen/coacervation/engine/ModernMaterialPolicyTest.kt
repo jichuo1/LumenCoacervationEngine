@@ -88,7 +88,7 @@ class ModernMaterialPolicyTest {
         assertTrue(onPosition != "MISSING")
         assertTrue("显式动画与滚动都只是把透镜设脏", onPosition.contains("live.invalidate()"))
         assertTrue("透镜采集的离屏软件回放不得覆盖'上次硬件绘制位置'（滚动通知在 pre-draw 之后才发）",
-            renderer.contains("if (view != null && canvas.isHardwareAccelerated) renderer?.register(view)"))
+            renderer.contains("if (view != null && canvas.isHardwareAccelerated) renderer?.register(view, role)"))
     }
 
     /**

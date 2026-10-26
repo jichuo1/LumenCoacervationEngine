@@ -40,6 +40,8 @@ internal class LiquidSurfaceFootprint {
     var right = 0
     var bottom = 0
     var radiusPx = 0f
+    /** Role of the surface drawn here; a material-opacity change redraws only its role. */
+    var role: SurfaceRole? = null
 
     /**
      * 上一次录制 display list 时该表面在屏幕上的位置。
@@ -162,7 +164,7 @@ internal class LiquidSurfaceDrawable(
             // 刷新判定靠它比对：可读性探针（GlowContentProbe）、截图等软件画布若也登记，会把
             // 位置刷成新值却没有重录，滚动后该表面不再被失效、玻璃里的背景停在旧位置。
             if (canvas.isHardwareAccelerated) {
-                renderer.registerSurfaceView(view, drawBounds, drawRadiusPx, location[0], location[1])
+                renderer.registerSurfaceView(view, drawBounds, drawRadiusPx, location[0], location[1], role)
             }
         }
         renderer.drawSurface(

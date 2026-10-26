@@ -112,7 +112,12 @@ public class LumenActivityDelegate @JvmOverloads constructor(
 
     /** 对全部角色设置同一个材质浓度，见 [setMaterialOpacity]。 */
     public fun setMaterialOpacity(value: Float) {
-        for (role in SurfaceRole.entries) setMaterialOpacity(role, value)
+        if (lifecycleEnded || value.isNaN()) return
+        val next = value.coerceIn(0f, 1f)
+        var changed = false
+        for (i in materialOpacities.indices) if (materialOpacities[i] != next) { materialOpacities[i] = next; changed = true }
+        // One pass over the surfaces for all roles, instead of one per role.
+        if (changed) session?.setMaterialOpacities(materialOpacities)
     }
 
     /** 最近一次为 [role] 请求的材质浓度。 */

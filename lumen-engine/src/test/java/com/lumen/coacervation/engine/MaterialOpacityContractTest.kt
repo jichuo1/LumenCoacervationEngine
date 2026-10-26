@@ -87,7 +87,9 @@ class MaterialOpacityContractTest {
         for (path in listOf("liquid/LiquidActivityRenderer.kt", "material/FrostedMaterialRenderer.kt")) {
             val source = SourceContract.read(path)
             assertCheap(path, source.after("override fun setMaterialOpacity(role: SurfaceRole, value: Float)")
-                .before("for (view in "))
+                .before("1 shl index)"))
+            // Only the changed role's surfaces are redrawn.
+            assertTrue(path, source.contains("if (role == null || (roles shr role.ordinal) and 1 != 0) view.invalidate()"))
         }
     }
 
