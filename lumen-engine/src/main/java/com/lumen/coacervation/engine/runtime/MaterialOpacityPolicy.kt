@@ -2,6 +2,7 @@ package com.lumen.coacervation.engine.runtime
 
 import kotlin.math.exp
 import kotlin.math.pow
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** Material families that share one opacity mapping (MATERIAL_OPACITY.md §4). */
@@ -35,6 +36,13 @@ internal class MaterialOpacityFrame {
     var elevation = 1f
     /** Mica only: weight of the static wallpaper image over the opaque base. */
     var image = 1f
+    /** Fraction of the configured blur radius, for paths that can change the radius itself (MATERIAL_OPACITY.md §13). */
+    var blurRadius = 1f
+    /**
+     * Backdrop weight for those radius paths: the radius carries the change, so the sample stays opaque and only
+     * fades out over the last tenth, where it already equals the content beneath (and sampling can stop at zero).
+     */
+    var radiusBackdrop = 1f
 
     val isDefault: Boolean get() = effective >= 1f
 
@@ -42,7 +50,7 @@ internal class MaterialOpacityFrame {
         requested = 1f; effective = 1f
         fill = 1f; luminosity = 1f; backdrop = 1f; noise = 1f; scatterStrength = 1f; scatterRadius = 1f
         refraction = 1f; specular = 1f; chromatic = 1f; saturation = 1f; highlight = 1f; innerShadow = 1f
-        shadow = 1f; edge = 1f; elevation = 1f; image = 1f
+        shadow = 1f; edge = 1f; elevation = 1f; image = 1f; blurRadius = 1f; radiusBackdrop = 1f
     }
 }
 
@@ -54,6 +62,23 @@ internal object MaterialOpacityPolicy {
     const val FLUENT_BLUR_GATE = 0.35f
     /** Below this effective backdrop weight a surface needs no backdrop sample at all. */
     const val SAMPLING_EPSILON = 1f / 255f
+    /** Blur radius levels above zero; a GPU glass caches at most `BLUR_LEVELS + 1` effect chains. */
+    const val BLUR_LEVELS = 16
+    /** Radius paths fade the (already almost sharp) sample out below this opacity. */
+    const val RADIUS_FADE_END = 0.1f
+
+    /** Level for a radius fraction, quantised in square-root space: small radii, where steps show, get finer steps. */
+    fun blurLevel(fraction: Float): Int {
+        if (!(fraction > 0f)) return 0
+        if (fraction >= 1f) return BLUR_LEVELS
+        return (sqrt(fraction) * BLUR_LEVELS).roundToInt().coerceIn(0, BLUR_LEVELS)
+    }
+
+    /** Radius fraction of [level]; [BLUR_LEVELS] is exactly the configured radius. */
+    fun levelFraction(level: Int): Float {
+        val t = level.coerceIn(0, BLUR_LEVELS).toFloat() / BLUR_LEVELS
+        return t * t
+    }
 
     fun linear(p: Float): Float = p
     fun pow(p: Float, gamma: Float): Float = if (p <= 0f) 0f else if (p >= 1f) 1f else p.pow(gamma)
@@ -125,6 +150,8 @@ internal object MaterialOpacityPolicy {
                 // The edge never thins below the frost or the haze: it leaves last.
                 out.edge = 0.4f + 0.6f * out.backdrop
                 out.shadow = pow(v, 1.5f)
+                out.blurRadius = pow(v, 0.7f)
+                out.radiusBackdrop = gate(v, 0f, RADIUS_FADE_END)
             }
             MaterialKind.LIQUID -> {
                 out.fill = v
@@ -137,6 +164,8 @@ internal object MaterialOpacityPolicy {
                 out.edge = 0.6f + 0.4f * out.backdrop
                 out.highlight = out.edge
                 out.shadow = pow(v, 1.5f)
+                out.blurRadius = v * v
+                out.radiusBackdrop = gate(v, 0f, RADIUS_FADE_END)
             }
             MaterialKind.FLUENT -> {
                 out.luminosity = v
@@ -145,6 +174,8 @@ internal object MaterialOpacityPolicy {
                 out.noise = sqrt(v)
                 out.elevation = floorMix(v, 0.5f)
                 out.shadow = out.elevation
+                out.blurRadius = out.backdrop
+                out.radiusBackdrop = gate(v, 0f, RADIUS_FADE_END)
             }
             MaterialKind.MICA -> out.image = v
             MaterialKind.PRISM -> {
@@ -156,6 +187,8 @@ internal object MaterialOpacityPolicy {
                 out.edge = out.highlight
                 out.innerShadow = v
                 out.shadow = pow(v, 1.5f)
+                out.blurRadius = v
+                out.radiusBackdrop = gate(v, 0f, RADIUS_FADE_END)
             }
             MaterialKind.PLAIN -> {
                 out.fill = v

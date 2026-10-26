@@ -7,12 +7,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.math.pow
 
 class MaterialOpacityPolicyTest {
 
     private fun channels(f: MaterialOpacityFrame) = floatArrayOf(
         f.fill, f.luminosity, f.backdrop, f.noise, f.scatterStrength, f.scatterRadius, f.refraction, f.specular,
-        f.chromatic, f.saturation, f.highlight, f.innerShadow, f.shadow, f.edge, f.elevation, f.image)
+        f.chromatic, f.saturation, f.highlight, f.innerShadow, f.shadow, f.edge, f.elevation, f.image,
+        f.blurRadius, f.radiusBackdrop)
 
     private fun frame(kind: MaterialKind, p: Float) = MaterialOpacityFrame().also { MaterialOpacityPolicy.frame(kind, p, it) }
 
@@ -135,6 +137,38 @@ class MaterialOpacityPolicyTest {
         assertEquals(MaterialOpacityPolicy.staticFloor(MaterialKind.FROSTED), state.frame(0.1f)!!.effective, 1e-6f)
         assertFalse(state.set(Float.NaN, carriesText = true))
         assertEquals(0.5f, state.own, 0f)
+    }
+
+    @Test fun blurLevelsAreQuantisedInSquareRootSpace() {
+        assertEquals(0, MaterialOpacityPolicy.blurLevel(0f))
+        assertEquals(0, MaterialOpacityPolicy.blurLevel(Float.NaN))
+        assertEquals(MaterialOpacityPolicy.BLUR_LEVELS, MaterialOpacityPolicy.blurLevel(1f))
+        assertEquals(1f, MaterialOpacityPolicy.levelFraction(MaterialOpacityPolicy.BLUR_LEVELS), 0f)
+        assertEquals(0f, MaterialOpacityPolicy.levelFraction(0), 0f)
+        // Monotone, and every level maps back to itself.
+        var previous = 0
+        for (i in 0..1000) {
+            val level = MaterialOpacityPolicy.blurLevel(i / 1000f)
+            assertTrue(level >= previous); previous = level
+        }
+        for (level in 0..MaterialOpacityPolicy.BLUR_LEVELS)
+            assertEquals(level, MaterialOpacityPolicy.blurLevel(MaterialOpacityPolicy.levelFraction(level)))
+        // Finer near zero: the first step is under 1% of the radius, the last about 12%.
+        assertTrue(MaterialOpacityPolicy.levelFraction(1) < 0.01f)
+        assertTrue(1f - MaterialOpacityPolicy.levelFraction(MaterialOpacityPolicy.BLUR_LEVELS - 1) < 0.13f)
+    }
+
+    @Test fun radiusPathsFollowTheMockupRadii() {
+        // Mockup radii: frosted 16·p^0.7, liquid 12·p², fluent 24·smoothstep(p / 0.35), prism 5·p.
+        assertEquals(0.5f.pow(0.7f), frame(MaterialKind.FROSTED, 0.5f).blurRadius, 1e-6f)
+        assertEquals(0.25f, frame(MaterialKind.LIQUID, 0.5f).blurRadius, 1e-6f)
+        assertEquals(1f, frame(MaterialKind.FLUENT, 0.5f).blurRadius, 0f)
+        assertEquals(0.5f, frame(MaterialKind.PRISM, 0.5f).blurRadius, 1e-6f)
+        for (kind in listOf(MaterialKind.FROSTED, MaterialKind.LIQUID, MaterialKind.FLUENT, MaterialKind.PRISM)) {
+            assertEquals(1f, frame(kind, MaterialOpacityPolicy.RADIUS_FADE_END).radiusBackdrop, 0f)
+            assertEquals(0f, frame(kind, 0f).radiusBackdrop, 0f)
+        }
+        assertEquals(1f, frame(MaterialKind.MICA, 0f).blurRadius, 0f)
     }
 
     @Test fun hazeCurveKeepsVisibleFogAtLowDensity() {
