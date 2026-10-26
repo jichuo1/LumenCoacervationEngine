@@ -126,6 +126,8 @@ internal class LiveBackdropSampler(
         /** Material opacity: fraction of the blur radius requested, and the one the published texture carries. */
         var blurScale = 1f
         var publishedBlurScale = 1f
+        /** Only the blur scale changed: re-blur the published input replay instead of recording the content again. */
+        var reblurPending = false
 
         fun publishedWith(scale: Int, margin: Int, radius: Int, weakRadius: Int, strongRadius: Int): Boolean =
             hasPublishedInput && publishedScale == scale && publishedMargin == margin && publishedRadius == radius &&
@@ -258,7 +260,9 @@ internal class LiveBackdropSampler(
         val raw: LumenRawSampleProfile?,
         val weakPixels: IntArray?,val strongPixels: IntArray?,
         val weakRadius: Int,val strongRadius: Int,
-        val sourceEpoch: Long,val contentVersion: Long,val started: Long
+        val sourceEpoch: Long,val contentVersion: Long,val started: Long,
+        /** Published input replay to re-blur (blur-scale change only); null = replay [picture] as usual. */
+        val reuse: Bitmap? = null
     ) {
         private val target = WeakReference(view)
         val view: LumenSurfaceTarget? get() = target.get()
@@ -406,9 +410,62 @@ internal class LiveBackdropSampler(
         val next = if (scale.isNaN()) 1f else scale.coerceIn(0f, 1f)
         if (next == entry.blurScale) return
         entry.blurScale = next
+        if (canReblur(entry)) {
+            // The content has not changed: re-blur the published input off the main thread (no recording).
+            entry.reblurPending = true
+            scheduleReblur()
+            return
+        }
+        // No published input to reuse: this surface alone resamples (other surfaces stay as they are).
         entry.cadence.invalidate()
-        dirty = true
         scheduleTrailingSample(0L)
+    }
+
+    private var reblurPosted = false
+    private var reusePicture: Picture? = null
+    private val reblur = Runnable {
+        reblurPosted = false
+        if (!isActive || inFlight) return@Runnable
+        var jobs: ArrayList<LensJob>? = null
+        entries.beginTraversal()
+        try {
+            val iterator = entries.entries.iterator()
+            while (iterator.hasNext()) {
+                val (key, entry) = iterator.next()
+                if (!entry.reblurPending) continue
+                entry.reblurPending = false
+                val view = entries.target(key) ?: continue
+                val reference = entry.reference
+                if (!view.isAttachedToWindow || reference == null || !canReblur(entry)) {
+                    entry.cadence.invalidate(); continue
+                }
+                val picture = reusePicture ?: Picture().also { reusePicture = it }
+                (jobs ?: ArrayList<LensJob>(2).also { jobs = it }) += job(view, entry, picture, replay = null,
+                    started = System.nanoTime(), reuse = reference)
+            }
+        } finally { entries.endTraversal() }
+        val batch = jobs
+        if (batch == null) { schedulePendingSample(System.nanoTime()); return@Runnable }
+        inFlight = true
+        val token = batchToken
+        val measure = counters?.timingEnabled == true
+        worker.execute {
+            val ok = runCatching { batch.forEach { process(it, measure) } }.isSuccess
+            mainHandler.post { onBatchDone(token, batch, ok) }
+        }
+    }
+
+    /** The published input replay matches the current sampling geometry, so it can be re-blurred as is. */
+    private fun canReblur(entry: Entry): Boolean {
+        val reference = entry.reference ?: return false
+        return entry.valid && entry.hasPublishedInput && entry.publishedScale == entry.scale &&
+            entry.publishedMargin == entry.margin && reference.width == entry.sampleWidth && reference.height == entry.sampleHeight
+    }
+
+    private fun scheduleReblur() {
+        if (reblurPosted) return
+        reblurPosted = true
+        mainHandler.post(reblur)
     }
 
     fun publishedBlurScale(view: View): Float = viewTargets[view]?.let(::publishedBlurScale) ?: 1f
@@ -693,7 +750,8 @@ internal class LiveBackdropSampler(
         return jobs
     }
 
-    private fun job(view: LumenSurfaceTarget, entry: Entry, picture: Picture, replay: Matrix?,started: Long): LensJob {
+    private fun job(view: LumenSurfaceTarget, entry: Entry, picture: Picture, replay: Matrix?,started: Long,
+        reuse: Bitmap? = null): LensJob {
         val scaleBlur = entry.blurScale
         val blurRadius = entry.profile?.let {
             val radius = if (it.blurEnabled) (it.softwareBlurRadiusDp ?: it.blurRadiusDp) * density / entry.scale * scaleBlur else 0f
@@ -704,7 +762,7 @@ internal class LiveBackdropSampler(
             }
         val weakRadius = ((entry.raw?.weakBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32)
         val strongRadius = ((entry.raw?.strongBlurDp?:0f)*density/entry.scale).toInt().coerceIn(0,32)
-        val reference = entry.reference?.takeIf {
+        val reference = if (reuse != null) null else entry.reference?.takeIf {
             entry.valid && entry.publishedWith(entry.scale, entry.margin, blurRadius, weakRadius, strongRadius)
         }
         return LensJob(
@@ -732,7 +790,8 @@ internal class LiveBackdropSampler(
             raw=entry.raw,weakPixels=entry.weakPixels,strongPixels=entry.strongPixels,
             weakRadius=weakRadius,
             strongRadius=strongRadius,
-            sourceEpoch=events?.sourceEpoch?:0L,contentVersion=events?.contentVersion?:0L,started=started
+            sourceEpoch=events?.sourceEpoch?:0L,contentVersion=events?.contentVersion?:0L,started=started,
+            reuse = reuse
         )
     }
 
@@ -768,13 +827,15 @@ internal class LiveBackdropSampler(
             job.strongPixels?.let {entry.strongTexture?.setPixels(it,0,tw,0,0,tw,th)}
             entry.valid = true
             entry.publishedBlurScale = job.blurScale
-            rememberPublishedInput(entry, job)
+            // A re-blur keeps the same published input; only its radius changed.
+            if (job.reuse != null) entry.publishedRadius = job.blurRadius else rememberPublishedInput(entry, job)
             target.invalidate()
             if (!dirty && isInside(job.view, source)) ignoreSelfInflictedDirty = true
         }
         // 批次在飞期间又有位移：上面的 invalidate 通常已经拉起下一趟 pre-draw；这里兜底，
         // 保证即使本批结果全被丢弃，停下来的那一帧也一定会被补采。
         schedulePendingSample(System.nanoTime())
+        if (entries.values.any { it.reblurPending }) scheduleReblur()
     }
 
     /** 刚发布的这次回放成为下一批的比对基准：两块采样位图交换，下一批回放写进另一块。 */
@@ -913,20 +974,26 @@ internal class LiveBackdropSampler(
         @WorkerThread
         fun process(job: LensJob) {
             if(Thread.currentThread().isInterrupted)throw InterruptedException("Sampler closed")
-            job.sample.eraseColor(0)
-            val replay = job.replay
-            if (replay == null) {
-                job.sampleCanvas.drawPicture(job.picture)
+            val reuse = job.reuse
+            if (reuse != null) {
+                // Blur-scale change: the published input replay is still current (single flight keeps it unchanged).
+                reuse.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)
             } else {
-                job.sampleCanvas.withMatrix(replay) { drawPicture(job.picture) }
+                job.sample.eraseColor(0)
+                val replay = job.replay
+                if (replay == null) {
+                    job.sampleCanvas.drawPicture(job.picture)
+                } else {
+                    job.sampleCanvas.withMatrix(replay) { drawPicture(job.picture) }
+                }
+                // 原生逐字节比较（292×62 约 1.4µs）；相同则输出必然与已发布纹理相同。
+                val reference = job.reference
+                if (reference != null && job.sample.sameAs(reference)) {
+                    job.unchanged = true
+                    return
+                }
+                job.sample.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)
             }
-            // 原生逐字节比较（292×62 约 1.4µs）；相同则输出必然与已发布纹理相同。
-            val reference = job.reference
-            if (reference != null && job.sample.sameAs(reference)) {
-                job.unchanged = true
-                return
-            }
-            job.sample.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)
             if(job.raw!=null){
                 job.pixels.copyInto(job.out)
                 fun filter(radius: Int,destination: IntArray?) {

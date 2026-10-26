@@ -157,6 +157,22 @@ class MaterialOpacityContractTest {
         assertFalse(drawWarm.contains("variantEffects"))
     }
 
+    @Test fun aBlurScaleChangeReblursThePublishedInputWithoutRecording() {
+        val sampler = SourceContract.read("material/LiveBackdropSampler.kt")
+        val reblur = sampler.after("private val reblur = Runnable {").before("private fun canReblur(")
+        // No content recording on the main thread: the job carries the published input replay.
+        assertFalse(reblur.contains("capture("))
+        assertFalse(reblur.contains("beginRecording"))
+        assertTrue(reblur.contains("reuse = reference"))
+        assertTrue(reblur.contains("if (!isActive || inFlight) return@Runnable"))
+        val process = sampler.after("fun process(job: LensJob) {").before("LensRefractionPolicy.premultiply(job.pixels)")
+        assertTrue(process.contains("reuse.getPixels(job.pixels, 0, job.sampleWidth, 0, 0, job.sampleWidth, job.sampleHeight)"))
+        // The re-blurred texture keeps the same published input as the memo reference.
+        assertTrue(sampler.contains("if (job.reuse != null) entry.publishedRadius = job.blurRadius else rememberPublishedInput(entry, job)"))
+        val canReblur = sampler.after("private fun canReblur(entry: Entry): Boolean").before("private fun scheduleReblur()")
+        assertTrue(canReblur.contains("entry.publishedScale == entry.scale"))
+    }
+
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {
         val shadow = SourceContract.read("material/ControlShadowDrawable.kt")
         val draw = shadow.after("override fun draw(canvas: Canvas)").before("private fun siblingShadowOverlaps")
