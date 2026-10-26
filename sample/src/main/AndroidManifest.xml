@@ -27,6 +27,7 @@
         <activity android:name=".MicaSandboxActivity" android:exported="false" />
         <activity android:name=".PrismSandboxActivity" android:exported="false" />
         <activity android:name=".SliderSandboxActivity" android:exported="false" />
+        <activity android:name=".MaterialOpacitySandboxActivity" android:exported="false" />
         <activity
             android:name=".DetailActivity"
             android:exported="false"

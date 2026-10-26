@@ -24,6 +24,8 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.touch.GlowConfig
+import com.lumen.coacervation.engine.host.LumenMaterialOpacity
+import com.lumen.coacervation.engine.host.LumenMaterialOpacityTarget
 import com.lumen.coacervation.engine.touch.GlowFrame
 import com.lumen.coacervation.engine.touch.GlowState
 import com.lumen.coacervation.engine.touch.TouchGlowRenderer
@@ -46,7 +48,7 @@ private const val SCRUB_GLOW_BASE_ALPHA = 72
  * 打 `ElasticInteractionController.EXCLUDED_TAG`,
  * 避免与全局长按弹性手势冲突(底栏 dock 同款处理)。
  */
-class LumenSegmentScrubBar(context: Context, attrs: AttributeSet?) : FrameLayout(context, attrs) {
+class LumenSegmentScrubBar(context: Context, attrs: AttributeSet?) : FrameLayout(context, attrs), LumenMaterialOpacityTarget {
     private var count = 0
     private val density = resources.displayMetrics.density
     private fun dp(value: Float) = value * density
@@ -90,6 +92,7 @@ class LumenSegmentScrubBar(context: Context, attrs: AttributeSet?) : FrameLayout
     private var pressGeneration = 0L
     private var reboundGeneration = 0L
     private var indicatorSettling = false
+    private var materialOpacity = 1f
     private val rtl: Boolean get() = layoutDirection == LAYOUT_DIRECTION_RTL
     private val slotWidth: Float get() = if (count > 0) width.toFloat() / count else 0f
 
@@ -98,6 +101,22 @@ class LumenSegmentScrubBar(context: Context, attrs: AttributeSet?) : FrameLayout
         clipToPadding = false
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
+
+    /**
+     * 材质浓度（MATERIAL_OPACITY.md §4.7）：只作用于轨道背景（引擎背景按其材质映射，宿主自己的 Drawable 不变）；
+     * 滑块与文字是状态与内容，保持不变。逐帧可调。
+     */
+    override fun setMaterialOpacity(value: Float) {
+        if (value.isNaN()) return
+        val next = value.coerceIn(0f, 1f)
+        if (next == materialOpacity) return
+        materialOpacity = next
+        LumenMaterialOpacity.set(background, next)
+    }
+
+    override fun materialOpacity(): Float = materialOpacity
+
+    override fun effectiveMaterialOpacity(): Float = materialOpacity
 
     /**
      * 注入标签文案、配色、滑块/轨道背景与提交回调。须在加入布局前调用一次;
@@ -124,6 +143,7 @@ class LumenSegmentScrubBar(context: Context, attrs: AttributeSet?) : FrameLayout
         }
         glow.updateColors(colors)
         background = trackBackground
+        if (materialOpacity < 1f) LumenMaterialOpacity.set(trackBackground, materialOpacity)
         thumb.background = thumbBackground
         thumb.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
         removeAllViews()

@@ -1,5 +1,6 @@
 package com.lumen.coacervation.engine.host
 
+import android.graphics.drawable.Drawable
 import androidx.annotation.MainThread
 import com.lumen.coacervation.engine.model.SurfaceRole
 
@@ -18,6 +19,35 @@ public interface LumenMaterialOpacityTarget {
 
     /** 可读性下限与“降低透明度”生效后实际使用的浓度。 */
     @MainThread public fun effectiveMaterialOpacity(): Float
+}
+
+/**
+ * 单个引擎背景的材质浓度：委托的 `surface` 一族、`floatingBackground` / `modalBackground` 等返回的 Drawable，
+ * 以及 [LumenControlShadow.wrap] / [LumenControlShadow.shadowOnly] 的结果。与该表面角色的浓度
+ * （[LumenActivityDelegate.setMaterialOpacity]）相乘生效。
+ *
+ * 宿主自己的 Drawable 不归引擎管：传入时返回 false，不做任何修改。全部主线程调用。
+ */
+@MainThread
+public object LumenMaterialOpacity {
+    /** 设置 [drawable] 自己的材质浓度；不是引擎背景时返回 false。超出 0..1 截断，NaN 忽略。 */
+    @JvmStatic
+    @JvmOverloads
+    public fun set(drawable: Drawable?, value: Float, legibility: LumenMaterialLegibility = LumenMaterialLegibility.AUTO): Boolean {
+        val target = drawable as? MaterialOpacityDrawable ?: return false
+        target.setMaterialOpacity(value, legibility)
+        return true
+    }
+
+    /** [drawable] 自己的材质浓度；不是引擎背景时返回 1。 */
+    @JvmStatic
+    public fun get(drawable: Drawable?): Float = (drawable as? MaterialOpacityDrawable)?.materialOpacity() ?: 1f
+}
+
+/** Engine Drawables whose material opacity can be set one by one (internal; reached through [LumenMaterialOpacity]). */
+internal interface MaterialOpacityDrawable {
+    fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility)
+    fun materialOpacity(): Float
 }
 
 /** 表面是否承载文字，决定低浓度时是否启用可读性下限（MATERIAL_OPACITY.md §6）。 */

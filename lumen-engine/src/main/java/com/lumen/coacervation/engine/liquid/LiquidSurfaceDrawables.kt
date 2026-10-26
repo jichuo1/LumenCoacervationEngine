@@ -13,6 +13,10 @@ import android.view.View
 import android.view.WindowManager
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.host.LumenBackdropReadiness
+import com.lumen.coacervation.engine.host.LumenMaterialLegibility
+import com.lumen.coacervation.engine.host.MaterialOpacityDrawable
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityState
 import kotlin.math.ceil
 import kotlin.math.floor
 
@@ -104,7 +108,16 @@ internal class LiquidSurfaceDrawable(
     private val fallbackColor: Int,
     private val radiusPx: Float,
     private val role: SurfaceRole
-) : Drawable() {
+) : Drawable(), MaterialOpacityDrawable {
+    private val materialState = MaterialOpacityState(MaterialKind.LIQUID).apply {
+        set(1f, LumenMaterialLegibility.AUTO.carriesText(role))
+    }
+
+    override fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
+        if (materialState.set(value, legibility.carriesText(role))) invalidateSelf()
+    }
+
+    override fun materialOpacity(): Float = materialState.own
     private val location = IntArray(2)
     private val motionBoundsF = RectF()
     private val motionBounds = Rect()
@@ -161,7 +174,8 @@ internal class LiquidSurfaceDrawable(
             drawY,
             drawFallbackColor,
             role,
-            host = view
+            host = view,
+            surfaceMaterial = materialState.frame(renderer.materialOpacityOf(role))
         )
     }
 

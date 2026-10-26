@@ -118,6 +118,25 @@ class MaterialOpacityPolicyTest {
         for (kind in MaterialKind.values()) assertTrue(MaterialOpacityPolicy.needsBackdrop(frame(kind, 1f)))
     }
 
+    @Test fun drawableStateMultipliesWithItsRoleAndResolvesOnlyOnChange() {
+        val state = com.lumen.coacervation.engine.runtime.MaterialOpacityState(MaterialKind.FROSTED)
+        // A legibility change counts as a change; repeating the same values does not.
+        assertTrue(state.set(1f, carriesText = false))
+        assertFalse(state.set(1f, carriesText = false))
+        assertEquals(null, state.frame(1f))
+        assertTrue(state.set(0.5f, carriesText = false))
+        val half = state.frame(1f)!!
+        assertEquals(0.5f, half.effective, 0f)
+        // Same product, same frame object and values: no re-resolve.
+        assertTrue(state.frame(1f) === half)
+        val quarter = state.frame(0.5f)!!
+        assertEquals(0.25f, quarter.effective, 1e-6f)
+        assertTrue(state.set(0.5f, carriesText = true))
+        assertEquals(MaterialOpacityPolicy.staticFloor(MaterialKind.FROSTED), state.frame(0.1f)!!.effective, 1e-6f)
+        assertFalse(state.set(Float.NaN, carriesText = true))
+        assertEquals(0.5f, state.own, 0f)
+    }
+
     @Test fun hazeCurveKeepsVisibleFogAtLowDensity() {
         // Beer–Lambert: a tenth of the density still reads as about a quarter of the fog.
         assertTrue(MaterialOpacityPolicy.haze(0.1f) in 0.2f..0.3f)

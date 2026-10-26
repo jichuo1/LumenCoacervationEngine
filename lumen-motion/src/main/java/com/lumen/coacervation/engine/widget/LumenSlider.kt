@@ -41,6 +41,9 @@ import com.lumen.coacervation.engine.host.LumenFluentElevationOptions
 import com.lumen.coacervation.engine.host.LumenControlShadow
 import com.lumen.coacervation.engine.host.LumenControlShadowOptions
 import com.lumen.coacervation.engine.host.LumenPrismOptions
+import com.lumen.coacervation.engine.host.LumenMaterialLegibility
+import com.lumen.coacervation.engine.host.LumenMaterialOpacity
+import com.lumen.coacervation.engine.host.LumenMaterialOpacityTarget
 import com.lumen.coacervation.engine.interaction.ElasticSpringAxis
 import com.lumen.coacervation.engine.liquid.LiquidChoiceDrawable
 import com.lumen.coacervation.engine.model.LumenPalette
@@ -64,7 +67,7 @@ import com.lumen.coacervation.engine.widget.LumenSliderPolicy as Policy
 public class LumenSlider @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null
-) : FrameLayout(context, attrs) {
+) : FrameLayout(context, attrs), LumenMaterialOpacityTarget {
     private val density = resources.displayMetrics.density
     private fun dp(value: Float) = value * density
     private val slop = ViewConfiguration.get(context).scaledTouchSlop.toFloat()
@@ -76,6 +79,7 @@ public class LumenSlider @JvmOverloads constructor(
 
     private var configured = false
     private var disposed = false
+    private var materialOpacity = 1f
     private var range = LumenSliderRange()
     private var palette: LumenPalette = LumenPalette.neutral(false)
     private var appearance: LumenSliderAppearance = LumenSliderAppearance.Plain
@@ -228,6 +232,7 @@ public class LumenSlider @JvmOverloads constructor(
         innerFrom = innerTargetScale(); innerTo = innerFrom; innerValue = innerFrom; innerDuration = 0L
         computeThumbSize()
         installMaterials()
+        applyMaterialOpacity()
         refreshValueText()
         requestLayout()
         invalidateAll()
@@ -243,7 +248,36 @@ public class LumenSlider @JvmOverloads constructor(
         installGroove()
         installThumbBackground()
         resolveColors()
+        applyMaterialOpacity()
         invalidateAll()
+    }
+
+    /**
+     * 材质浓度（MATERIAL_OPACITY.md §4.7）：槽体与滑钮的材质随之变薄，数值填充、刻度、把手与 HDR 高光不变
+     * （它们是内容而不是材质）。空槽保留下限，始终看得出可拖动的范围。逐帧可调，不重建材质。
+     */
+    override fun setMaterialOpacity(value: Float) {
+        if (disposed || value.isNaN()) return
+        val next = value.coerceIn(0f, 1f)
+        if (next == materialOpacity) return
+        materialOpacity = next
+        applyMaterialOpacity()
+    }
+
+    override fun materialOpacity(): Float = materialOpacity
+
+    override fun effectiveMaterialOpacity(): Float = materialOpacity
+
+    private fun applyMaterialOpacity() {
+        if (disposed) return
+        val p = materialOpacity
+        val track = groove.background
+        // Engine grooves map the opacity per material; plain grooves keep a visible floor as the track affordance.
+        if (!LumenMaterialOpacity.set(track, p, LumenMaterialLegibility.DECORATIVE))
+            track?.alpha = (255f * (TRACK_FLOOR + (1f - TRACK_FLOOR) * p)).toInt().coerceIn(0, 255)
+        fluent?.setMaterialOpacity(p)
+        LumenMaterialOpacity.set(thumb.background, p, LumenMaterialLegibility.DECORATIVE)
+        thumb.invalidate()
     }
 
     /** 程序设置值（吸附、钳制）；不回调值监听。 */
@@ -1309,7 +1343,7 @@ public class LumenSlider @JvmOverloads constructor(
                 canvas.withClip(lensPath) {
                     // 镜片中心对准轨道上的滑钮位置；滑钮自身的缩放就是放大倍数。
                     withTranslation(dx, dy) { trackLayer.drawLens(this) }
-                    tintPaint.alpha = tintAlpha * lens / 255
+                    tintPaint.alpha = (tintAlpha * lens / 255 * materialOpacity).toInt()
                     drawRect(rect, tintPaint)
                     if (innerPaint.shader != null) { innerPaint.alpha = lens; drawRect(rect, innerPaint) }
                     if (glowPaint.shader != null) { glowPaint.alpha = lens; drawRect(rect, glowPaint) }
@@ -1336,6 +1370,8 @@ public class LumenSlider @JvmOverloads constructor(
         const val PRISM_CONTACT_OPACITY = .04f
         const val WHITE = 0xFFFFFFFF.toInt()
         const val DISABLED_ALPHA = .38f
+        /** Empty-track alpha at zero material opacity: the drag range stays discoverable. */
+        const val TRACK_FLOOR = .35f
         const val SKIN_THUMB_PRESS = .12f
         const val DEFAULT_DT = 1f / 60f
         const val MAX_DT = .05f

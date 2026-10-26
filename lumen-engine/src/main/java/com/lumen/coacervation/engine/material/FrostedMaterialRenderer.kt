@@ -45,8 +45,9 @@ import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.host.LumenMaterialLegibility
 import com.lumen.coacervation.engine.runtime.MaterialKind
-import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
 import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
+import com.lumen.coacervation.engine.runtime.MaterialOpacityState
+import com.lumen.coacervation.engine.host.MaterialOpacityDrawable
 import com.lumen.coacervation.engine.runtime.PreparedBackdropCache
 import com.lumen.coacervation.engine.host.LumenBackdropReadiness
 import java.lang.ref.WeakReference
@@ -91,9 +92,8 @@ internal class FrostedMaterialRenderer(
         val source = FloatArray(9)
     }
     private val surfaces = WeakHashMap<View, SurfaceTransform>()
-    /** Material opacity per role (MATERIAL_OPACITY.md §4.1); frames are read by every surface draw. */
+    /** Material opacity per role (MATERIAL_OPACITY.md §4.1); each surface multiplies it with its own value. */
     private val materialOpacity = FloatArray(SurfaceRole.entries.size) { 1f }
-    private val materialFrames = Array(SurfaceRole.entries.size) { MaterialOpacityFrame() }
     private class RefreshWindow(
         val observer: WeakReference<ViewTreeObserver>,
         val batch: FrostedRefreshBatch,
@@ -196,12 +196,10 @@ internal class FrostedMaterialRenderer(
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
         if (next == materialOpacity[index]) return
         materialOpacity[index] = next
-        MaterialOpacityPolicy.resolve(MaterialKind.FROSTED, next, LumenMaterialLegibility.AUTO.carriesText(role),
-            reduceTransparency = false, out = materialFrames[index])
         for (view in surfaces.keys) view.invalidate()
     }
 
-    internal fun materialFrame(role: SurfaceRole): MaterialOpacityFrame = materialFrames[role.ordinal]
+    internal fun materialOpacityOf(role: SurfaceRole): Float = materialOpacity[role.ordinal]
 
     /** A clear surface stops its live lens: nothing of the sample would be visible. */
     internal fun stopLiveSample(view: View) { live.unregister(view) }
@@ -596,7 +594,17 @@ private class ModernSurfaceDrawable(
     edgeWidthScale: Float = 1f,
     private val tintOnly: Boolean = false,
     private val role: SurfaceRole? = null
-) : Drawable() {
+) : Drawable(), MaterialOpacityDrawable {
+    private val materialState = MaterialOpacityState(MaterialKind.FROSTED).apply {
+        set(1f, LumenMaterialLegibility.AUTO.carriesText(role))
+    }
+
+    override fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
+        if (materialState.set(value, legibility.carriesText(role))) invalidateSelf()
+    }
+
+    override fun materialOpacity(): Float = materialState.own
+
     private val rect = RectF()
     private val edgeRect = RectF()
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -638,7 +646,7 @@ private class ModernSurfaceDrawable(
         if (view != null && canvas.isHardwareAccelerated) renderer?.register(view)
         val tintAlpha = if (tintOnly) style.tintAlpha
             else (255 + (style.tintAlpha - 255) * (renderer?.revealFraction ?: 0f)).toInt()
-        val material = if (role != null) renderer?.materialFrame(role) else null
+        val material = materialState.frame(if (role != null) renderer?.materialOpacityOf(role) ?: 1f else 1f)
         val backdropWeight = material?.backdrop ?: 1f
         val fillWeight = material?.fill ?: 1f
         val tintFull = tintAlpha * frameAlpha / 255

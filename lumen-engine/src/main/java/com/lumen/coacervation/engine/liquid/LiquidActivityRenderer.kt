@@ -49,10 +49,8 @@ import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenEffectTuningPolicy
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.runtime.PreparedBackdropCache
-import com.lumen.coacervation.engine.runtime.MaterialKind
 import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
 import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
-import com.lumen.coacervation.engine.host.LumenMaterialLegibility
 import java.util.WeakHashMap
 import java.lang.ref.WeakReference
 import java.util.concurrent.Executors
@@ -303,9 +301,9 @@ internal class LiquidActivityRenderer(
     /** 节点路径任一次出错即永久停用：退回窗口玻璃，不牵连主后端的降级链。 */
     private var chromeBackdropBroken = false
     private val surfaceViews = WeakHashMap<View, LiquidSurfaceFootprint>()
-    /** Material opacity per role (MATERIAL_OPACITY.md §4.2); frames are read by every surface draw. */
+    /** Material opacity per role (MATERIAL_OPACITY.md §4.2); each surface multiplies it with its own value. */
     private val materialOpacity = FloatArray(SurfaceRole.entries.size) { 1f }
-    private val materialFrames = Array(SurfaceRole.entries.size) { MaterialOpacityFrame() }
+    private val defaultMaterial = MaterialOpacityFrame()
     private val refreshWindows = WeakHashMap<View, LiquidWindowRefresh>()
     private val visibilityMatrix = FloatArray(9)
     private val retiredBackdropSources = LinkedHashSet<LiquidBackdropSource>()
@@ -655,10 +653,10 @@ internal class LiquidActivityRenderer(
         val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
         if (next == materialOpacity[index]) return
         materialOpacity[index] = next
-        MaterialOpacityPolicy.resolve(MaterialKind.LIQUID, next, LumenMaterialLegibility.AUTO.carriesText(role),
-            reduceTransparency = false, out = materialFrames[index])
         for (view in surfaceViews.keys) view.invalidate()
     }
+
+    internal fun materialOpacityOf(role: SurfaceRole): Float = materialOpacity[role.ordinal]
 
     override fun bindRoot(root: View, callbacks: GlowEngineCallbacks): Boolean =
         bindRoot(root, callbacks.onFirstVisibleDraw, callbacks.onFatalFailure)
@@ -870,10 +868,11 @@ internal class LiquidActivityRenderer(
         viewY: Int,
         fallbackColor: Int,
         role: SurfaceRole,
-        host: View? = null
+        host: View? = null,
+        surfaceMaterial: MaterialOpacityFrame? = null
     ) {
         val stretch = stretchWindows.stateFor(host ?: boundRoot)
-        val material = materialFrames[role.ordinal]
+        val material = surfaceMaterial ?: defaultMaterial
         val stretchOpticalIntensity = stretch?.opticalIntensity ?: 1f
         val stretchEdgeDirY = stretch?.edgeDirection ?: 0f
         val effectiveRadiusPx = radiusPx.coerceIn(

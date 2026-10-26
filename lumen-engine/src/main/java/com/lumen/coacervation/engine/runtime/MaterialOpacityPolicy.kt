@@ -154,3 +154,38 @@ internal object MaterialOpacityPolicy {
     /** Whether a surface at this frame still needs a backdrop sample (§5 low-opacity sampling stop). */
     fun needsBackdrop(frame: MaterialOpacityFrame): Boolean = frame.backdrop > SAMPLING_EPSILON
 }
+
+/**
+ * One engine Drawable's own opacity, multiplied with its role-wide opacity. Resolves only when the product changes,
+ * so a draw costs one multiply and one compare. Pure: no android.graphics.
+ */
+internal class MaterialOpacityState(private val kind: MaterialKind) {
+    var own = 1f
+        private set
+    var carriesText = true
+        private set
+    private val frame = MaterialOpacityFrame()
+    private var resolvedFor = Float.NaN
+    private var resolvedText = true
+
+    /** Returns true when the stored value changed. */
+    fun set(value: Float, carriesText: Boolean): Boolean {
+        val next = MaterialOpacityPolicy.sanitize(value, own)
+        if (next == own && carriesText == this.carriesText) return false
+        own = next
+        this.carriesText = carriesText
+        return true
+    }
+
+    /** Frame for this draw, or null at full opacity (callers then keep their exact default path). */
+    fun frame(roleOpacity: Float): MaterialOpacityFrame? {
+        val combined = (roleOpacity * own).coerceIn(0f, 1f)
+        if (combined >= 1f) return null
+        if (combined != resolvedFor || carriesText != resolvedText) {
+            MaterialOpacityPolicy.resolve(kind, combined, carriesText, reduceTransparency = false, out = frame)
+            resolvedFor = combined
+            resolvedText = carriesText
+        }
+        return if (frame.isDefault) null else frame
+    }
+}

@@ -1,5 +1,8 @@
 package com.lumen.coacervation.engine.material
 
+import com.lumen.coacervation.engine.host.LumenMaterialLegibility
+import com.lumen.coacervation.engine.host.MaterialOpacityDrawable
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.ColorFilter
@@ -31,7 +34,7 @@ internal class ControlShadowDrawable(
     private val density: Float,
     private val options: LumenControlShadowOptions,
     private val dark: Boolean
-) : Drawable() {
+) : Drawable(), MaterialOpacityDrawable {
     private val castPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val contactPaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     private val srcRect = Rect()
@@ -56,6 +59,17 @@ internal class ControlShadowDrawable(
             field = next
             invalidateSelf()
         }
+    private var materialOpacity = 1f
+
+    /** A thinner surface casts a lighter shadow (`p^1.5`); the wrapped engine background follows the same value. */
+    override fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) {
+        if (value.isNaN()) return
+        materialOpacity = value.coerceIn(0f, 1f)
+        materialGain = MaterialOpacityPolicy.pow(materialOpacity, 1.5f)
+        (content as? MaterialOpacityDrawable)?.setMaterialOpacity(value, legibility)
+    }
+
+    override fun materialOpacity(): Float = materialOpacity
     private val xStops = FloatArray(4)
     private val yStops = FloatArray(4)
     private val srcStops = IntArray(4)

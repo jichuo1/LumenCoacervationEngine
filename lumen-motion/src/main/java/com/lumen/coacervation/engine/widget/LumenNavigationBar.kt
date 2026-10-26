@@ -27,6 +27,8 @@ import android.widget.TextView
 import androidx.core.graphics.ColorUtils
 import com.lumen.coacervation.engine.glow.GlowLegibilityPolicy
 import com.lumen.coacervation.engine.touch.GlowConfig
+import com.lumen.coacervation.engine.host.LumenMaterialOpacity
+import com.lumen.coacervation.engine.host.LumenMaterialOpacityTarget
 import com.lumen.coacervation.engine.touch.GlowFrame
 import com.lumen.coacervation.engine.touch.GlowState
 import com.lumen.coacervation.engine.touch.TouchGlowRenderer
@@ -60,7 +62,7 @@ public class LumenNavigationBar(
     private val onSelect: (Int) -> Unit,
     private val onUserInteraction: () -> Unit,
     private val onVisualMovement: () -> Unit
-) : FrameLayout(context) {
+) : FrameLayout(context), LumenMaterialOpacityTarget {
     private val count = titles.size.also {
         require(it in 1..NavigationBarMotion.MAX_ITEMS && icons.size == it) {
             "LumenNavigationBar supports 1..${NavigationBarMotion.MAX_ITEMS} items with one icon each"
@@ -119,6 +121,7 @@ public class LumenNavigationBar(
     private var reboundGeneration = 0L
     private var indicatorSettling = false
     private var disposed = false
+    private var materialOpacity = 1f
     private val rtl: Boolean get() = layoutDirection == LAYOUT_DIRECTION_RTL
     private val contentWidth: Float get() = (width - inset * 2f).coerceAtLeast(0f)
     private val slotWidth: Float get() = contentWidth / count
@@ -648,6 +651,23 @@ public class LumenNavigationBar(
         // press 已归零 => 本帧起光晕不可见，此刻 reset 不构成可见跳变。
         glow.resetGestureState()
     }
+
+
+    /**
+     * 材质浓度（MATERIAL_OPACITY.md §4.7）：只作用于栏背景（引擎背景按其材质映射，宿主自己的 Drawable 不变）；
+     * 选中框与文字是状态与内容，保持不变。逐帧可调。
+     */
+    override fun setMaterialOpacity(value: Float) {
+        if (disposed || value.isNaN()) return
+        val next = value.coerceIn(0f, 1f)
+        if (next == materialOpacity) return
+        materialOpacity = next
+        LumenMaterialOpacity.set(background, next)
+    }
+
+    override fun materialOpacity(): Float = materialOpacity
+
+    override fun effectiveMaterialOpacity(): Float = materialOpacity
 
     fun dispose() {
         resetInteraction()

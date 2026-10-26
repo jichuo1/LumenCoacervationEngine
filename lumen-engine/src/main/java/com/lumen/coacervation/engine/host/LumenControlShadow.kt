@@ -3,7 +3,6 @@ package com.lumen.coacervation.engine.host
 import android.graphics.drawable.Drawable
 import androidx.annotation.MainThread
 import com.lumen.coacervation.engine.material.ControlShadowDrawable
-import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 
 /**
  * 控件软阴影的独立入口：不经过 Activity 委托也能给任意控件加阴影（适配标准 §5.6）。
@@ -46,18 +45,6 @@ public object LumenControlShadow {
         require(density.isFinite() && density > 0f) { "density must be positive, was $density" }
         return ControlShadowDrawable(null, cornerRadiusDp.coerceAtLeast(0f) * density,
             density, options, dark)
-    }
-
-    /**
-     * 让 [shadow]（[wrap] 或 [shadowOnly] 的返回值）跟随所附控件的材质浓度：强度乘以 `p^1.5`，薄的表面投影也淡。
-     * 只改 `Paint.alpha`，不换纹理、不进缓存。[shadow] 不是本类创建的阴影时返回 false。
-     */
-    @JvmStatic
-    public fun setMaterialOpacity(shadow: Drawable, value: Float): Boolean {
-        val drawable = shadow as? ControlShadowDrawable ?: return false
-        if (value.isNaN()) return true
-        drawable.materialGain = MaterialOpacityPolicy.pow(value.coerceIn(0f, 1f), 1.5f)
-        return true
     }
 
     /**
