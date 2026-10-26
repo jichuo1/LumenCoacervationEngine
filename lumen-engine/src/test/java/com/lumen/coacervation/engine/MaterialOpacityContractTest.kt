@@ -175,6 +175,17 @@ class MaterialOpacityContractTest {
         assertTrue(canReblur.contains("entry.publishedScale == entry.scale"))
     }
 
+    @Test fun fluentShadowUpdatesAreQuantised() {
+        val control = SourceContract.read("host/LumenFluentControl.kt")
+        val set = control.after("public fun setMaterialOpacity(value: Float, legibility").before("override fun materialOpacity")
+        // Elevation and outline change only when their 1/32 step changes: the platform shadow is not rebuilt per frame.
+        assertTrue(set.contains("if (changed and FluentControlDrawable.ELEVATION_CHANGED != 0) applyElevation()"))
+        assertTrue(set.contains("if (changed and FluentControlDrawable.OUTLINE_CHANGED != 0) host.get()?.invalidateOutline()"))
+        assertTrue(control.contains("* density * drawable.shadowElevation"))
+        val drawable = SourceContract.read("fluent/FluentControlDrawable.kt")
+        assertTrue(drawable.contains("outline.alpha = alphaValue / 255f * shadowOutline"))
+    }
+
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {
         val shadow = SourceContract.read("material/ControlShadowDrawable.kt")
         val draw = shadow.after("override fun draw(canvas: Canvas)").before("private fun siblingShadowOverlaps")

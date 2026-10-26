@@ -136,13 +136,30 @@ internal class FluentControlDrawable(private val density: Float, private val hos
     }
 
     /** Resolves the material opacity; returns true when the elevation multiplier changed. */
-    fun setMaterialOpacity(requested: Float, carriesText: Boolean, reduceTransparency: Boolean): Boolean {
-        if (released) return false
-        val elevation = material.elevation
+    /**
+     * Platform shadow inputs, quantised to [SHADOW_STEPS]: changing `View.elevation` or the outline alpha makes the
+     * RenderThread rebuild the shadow, so an opacity animation updates them a few dozen times, not every frame.
+     */
+    var shadowElevation = 1f
+        private set
+    var shadowOutline = 1f
+        private set
+
+    /** Resolves the material opacity; returns [ELEVATION_CHANGED] / [OUTLINE_CHANGED] flags for the quantised shadow. */
+    fun setMaterialOpacity(requested: Float, carriesText: Boolean, reduceTransparency: Boolean): Int {
+        if (released) return 0
         MaterialOpacityPolicy.resolve(MaterialKind.FLUENT, requested, carriesText, reduceTransparency, material)
         invalidateSelf()
-        return elevation != material.elevation
+        var changed = 0
+        val elevation = quantise(material.elevation)
+        if (elevation != shadowElevation) { shadowElevation = elevation; changed = changed or ELEVATION_CHANGED }
+        val outline = quantise(material.backdrop)
+        if (outline != shadowOutline) { shadowOutline = outline; changed = changed or OUTLINE_CHANGED }
+        return changed
     }
+
+    private fun quantise(value: Float): Float =
+        if (value >= 1f) 1f else (value * SHADOW_STEPS).roundToInt() / SHADOW_STEPS.toFloat()
 
     fun release() {
         if (released) return
@@ -350,7 +367,7 @@ internal class FluentControlDrawable(private val density: Float, private val hos
         if (bounds.isEmpty) return
         outline.setRoundRect(bounds, radius)
         // The platform shadow is drawn under the whole outline: a see-through control must not reveal it.
-        outline.alpha = alphaValue / 255f * material.backdrop
+        outline.alpha = alphaValue / 255f * shadowOutline
     }
 
     override fun setAlpha(alpha: Int) {
@@ -371,4 +388,11 @@ internal class FluentControlDrawable(private val density: Float, private val hos
 
     @Deprecated("Deprecated in Java")
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
+
+    companion object {
+        const val ELEVATION_CHANGED = 1
+        const val OUTLINE_CHANGED = 2
+        /** 1/32 steps: below what a shadow's darkness change can show, and few rebuilds per animation. */
+        const val SHADOW_STEPS = 32
+    }
 }

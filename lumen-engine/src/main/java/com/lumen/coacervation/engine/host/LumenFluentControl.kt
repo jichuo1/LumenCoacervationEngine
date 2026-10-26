@@ -113,16 +113,17 @@ public class LumenFluentControl @JvmOverloads constructor(
         if (next == materialOpacity && legibility == this.legibility) return
         materialOpacity = next
         this.legibility = legibility
-        if (resolveMaterial()) applyElevation()
+        val changed = resolveMaterial()
+        if (changed and FluentControlDrawable.ELEVATION_CHANGED != 0) applyElevation()
         // The outline alpha follows the backdrop weight (no platform shadow under clear acrylic).
-        host.get()?.invalidateOutline()
+        if (changed and FluentControlDrawable.OUTLINE_CHANGED != 0) host.get()?.invalidateOutline()
     }
 
     override fun materialOpacity(): Float = materialOpacity
 
     override fun effectiveMaterialOpacity(): Float = drawable.material.effective
 
-    private fun resolveMaterial(): Boolean =
+    private fun resolveMaterial(): Int =
         drawable.setMaterialOpacity(materialOpacity, legibility.carriesText(null), options.reduceTransparency)
 
     public fun updatePalette(value: LumenPalette) {
@@ -221,7 +222,7 @@ public class LumenFluentControl @JvmOverloads constructor(
         }
         val value = FluentElevationPolicy.fluentValue(elevation.level, pressed, elevation.pressedLowersElevation)
         // A thinner material sits lower: the platform shadow follows the elevation multiplier.
-        val px = FluentElevationPolicy.androidElevationDp(value) * density * drawable.material.elevation
+        val px = FluentElevationPolicy.androidElevationDp(value) * density * drawable.shadowElevation
         view.elevation = px
         ownedElevation = px
     }
