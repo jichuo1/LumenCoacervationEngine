@@ -165,13 +165,28 @@ class LiquidRefreshOptimizationTest {
         val handled = renderer.after("private fun handleRealtimeCaptureResult(").before("if (unchanged) {")
         assertTrue(handled.contains("if (!unchanged && request.reusedProbe && !restoreSuppressedFromBaseline(request))"))
 
-        // 2026-10-26 功耗：按玻璃区域判定变化。区域只在 REFRACTION 下给出（设备证明只覆盖这条 shader），
-        // 回弹拉伸或位置未知时退回整图比较；截图线程先比区域、区域相同才比整图。
+        // 2026-10-26 功耗：按玻璃区域判定变化。区域只在 REFRACTION 与 BLUR 下给出（设备证明只覆盖这两条），
+        // 位置未知、或 REFRACTION 下回弹拉伸时退回整图比较；截图线程先比整图、不同才比区域。
         val region = renderer.after("private fun buildGlassRegion(").before("private fun restoreSuppressedFromBaseline(")
-        assertTrue(region.contains("if (backends.current?.backend != LiquidRenderBackend.REFRACTION) return null"))
-        assertTrue(region.contains("if (regionStretch[1] > 0f && regionStretch[2] != 0f) return null"))
+        assertTrue(region.contains("if (!hasProvenFootprint(backend)) return null"))
+        assertTrue(renderer.contains("backend == LiquidRenderBackend.REFRACTION || backend == LiquidRenderBackend.BLUR\n"))
+        assertTrue(region.contains("val deltaPx = if (refraction) glassSamplingDeltaPx else 0f"))
+        assertTrue(region.contains("val blurTexels = if (refraction) 0 else LiquidGlassFootprintPolicy.blurReachTexels(glassBlurRadiusPx,"))
+        assertTrue(region.contains("if (refraction) {\n                stretchCoordinates.resolve(surface, root, regionStretch)\n" +
+            "                if (regionStretch[1] > 0f && regionStretch[2] != 0f) return null"))
+        assertTrue(region.contains("mapping, deltaPx, scaleX, scaleY, bitmap.width, bitmap.height, rects, index, blurTexels)"))
         assertTrue(region.contains("if (!footprint.hasOrigin) return null"))
-        assertTrue(region.contains("if (surface.rootView !== root.rootView) continue"))
+        // 已由内容节点玻璃画出的悬浮栏不读截图，不计入；它的输入是内容节点 + 稳定底图。
+        assertTrue(region.contains("if (surface.rootView !== root.rootView || isCaptureIndependent(surface)) continue"))
+        assertTrue(renderer.contains("private fun isCaptureIndependent(view: View): Boolean = chromeBackdrops[view]?.drewByNode == true"))
+        val chromeDraw = renderer.after("private fun drawChromeBackdrop(").before("override fun setSurfaceLegibility(")
+        assertTrue(chromeDraw.contains("{ recording, rect -> drawWindowBackdrop(recording, host, rect, null, 1f) }"))
+        val windowBackdrop = renderer.after("override fun drawWindowBackdrop(").before("override fun floatingSurfaceOptics()")
+        assertTrue(windowBackdrop.contains("val source = backdropSource?.takeIf { !it.isClosed } ?: return false"))
+        assertTrue("节点玻璃的底图不能是实时截图", !windowBackdrop.contains("realtimeBackdropSource"))
+        assertTrue("BLUR 半径与后端构造同源", SourceContract.read("liquid/LiquidBackendSet.kt")
+            .contains("LiquidBlurBackendApi31(parameters.blurRadiusDp * density)"))
+        assertTrue(renderer.contains("private val glassBlurRadiusPx = parameters.blurRadiusDp * density"))
         // 先比整图（相同则区域必然相同），不同时才比区域；没有区域时只认整图结论。
         assertTrue(post.indexOf("request.source.bitmap.sameAs(baseline.bitmap)") in 0 until post.indexOf("feedback.regionsEqual("))
         assertTrue(post.contains("request.glassRegionEqual = request.sameAsBaseline || (region != null &&"))
@@ -181,7 +196,7 @@ class LiquidRefreshOptimizationTest {
         assertTrue(verdict.indexOf("refreshRate.wake(root)") < verdict.indexOf("runCatching { captureSource.bitmap.prepareToDraw() }"))
         assertTrue(verdict.contains("if (glassUnchanged) refreshRate.resetThroughput()"))
         assertTrue(verdict.contains("if (glassUnchanged) onIdenticalCapture()"))
-        // 窗口绘制唤醒在 REFRACTION 下先走探测：玻璃区域真的变了才进入活跃并申请刷新率。
+        // 窗口绘制唤醒在 REFRACTION/BLUR 下先走探测：玻璃区域真的变了才进入活跃并申请刷新率。
         val draw = renderer.after("private val realtimeDrawListener = ViewTreeObserver.OnDrawListener {").before("private fun glassRegionGatingAvailable()")
         assertTrue(draw.contains("probe = restoredDraw || glassRegionGatingAvailable()"))
         assertTrue(draw.contains("timerProbePending = false"))

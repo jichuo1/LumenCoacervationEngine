@@ -12,7 +12,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 玻璃采样区域的纯策略护栏；像素级证明在设备测试 `LiquidGlassFootprintInstrumentedTest`。 */
+/** 玻璃采样区域的纯策略护栏；像素级证明在设备测试 `LiquidGlassFootprintInstrumentedTest` 与 `LiquidBlurFootprintInstrumentedTest`。 */
 class LiquidGlassFootprintPolicyTest {
     @Test fun interiorLensPeakBoundsRTimesOneMinusRSquared() {
         var peak = 0.0
@@ -47,5 +47,27 @@ class LiquidGlassFootprintPolicyTest {
         assertArrayEquals(intArrayOf(48, 23, 153, 62), out.copyOf(4))
         LiquidGlassFootprintPolicy.toBitmapRect(-80f, -80f, 2000f, 3000f, 0.62f, 0.62f, 671, 1491, out, 4)
         assertArrayEquals(intArrayOf(0, 0, 671, 1491), out.copyOfRange(4, 8))
+    }
+
+    /** 半径换算必须与 BLUR 后端逐字同源：后端改了缩放或滤镜而这里不改，区域就会漏掉模糊核。 */
+    @Test fun blurReachMatchesTheBackendRadiusAndThreeSigma() {
+        val backend = SourceContract.read("liquid/LiquidBlurBackendApi31.kt")
+        assertTrue(backend.contains("backdropScaleX = source.fullWidth.toFloat() / source.bitmap.width.toFloat()"))
+        assertTrue(backend.contains("backdropScaleY = source.fullHeight.toFloat() / source.bitmap.height.toFloat()"))
+        assertTrue(backend.contains("blurRadiusPx / maxOf(backdropScaleX, backdropScaleY)\n            ).coerceAtLeast(0.1f)"))
+        assertTrue(backend.contains("RenderEffect.createBlurEffect(\n                nextBlurRadius,\n                nextBlurRadius,\n" +
+            "                Shader.TileMode.CLAMP"))
+        // 实时档 22dp、density 2.75、1080×2400 → 671×1491：r = 37.6，σ = 22.2，ceil(3σ) = 67（设备实测 ≤ 65）。
+        assertEquals(67, LiquidGlassFootprintPolicy.blurReachTexels(22f * 2.75f, 1080, 2400, 671, 1491))
+        assertEquals(107, LiquidGlassFootprintPolicy.blurReachTexels(22f * 2.75f, 1080, 2400, 1080, 2400))
+        assertEquals(97, LiquidGlassFootprintPolicy.blurReachTexels(20f * 2.75f, 1080, 2400, 1080, 2400))
+        // 半径下限 0.1：σ = 0.5577，ceil(3σ) = 2。
+        assertEquals(2, LiquidGlassFootprintPolicy.blurReachTexels(0f, 1080, 2400, 671, 1491))
+    }
+
+    @Test fun extraTexelsWidenTheBitmapRectBeforeClamping() {
+        val out = IntArray(4)
+        LiquidGlassFootprintPolicy.toBitmapRect(100.2f, 50.7f, 300.1f, 120.0f, 0.5f, 0.5f, 500, 500, out, 0, extraTexels = 30)
+        assertArrayEquals(intArrayOf(18, 0, 183, 92), out)
     }
 }

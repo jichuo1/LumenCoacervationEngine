@@ -90,7 +90,7 @@ private class LiquidCaptureRequest(
     val maskMatchesPrevious: Boolean = false,
     /**
      * 玻璃可能读到的截图区域（位图像素，见 [LiquidGlassFootprintPolicy]）；null 表示本次不能按区域判定
-     * （非 REFRACTION 后端、存在回弹拉伸或位置未知），只做整图比较。
+     * （REFRACTION/BLUR 以外的后端、REFRACTION 下存在回弹拉伸、或位置未知），只做整图比较。
      */
     val glassRegion: IntArray? = null
 ) {
@@ -368,7 +368,7 @@ internal class LiquidActivityRenderer(
     private val realtimeDrawListener = ViewTreeObserver.OnDrawListener {
         if (realtimeIdle || refreshRate.probing) {
             val restoredDraw = refreshRate.consumeRestoredDraw()
-            // 窗口绘制本身不说明玻璃附近变了。REFRACTION 下先以探测方式截一张：玻璃区域真的变了，
+            // 窗口绘制本身不说明玻璃附近变了。REFRACTION/BLUR 下先以探测方式截一张：玻璃区域真的变了，
             // 提交时才进入活跃并申请刷新率（[handleRealtimeCaptureResult] 的变化分支）。
             timerProbePending = false
             leaveRealtimeIdle(LiquidRealtimeCapturePolicy.WAKE_SETTLE_FRAMES,
@@ -376,9 +376,12 @@ internal class LiquidActivityRenderer(
         }
     }
 
-    /** 按玻璃区域判定变化的前提：采样范围的证明只覆盖 REFRACTION 窗口玻璃。 */
+    /** 按玻璃区域判定变化的前提：采样范围的证明覆盖 REFRACTION 与 BLUR 窗口玻璃（[LiquidGlassFootprintPolicy]）。 */
     private fun glassRegionGatingAvailable(): Boolean =
-        effectProfile == LiquidEffectProfile.REALTIME_CAPTURE && backends.current?.backend == LiquidRenderBackend.REFRACTION
+        effectProfile == LiquidEffectProfile.REALTIME_CAPTURE && hasProvenFootprint(backends.current?.backend)
+
+    private fun hasProvenFootprint(backend: LiquidRenderBackend?): Boolean =
+        backend == LiquidRenderBackend.REFRACTION || backend == LiquidRenderBackend.BLUR
 
     /** 每秒兜底探测发起、尚未被窗口绘制打断的那一次截图；只有它留原始截图供下一次探测复用。 */
     private var timerProbePending = false
@@ -422,6 +425,8 @@ internal class LiquidActivityRenderer(
     private val regionMatrix = Matrix()
     private val regionStretch = FloatArray(3)
     private val glassSamplingDeltaPx = LiquidGlassFootprintPolicy.maxOffsetPx(parameters, density)
+    /** 与 `LiquidBackendSet` 构造 BLUR 后端的半径同一表达式。 */
+    private val glassBlurRadiusPx = parameters.blurRadiusDp * density
     private val restoreCanvas = Canvas()
     private val restorePaint = Paint().apply { xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC) }
     private var realtimeCaptureInFlight: LiquidCaptureRequest? = null
@@ -2063,23 +2068,32 @@ internal class LiquidActivityRenderer(
 
     /**
      * 主线程、发起截图时：本帧全部可见玻璃会读到的截图区域并集（与遮罩同一份已绘制足迹）。只在 REFRACTION
-     * 后端下给出——采样范围的证明只覆盖这条 shader；任一表面在回弹拉伸中或位置未知时返回 null，退回整图比较。
-     * 外部窗口里的表面不读实时截图，不计入。
+     * 与 BLUR 后端下给出——采样范围的证明只覆盖这两条；任一表面位置未知、或 REFRACTION 下在回弹拉伸中时返回
+     * null，退回整图比较（BLUR 不读拉伸）。
+     * 外部窗口里的表面、上一次已由内容节点玻璃画出的悬浮栏（[isCaptureIndependent]：输入是内容节点与稳定底图）
+     * 不读实时截图，不计入。栏退回截图时，那一帧画的是照常绑定的最新截图，那次绘制唤醒的探测已把它算进区域。
      */
     private fun buildGlassRegion(root: View, captureSource: LiquidBackdropSource): IntArray? {
-        if (backends.current?.backend != LiquidRenderBackend.REFRACTION) return null
+        val backend = backends.current?.backend
+        if (!hasProvenFootprint(backend)) return null
         if (captureSource.isClosed || captureSource.fullWidth <= 0 || captureSource.fullHeight <= 0) return null
         val bitmap = captureSource.bitmap
         val scaleX = bitmap.width.toFloat() / captureSource.fullWidth
         val scaleY = bitmap.height.toFloat() / captureSource.fullHeight
+        val refraction = backend == LiquidRenderBackend.REFRACTION
+        val deltaPx = if (refraction) glassSamplingDeltaPx else 0f
+        val blurTexels = if (refraction) 0 else LiquidGlassFootprintPolicy.blurReachTexels(glassBlurRadiusPx,
+            captureSource.fullWidth, captureSource.fullHeight, bitmap.width, bitmap.height)
         var rects = IntArray(16)
         var index = 0
         for ((surface, footprint) in surfaceViews) {
             if (!surface.isAttachedToWindow || !surface.isShown || surface.alpha <= 0f) continue
-            if (surface.rootView !== root.rootView) continue
+            if (surface.rootView !== root.rootView || isCaptureIndependent(surface)) continue
             if (!footprint.hasOrigin) return null
-            stretchCoordinates.resolve(surface, root, regionStretch)
-            if (regionStretch[1] > 0f && regionStretch[2] != 0f) return null
+            if (refraction) {
+                stretchCoordinates.resolve(surface, root, regionStretch)
+                if (regionStretch[1] > 0f && regionStretch[2] != 0f) return null
+            }
             val mapping = if (footprint.hasTransform) {
                 if (!surfaceCoordinates.sourceToTarget(footprint.screenTransform, root, regionMatrix)) return null
                 regionMatrix
@@ -2087,7 +2101,7 @@ internal class LiquidActivityRenderer(
             if (index + 4 > rects.size) rects = rects.copyOf(rects.size * 2)
             glassFootprint.bitmapRect(footprint.left, footprint.top, footprint.right, footprint.bottom,
                 (footprint.originX - rootScreenLocation[0]).toFloat(), (footprint.originY - rootScreenLocation[1]).toFloat(),
-                mapping, glassSamplingDeltaPx, scaleX, scaleY, bitmap.width, bitmap.height, rects, index)
+                mapping, deltaPx, scaleX, scaleY, bitmap.width, bitmap.height, rects, index, blurTexels)
             index += 4
         }
         return rects.copyOf(index)
