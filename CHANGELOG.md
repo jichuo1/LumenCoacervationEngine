@@ -4,16 +4,20 @@
 
 ## [Unreleased]
 
+## [1.5.6] - 2026-10-26
+
 ### 新增
 
 - 材质浓度：所有控件通用的透明度无极调节（`docs/MATERIAL_OPACITY.md`）。`LumenMaterialOpacityTarget` 由局部表面绑定、Fluent、Prism、Mica 与 lumen-motion 的滑块、底栏、档位条实现；`LumenActivityDelegate.setMaterialOpacity(role, value)` 按表面角色调节 Activity 皮肤，`LumenMaterialOpacity.set(drawable, value)` 逐个调节引擎背景；`LumenMaterialOpacityScope` 用一个值和可打断弹簧驱动一组控件。各材质按自己的物理隐喻消退：柔光是雾气散开，液态由磨砂变成保留折射边缘的清玻璃，亚克力先退亮度与色调、低于 0.35 才退模糊，云母只改变壁纸透出度、始终不透明，棱镜按厚度退色调与投影；轮廓最后消失，文字与 `View.alpha` 不受影响。逐帧只写数值与 uniform；背景权重为 0 的表面停止采样与录制。`p = 1` 与原外观逐位相同。
 - 材质浓度的性能优化（`docs/MATERIAL_OPACITY.md` §14）：模糊档位改为半八度 8 档并对齐 Skia 降采样，用过浓度的玻璃在空闲时预热各档模糊程序（模拟器首次扫过档位由 10 帧、p90 800ms 提升到 25 帧、p99 200ms）；AGSL 中间档两圈 17 点取样并限幅 12px；停手改半径复用已发布输入在后台重模糊；只重绘变化角色的表面；Fluent 阴影量化更新；停手判定改为时间戳防抖；薄磨砂复用缓冲。
-- 材质浓度的模糊半径随浓度变化（`docs/MATERIAL_OPACITY.md` §13）：GPU 节点玻璃按 16 档切换缓存的效果链（同一图层，显存不增加），AGSL 直接路径在清晰、中档与强模糊之间连续插值，软件模糊与柔光静态磨砂在停手后按真实半径重算一次。中低浓度不再透出清晰轮廓。
-- Sample：「表面沙盒 → 材质浓度」五种材质、增强（AGSL）与软件后端两块玻璃以及滑块挂在同一个作用域上，可拖动或弹簧过渡，并切换文字表面下限。JVM 新增 `MaterialOpacityPolicyTest`、`MaterialOpacityContractTest`、`MaterialOpacityMotionContractTest`。
+- 材质浓度的模糊半径随浓度变化（`docs/MATERIAL_OPACITY.md` §13）：GPU 节点玻璃按半八度 8 档切换缓存的效果链（同一图层，显存不增加），AGSL 直接路径在清晰、中档与强模糊之间连续插值，软件模糊与柔光静态磨砂在停手后按真实半径重算一次。中低浓度不再透出清晰轮廓。
+- Sample：「表面沙盒 → 材质浓度」五种材质、增强（AGSL）与软件后端两块玻璃以及滑块挂在同一个作用域上，可拖动或弹簧过渡，并切换文字表面下限。JVM 新增 `MaterialOpacityPolicyTest`、`MaterialOpacityContractTest`、`MaterialOpacityMotionContractTest`；设备新增 `MaterialOpacityRegressionTest`（各 API smoke 必测）：回到 1 逐像素恢复默认外观、停手后窗口零帧（停手计时与模糊档位预热都会结束）、透明的装饰性表面滚动时不再录制来源。
 
 ### 修复
 
 - `LumenFluentControl` 与 `LumenPrismGlass` 的 Drawable alpha 现在也作用于采样背景：此前不透明底随 alpha 变淡，模糊或折射背景却照常满强度绘制，淡出动画中控件始终是一块不透明的玻璃。
+- `LumenSurfaceBinding.setMaterialOpacity(value)`（作用域驱动时走的就是它）不再把已声明的 `TEXT` / `DECORATIVE` 重置为 `AUTO`，与 `LumenFluentControl`、`LumenPrismGlass` 一致：保留最近一次声明的可读性。此前装饰性表面挂上作用域后，第一次调值就会被抬回文字下限。
+- 局部表面在材质浓度为 1 时的静态回退色调与软件、原始采样层的 alpha 按引入材质浓度之前的求值次序计算，保证与原外观逐位相同（此前浮点结合次序不同，个别取值的取整可能差 1）。
 
 ### 性能
 

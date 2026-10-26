@@ -497,7 +497,7 @@ Rive原生时钟能力边界、PAGFile最终释放方式、供应商解析内存
 | `LumenNavigationBar.setPrismSelection(options: LumenPrismSelectionOptions?)` / `isPrismSelectionEnabled` | null 为经典选中框（逐帧不变）；可随时切换或改参 |
 | `LumenPrismSelectionOptions` | pressedScale（1–1.8）/ contentMagnification（1–1.6）/ lensHeightDp、lensAmountDp（0–32）/ dispersion（0–1）/ velocityDeformation（0–2）/ highlightOpacity（0–1）/ shadowOpacity（0–0.4）/ innerShadowOpacity（0–0.6）/ pressedWashOpacity（0–0.2）/ scaleXSpring、scaleYSpring（`LumenSpringSpec`）；`DEFAULT` |
 
-## 23. 材质浓度（自 1.5.6 起，未发布）
+## 23. 材质浓度（自 1.5.6）
 
 所有控件通用的透明度无极调节：0 接近清玻璃（只剩轮廓），1 为默认外观（逐位不变）。只改变材质，不改变文字与 `View.alpha`。设计、各材质映射与取舍见 [MATERIAL_OPACITY.md](MATERIAL_OPACITY.md)。全部主线程调用；逐帧可调，只写数值与 uniform，不分配、不重建着色器或模糊效果；超出 0..1 截断，NaN 忽略。
 

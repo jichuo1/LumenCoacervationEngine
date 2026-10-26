@@ -39,6 +39,7 @@
 | 文档 | 快照对象 |
 |---|---|
 | [MICA_BUILD_REVIEW_2026_10_15.md](MICA_BUILD_REVIEW_2026_10_15.md) | 云母审阅修复、构建／门禁性能基准，以及 API 37 的候选与基线设备失败对照 |
+| [RELEASE_1.5.6_REVIEW.md](RELEASE_1.5.6_REVIEW.md) | 材质浓度发布审阅：默认路径逐位不变、功耗与静止门控、与玻璃区域判定的关系、二进制与 API 级兼容核对，以及审阅中修复的两项问题 |
 | [RELEASE_1.5.5_REVIEW.md](RELEASE_1.5.5_REVIEW.md) | 通用滑块的设计、各材质的实现取舍（Prism 镜片不采样背景）、真机复核与验证边界；多级手风琴首级标题形变修复 |
 | [RELEASE_1.5.4_REVIEW.md](RELEASE_1.5.4_REVIEW.md) | 性能报告复核、等价优化、刷新率自唤醒陷阱、二进制兼容与验证边界 |
 | [ASYNC_PREPARATION_REVIEW_2026_10_23.md](ASYNC_PREPARATION_REVIEW_2026_10_23.md) | 未发布异步 Mica 接口、源码契约索引、缓存正反验证与 API 37 定向设备记录 |
