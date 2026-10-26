@@ -119,7 +119,7 @@ class LumenEffectTuningTest {
         assertTrue(liquid.contains("LumenEffectTuningPolicy.applyTo("))
         assertTrue(liquid.contains("LumenEffectTuningPolicy.bandWidth(OPTICAL_EDGE_BAND_DP * density, effectTuning,"))
         val frosted = source("material/FrostedMaterialRenderer.kt")
-        assertTrue(frosted.contains("ModernMaterialPolicy.surface(role, dark, effectTuning), effectTuning.edgeHighlightWidth)"))
+        assertTrue(frosted.contains("ModernMaterialPolicy.surface(role, dark, effectTuning), effectTuning.edgeHighlightWidth, role = role)"))
         assertTrue(frosted.contains("strokeWidth = ModernMaterialPolicy.edgeStrokePx(density, edgeWidthScale)"))
         val delegate = source("host/LumenActivityDelegate.kt")
         assertTrue(delegate.contains("ActivitySkinSession.create(activity, palette, effectTuning)"))

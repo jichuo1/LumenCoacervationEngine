@@ -59,6 +59,8 @@ public class LumenActivityDelegate @JvmOverloads constructor(
     private var effectTuningOrNull: LumenEffectTuning? = null
     private var controlShadowOrNull: LumenControlShadowOptions? = null
     private var lifecycleEnded = false
+    /** Material opacity per [SurfaceRole], kept across [prepare] so values set before the session still apply. */
+    private val materialOpacities = FloatArray(SurfaceRole.entries.size) { 1f }
     private val density: Float get() = activity.resources.displayMetrics.density
 
     /** 本 Activity 使用的配色；未准备会话时也可用（授权前的界面同样需要中性配色）。 */
@@ -87,8 +89,34 @@ public class LumenActivityDelegate @JvmOverloads constructor(
      */
     public fun prepare() {
         if (lifecycleEnded || session != null) return
-        session = ActivitySkinSession.create(activity, palette, effectTuning)
+        val created = ActivitySkinSession.create(activity, palette, effectTuning)
+        session = created
+        for (role in SurfaceRole.entries) {
+            val value = materialOpacities[role.ordinal]
+            if (value < 1f) created.setMaterialOpacity(role, value)
+        }
     }
+
+    /**
+     * 材质浓度（MATERIAL_OPACITY.md）：0 接近清玻璃（只剩轮廓），1 为默认外观。作用于 [role] 的全部引擎表面，
+     * 已创建的背景立即生效；文字与 `View.alpha` 不受影响。逐帧可调（不分配、不重建着色器）。
+     * 卡片、弹窗、栏与按钮等承载文字的角色有可读性下限；超出 0..1 截断，NaN 忽略。
+     */
+    public fun setMaterialOpacity(role: SurfaceRole, value: Float) {
+        if (lifecycleEnded || value.isNaN()) return
+        val next = value.coerceIn(0f, 1f)
+        if (materialOpacities[role.ordinal] == next) return
+        materialOpacities[role.ordinal] = next
+        session?.setMaterialOpacity(role, next)
+    }
+
+    /** 对全部角色设置同一个材质浓度，见 [setMaterialOpacity]。 */
+    public fun setMaterialOpacity(value: Float) {
+        for (role in SurfaceRole.entries) setMaterialOpacity(role, value)
+    }
+
+    /** 最近一次为 [role] 请求的材质浓度。 */
+    public fun materialOpacity(role: SurfaceRole): Float = materialOpacities[role.ordinal]
 
     /**
      * 把会话绑定到可见的内容根 View（通常在 `setContentView` 之后）。

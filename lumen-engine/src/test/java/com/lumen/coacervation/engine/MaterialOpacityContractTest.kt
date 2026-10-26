@@ -63,6 +63,34 @@ class MaterialOpacityContractTest {
         assertTrue(draw.contains("(weight * alphaValue * imageWeight).roundToInt()"))
     }
 
+    @Test fun sharedLiquidShaderGetsTheMaterialBeforeEveryDraw() {
+        val renderer = SourceContract.read("liquid/LiquidActivityRenderer.kt")
+        // One refraction shader serves every surface: a draw without its own material would inherit the previous one.
+        assertTrue(Regex("\\.drawBackdrop\\(").findAll(renderer).count() == 2)
+        assertTrue(renderer.contains("panelDriver.setMaterial(material)\n                        panelDriver.drawBackdrop("))
+        assertTrue(renderer.contains("driver.setMaterial(material)\n                        driver.drawBackdrop("))
+        val backend = SourceContract.read("liquid/LiquidRefractionBackendApi33.kt")
+        assertTrue(backend.after("checkNotNull(source) { \"Liquid refraction backdrop is not bound\" }")
+            .trimStart().startsWith("applyMaterialUniforms()"))
+        assertCheap("liquid uniforms", backend.after("private fun applyMaterialUniforms()").before("override fun drawBackdrop("))
+    }
+
+    @Test fun activitySkinForwardsToEveryEngineAndSurvivesPrepare() {
+        val engine = SourceContract.read("glow/GlowEngine.kt")
+        assertTrue(engine.contains("fun setMaterialOpacity(role: SurfaceRole, value: Float) = Unit"))
+        val session = SourceContract.read("runtime/ActivitySkinSession.kt")
+        assertTrue(session.after("fun setMaterialOpacity(role: SurfaceRole, value: Float)")
+            .contains("for (i in engines.indices) engines[i].setMaterialOpacity(role, value)"))
+        val delegate = SourceContract.read("host/LumenActivityDelegate.kt")
+        assertTrue(delegate.after("public fun prepare()").before("public fun setMaterialOpacity(role: SurfaceRole")
+            .contains("created.setMaterialOpacity(role, value)"))
+        for (path in listOf("liquid/LiquidActivityRenderer.kt", "material/FrostedMaterialRenderer.kt")) {
+            val source = SourceContract.read(path)
+            assertCheap(path, source.after("override fun setMaterialOpacity(role: SurfaceRole, value: Float)")
+                .before("for (view in "))
+        }
+    }
+
     @Test fun shadowOpacityStaysOutOfTheTextureCache() {
         val shadow = SourceContract.read("material/ControlShadowDrawable.kt")
         val draw = shadow.after("override fun draw(canvas: Canvas)").before("private fun siblingShadowOverlaps")

@@ -52,7 +52,8 @@ class GlowChromeBackdropWiringTest {
         assertTrue(renderer.contains(
             "val chrome = if (role == SurfaceRole.FLOATING && host != null && !foreignWindow) chromeBackdrops[host] else null"))
         assertTrue(renderer.contains("val drewChrome = chrome != null && host != null &&\n" +
-            "                        drawChromeBackdrop(chrome, canvas, bounds, effectiveRadiusPx, alpha, host)\n" +
+            "                        drawChromeBackdrop(chrome, canvas, bounds, effectiveRadiusPx,\n" +
+            "                            (alpha * material.backdrop).roundToInt(), host)\n" +
             "                    if (!drewChrome) {"))
         val chromeDraw = renderer.after("private fun drawChromeBackdrop(").before("\n    }\n")
         // 自带 runCatching：drawWithFallback 不能把它算成主后端失败。

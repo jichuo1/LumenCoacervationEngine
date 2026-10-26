@@ -49,6 +49,10 @@ import com.lumen.coacervation.engine.model.LumenEffectTuning
 import com.lumen.coacervation.engine.model.LumenEffectTuningPolicy
 import com.lumen.coacervation.engine.model.LumenPalette
 import com.lumen.coacervation.engine.runtime.PreparedBackdropCache
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
+import com.lumen.coacervation.engine.host.LumenMaterialLegibility
 import java.util.WeakHashMap
 import java.lang.ref.WeakReference
 import java.util.concurrent.Executors
@@ -299,6 +303,9 @@ internal class LiquidActivityRenderer(
     /** 节点路径任一次出错即永久停用：退回窗口玻璃，不牵连主后端的降级链。 */
     private var chromeBackdropBroken = false
     private val surfaceViews = WeakHashMap<View, LiquidSurfaceFootprint>()
+    /** Material opacity per role (MATERIAL_OPACITY.md §4.2); frames are read by every surface draw. */
+    private val materialOpacity = FloatArray(SurfaceRole.entries.size) { 1f }
+    private val materialFrames = Array(SurfaceRole.entries.size) { MaterialOpacityFrame() }
     private val refreshWindows = WeakHashMap<View, LiquidWindowRefresh>()
     private val visibilityMatrix = FloatArray(9)
     private val retiredBackdropSources = LinkedHashSet<LiquidBackdropSource>()
@@ -642,6 +649,17 @@ internal class LiquidActivityRenderer(
         if (previous != next) host.invalidate()
     }
 
+    override fun setMaterialOpacity(role: SurfaceRole, value: Float) {
+        if (closed) return
+        val index = role.ordinal
+        val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
+        if (next == materialOpacity[index]) return
+        materialOpacity[index] = next
+        MaterialOpacityPolicy.resolve(MaterialKind.LIQUID, next, LumenMaterialLegibility.AUTO.carriesText(role),
+            reduceTransparency = false, out = materialFrames[index])
+        for (view in surfaceViews.keys) view.invalidate()
+    }
+
     override fun bindRoot(root: View, callbacks: GlowEngineCallbacks): Boolean =
         bindRoot(root, callbacks.onFirstVisibleDraw, callbacks.onFatalFailure)
 
@@ -855,6 +873,7 @@ internal class LiquidActivityRenderer(
         host: View? = null
     ) {
         val stretch = stretchWindows.stateFor(host ?: boundRoot)
+        val material = materialFrames[role.ordinal]
         val stretchOpticalIntensity = stretch?.opticalIntensity ?: 1f
         val stretchEdgeDirY = stretch?.edgeDirection ?: 0f
         val effectiveRadiusPx = radiusPx.coerceIn(
@@ -880,7 +899,8 @@ internal class LiquidActivityRenderer(
                 alpha = alpha,
                 fallbackColor = fallbackColor,
                 role = role,
-                translucentFallback = true
+                translucentFallback = true,
+                material = material
             )
             return
         }
@@ -913,6 +933,7 @@ internal class LiquidActivityRenderer(
                     // **主后端**失败并整体降级（REFRACTION→BLUR，全窗口的玻璃一起变）。
                     // 面板驱动是附加通道，坏掉只准它自己退回直采。
                     val drewPanel = panelDriver != null && runCatching {
+                        panelDriver.setMaterial(material)
                         panelDriver.drawBackdrop(
                             canvas,
                             bounds,
@@ -943,7 +964,8 @@ internal class LiquidActivityRenderer(
                             radiusPx = effectiveRadiusPx,
                             rootOffsetX = (viewX - rootScreenLocation[0]).toFloat(),
                             rootOffsetY = (viewY - rootScreenLocation[1]).toFloat(),
-                            alpha = (LiquidSurfaceAlphaPolicy.glassContentAlpha(role) * alpha.toFloat())
+                            // A flat optical copy has no rim to keep, so it thins out with the material.
+                            alpha = (LiquidSurfaceAlphaPolicy.glassContentAlpha(role) * alpha.toFloat() * material.backdrop)
                                 .roundToInt(),
                             localToBackdrop = samplingMatrix,
                             stretchSampling = stretchSampling
@@ -952,12 +974,15 @@ internal class LiquidActivityRenderer(
                 } else {
                     // B 期：主窗口里的悬浮栏优先走内容节点玻璃（实时、无截图滞后）；
                     // 节点不可用时照常折射窗口截屏。
+                    // The content-node glass bakes its optics into the platform effect: it thins out by alpha.
                     val drewChrome = chrome != null && host != null &&
-                        drawChromeBackdrop(chrome, canvas, bounds, effectiveRadiusPx, alpha, host)
+                        drawChromeBackdrop(chrome, canvas, bounds, effectiveRadiusPx,
+                            (alpha * material.backdrop).roundToInt(), host)
                     if (!drewChrome) {
                         checkNotNull(realtimeBackdropSource ?: backdropSource) {
                             "GPU Liquid backend has no backdrop source"
                         }
+                        driver.setMaterial(material)
                         driver.drawBackdrop(
                             canvas,
                             bounds,
@@ -976,7 +1001,9 @@ internal class LiquidActivityRenderer(
                             } else 0f,
                             // 与光学直采路径同理：drawable alpha 是整张表面的主开关，
                             // 折射/模糊填充也必须随它衰减。
-                            LiquidSurfaceAlphaPolicy.glassContentAlpha(role) * (alpha / 255f),
+                            // Refraction keeps the glass (its rim is the clear-glass look); a blur layer thins out.
+                            LiquidSurfaceAlphaPolicy.glassContentAlpha(role) * (alpha / 255f) *
+                                (if (driver.backend == LiquidRenderBackend.BLUR) material.backdrop else 1f),
                             // 回弹期一并降级为 lite（2026-09-22 真机实证）。
                             // 09-21（六）当时坚持"回弹保持完整折射路径"，针对的是**切换绘制
                             // 路径**（drawOpticalRegion 直采）带来的跳变；而 lite 是**同一条
@@ -1005,7 +1032,8 @@ internal class LiquidActivityRenderer(
                 // 折射驱动自带边缘光，只有退回平铺直采的面板才需要那条渐变描边补光；
                 // 两者同时上会叠成一圈比真实 rim 亮一个量级的硬边（2026-09-21（八）实证）。
                 luminousEdge = foreignWindow && foreignFellBack,
-                legibility = if (role == SurfaceRole.FLOATING && host != null) surfaceLegibility[host] else null
+                legibility = if (role == SurfaceRole.FLOATING && host != null) surfaceLegibility[host] else null,
+                material = material
             )
         }
         scheduleHealthConfirmationAfterDraw()
@@ -1020,7 +1048,8 @@ internal class LiquidActivityRenderer(
         role: SurfaceRole,
         translucentFallback: Boolean,
         luminousEdge: Boolean = false,
-        legibility: GlowLegibility? = null
+        legibility: GlowLegibility? = null,
+        material: MaterialOpacityFrame? = null
     ) {
         val baseFraction = LiquidSurfaceAlphaPolicy.resolve(
             role = role,
@@ -1030,7 +1059,7 @@ internal class LiquidActivityRenderer(
         // 可读性补偿只加厚、不减薄；上限与 floatingSurfaceOptics 报给策略的一致。
         val surfaceFraction = if (legibility == null) baseFraction
             else LiquidLegibilityTuning.tintAlpha(baseFraction, legibility.boost)
-        val surfaceAlpha = (surfaceFraction * alpha).toInt().coerceIn(0, 255)
+        val surfaceAlpha = (surfaceFraction * alpha * (material?.fill ?: 1f)).toInt().coerceIn(0, 255)
         // 高阶玻璃使用中性的 surface 轻染色；fallback 才恢复业务传入的实色以保证可读性。
         val tintColor = when {
             role == SurfaceRole.SELECTED_ITEM -> ColorUtils.blendARGB(palette.surface, palette.primary, .06f)
@@ -1045,7 +1074,7 @@ internal class LiquidActivityRenderer(
         )
         // Thin neutral separation; floating bars get a clearer edge without a saturated fill.
         val edgeAlpha = (parameters.highlightAlpha *
-            LiquidSurfaceEdgePolicy.alphaMultiplier(role) * alpha).toInt().coerceIn(0, 255)
+            LiquidSurfaceEdgePolicy.alphaMultiplier(role) * alpha * (material?.edge ?: 1f)).toInt().coerceIn(0, 255)
         val inset = outlinePaint.strokeWidth * 0.5f
         // 光学直采路径（位移抑制/外部窗口）不跑折射 shader：菲涅尔/镜面/焦散那条
         // 边缘光晕带整条缺席，只剩细描边——切页瞬间所有控件"边缘高光消失再加载"

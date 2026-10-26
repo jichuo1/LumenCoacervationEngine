@@ -32,6 +32,7 @@ import android.graphics.RuntimeShader
 import androidx.annotation.RequiresApi
 import com.lumen.coacervation.engine.model.LiquidParameters
 import com.lumen.coacervation.engine.model.LiquidRenderBackend
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -59,6 +60,13 @@ internal class LiquidRefractionBackendApi33(
     private var source: LiquidBackdropSource? = null
     private var appliedScatterTapMode = FULL_SCATTER_TAPS
     private val samplingValues = FloatArray(9)
+    private var material: MaterialOpacityFrame? = null
+    // Multipliers currently written into the shared shader; all 1 matches applyLiquidOpticalUniforms.
+    private var appliedRefraction = 1f
+    private var appliedChromatic = 1f
+    private var appliedScatterRadius = 1f
+    private var appliedScatterStrength = 1f
+    private var appliedSpecular = 1f
 
     init {
         shader.applyLiquidOpticalUniforms(parameters, density)
@@ -84,6 +92,42 @@ internal class LiquidRefractionBackendApi33(
         )
     }
 
+    override fun setMaterial(frame: MaterialOpacityFrame?) { material = frame }
+
+    /**
+     * Clear glass keeps its refractive rim: scattering, refraction, specular and dispersion follow the material
+     * opacity per draw. Only changed uniforms are written; zero scattering also skips the scatter taps.
+     */
+    private fun applyMaterialUniforms() {
+        val m = material
+        val refraction = m?.refraction ?: 1f
+        if (refraction != appliedRefraction) {
+            shader.setFloatUniform("refractionAmount", parameters.refractionAmountDp * density * refraction)
+            appliedRefraction = refraction
+        }
+        val chromatic = m?.chromatic ?: 1f
+        if (chromatic != appliedChromatic) {
+            shader.setFloatUniform("chromaticShift", parameters.chromaticShiftDp * density * chromatic)
+            appliedChromatic = chromatic
+        }
+        val scatterRadius = m?.scatterRadius ?: 1f
+        if (scatterRadius != appliedScatterRadius) {
+            shader.setFloatUniform("scatteringRadius", parameters.scatteringRadiusDp * density * scatterRadius)
+            appliedScatterRadius = scatterRadius
+        }
+        val scatterStrength = m?.scatterStrength ?: 1f
+        if (scatterStrength != appliedScatterStrength) {
+            shader.setFloatUniform("scatteringStrength", parameters.scatteringStrength * scatterStrength)
+            appliedScatterStrength = scatterStrength
+        }
+        val specular = m?.specular ?: 1f
+        if (specular != appliedSpecular) {
+            shader.setFloatUniform("specularStrength", parameters.specularStrength * specular)
+            shader.setFloatUniform("fresnelStrength", parameters.fresnelStrength * specular)
+            appliedSpecular = specular
+        }
+    }
+
     override fun drawBackdrop(
         canvas: Canvas,
         bounds: Rect,
@@ -98,6 +142,7 @@ internal class LiquidRefractionBackendApi33(
         stretchSampling: FloatArray?
     ) {
         checkNotNull(source) { "Liquid refraction backdrop is not bound" }
+        applyMaterialUniforms()
         shader.setFloatUniform("size", bounds.width().toFloat(), bounds.height().toFloat())
         shader.setFloatUniform("offset", -bounds.left.toFloat(), -bounds.top.toFloat())
         // offset 只把形状归零；纹理仍按承载 View 的完整局部坐标取样。

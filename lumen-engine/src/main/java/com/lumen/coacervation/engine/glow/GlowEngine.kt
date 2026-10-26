@@ -131,6 +131,12 @@ public interface GlowEngine : AutoCloseable {
 
     /** 登记（或以 null 撤销）悬浮栏 [host] 的内容节点取样源。 */
     fun setSurfaceBackdrop(host: View, target: GlowBackdropTarget?) = Unit
+
+    /**
+     * 材质浓度（MATERIAL_OPACITY.md）：0 接近清玻璃，1 为默认外观；作用于 [role] 的全部表面，已创建的表面立即生效。
+     * 逐帧可调，实现只写原始数值与 uniform，不重建着色器或模糊效果。默认空实现等同于恒为 1（契约版本不变）。
+     */
+    fun setMaterialOpacity(role: SurfaceRole, value: Float) = Unit
 }
 
 /** [GlowEngine.bindRoot] 的健康回调；只在主线程、且只在绘制调用栈之外触发。 */

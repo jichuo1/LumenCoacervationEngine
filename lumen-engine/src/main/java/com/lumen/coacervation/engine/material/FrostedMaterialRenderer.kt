@@ -43,6 +43,10 @@ import com.lumen.coacervation.engine.geometry.ScrollSurfaceScope
 import com.lumen.coacervation.engine.geometry.ViewSamplingMatrix
 import com.lumen.coacervation.engine.model.SurfaceRole
 import com.lumen.coacervation.engine.model.LumenPalette
+import com.lumen.coacervation.engine.host.LumenMaterialLegibility
+import com.lumen.coacervation.engine.runtime.MaterialKind
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
+import com.lumen.coacervation.engine.runtime.MaterialOpacityPolicy
 import com.lumen.coacervation.engine.runtime.PreparedBackdropCache
 import com.lumen.coacervation.engine.host.LumenBackdropReadiness
 import java.lang.ref.WeakReference
@@ -87,6 +91,9 @@ internal class FrostedMaterialRenderer(
         val source = FloatArray(9)
     }
     private val surfaces = WeakHashMap<View, SurfaceTransform>()
+    /** Material opacity per role (MATERIAL_OPACITY.md §4.1); frames are read by every surface draw. */
+    private val materialOpacity = FloatArray(SurfaceRole.entries.size) { 1f }
+    private val materialFrames = Array(SurfaceRole.entries.size) { MaterialOpacityFrame() }
     private class RefreshWindow(
         val observer: WeakReference<ViewTreeObserver>,
         val batch: FrostedRefreshBatch,
@@ -181,7 +188,23 @@ internal class FrostedMaterialRenderer(
 
     override fun surface(fallbackColor: Int, radiusDp: Float, role: SurfaceRole): Drawable =
         ModernSurfaceDrawable(this, fallbackColor, radiusDp * density, density,
-            ModernMaterialPolicy.surface(role, dark, effectTuning), effectTuning.edgeHighlightWidth)
+            ModernMaterialPolicy.surface(role, dark, effectTuning), effectTuning.edgeHighlightWidth, role = role)
+
+    override fun setMaterialOpacity(role: SurfaceRole, value: Float) {
+        if (closed) return
+        val index = role.ordinal
+        val next = MaterialOpacityPolicy.sanitize(value, materialOpacity[index])
+        if (next == materialOpacity[index]) return
+        materialOpacity[index] = next
+        MaterialOpacityPolicy.resolve(MaterialKind.FROSTED, next, LumenMaterialLegibility.AUTO.carriesText(role),
+            reduceTransparency = false, out = materialFrames[index])
+        for (view in surfaces.keys) view.invalidate()
+    }
+
+    internal fun materialFrame(role: SurfaceRole): MaterialOpacityFrame = materialFrames[role.ordinal]
+
+    /** A clear surface stops its live lens: nothing of the sample would be visible. */
+    internal fun stopLiveSample(view: View) { live.unregister(view) }
 
     private fun requestBackdrop(newWidth: Int, newHeight: Int) {
         if (!lifecycle.canWork || newWidth <= 0 || newHeight <= 0 || (width == newWidth && height == newHeight && (frame != null || work != null))) return
@@ -571,7 +594,8 @@ private class ModernSurfaceDrawable(
     private val style: ModernSurfaceStyle,
     /** [LumenEffectTuning.edgeHighlightWidth]；边框 alpha 已由 [ModernMaterialPolicy.surface] 换算进 [style]。 */
     edgeWidthScale: Float = 1f,
-    private val tintOnly: Boolean = false
+    private val tintOnly: Boolean = false,
+    private val role: SurfaceRole? = null
 ) : Drawable() {
     private val rect = RectF()
     private val edgeRect = RectF()
@@ -614,13 +638,22 @@ private class ModernSurfaceDrawable(
         if (view != null && canvas.isHardwareAccelerated) renderer?.register(view)
         val tintAlpha = if (tintOnly) style.tintAlpha
             else (255 + (style.tintAlpha - 255) * (renderer?.revealFraction ?: 0f)).toInt()
-        val overlayAlpha = tintAlpha * frameAlpha / 255
+        val material = if (role != null) renderer?.materialFrame(role) else null
+        val backdropWeight = material?.backdrop ?: 1f
+        val fillWeight = material?.fill ?: 1f
+        val tintFull = tintAlpha * frameAlpha / 255
+        val overlayAlpha = (tintFull * fillWeight).roundToInt()
         // Preserve the host's ARGB opacity without allocating an offscreen saveLayer for each frame.
-        val sampleAlpha = FrostedMotionSurfaceAlpha.sampleAlpha(frameAlpha, overlayAlpha)
-        var sampled = tintOnly || renderer?.drawSample(canvas, rect, drawRadius, view, sampleAlpha) == true
+        // Material opacity thins the frost (sample) and the haze (tint) separately: the fog clears.
+        val sampleAlpha = (FrostedMotionSurfaceAlpha.sampleAlpha(frameAlpha, tintFull) * backdropWeight).roundToInt()
+        val sampling = backdropWeight > MaterialOpacityPolicy.SAMPLING_EPSILON
+        var sampled = tintOnly || sampling && renderer?.drawSample(canvas, rect, drawRadius, view, sampleAlpha) == true
         // 悬浮表面再叠一层实时透镜采样：静态磨砂在下，穿过胶囊的内容在上，色罩最后。
-        if (style.live && renderer?.drawLiveSample(canvas, rect, drawRadius, view, sampleAlpha) == true) sampled = true
-        fill.color = ColorUtils.setAlphaComponent(drawColor, if (sampled) overlayAlpha else frameAlpha)
+        if (style.live && sampling && renderer?.drawLiveSample(canvas, rect, drawRadius, view, sampleAlpha) == true) sampled = true
+        if (style.live && !sampling && view != null) renderer?.stopLiveSample(view)
+        // Unsampled, the fallback stands in for the frost and thins out with it.
+        val unsampledAlpha = (tintFull * fillWeight + (frameAlpha - tintFull) * backdropWeight).roundToInt()
+        fill.color = ColorUtils.setAlphaComponent(drawColor, if (sampled) overlayAlpha else unsampledAlpha)
         canvas.drawRoundRect(rect, drawRadius, drawRadius, fill)
         // Motion hosts own their collapsing stroke. A second full-opacity edge would flash at handoff.
         // 边缘高光默认关闭（alpha 全 0）时直接跳过描边，省一次 drawRoundRect。
@@ -633,7 +666,7 @@ private class ModernSurfaceDrawable(
                 edgeMatrix.postTranslate(0f, rect.top)
                 edgeShader.setLocalMatrix(edgeMatrix)
             }
-            edge.alpha = frameAlpha
+            edge.alpha = (frameAlpha * (material?.edge ?: 1f)).roundToInt()
             canvas.drawRoundRect(edgeRect, (drawRadius - edge.strokeWidth / 2).coerceAtLeast(0f),
                 (drawRadius - edge.strokeWidth / 2).coerceAtLeast(0f), edge)
         }

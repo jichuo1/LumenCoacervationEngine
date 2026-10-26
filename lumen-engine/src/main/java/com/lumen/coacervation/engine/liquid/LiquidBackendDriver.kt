@@ -4,6 +4,7 @@ import android.graphics.Canvas
 import android.graphics.Matrix
 import android.graphics.Rect
 import com.lumen.coacervation.engine.model.LiquidRenderBackend
+import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
 
 /** 高 API 图形类型不得出现在该公共接口中，保证 API 27 可以安全加载通用 renderer。 */
 internal interface LiquidBackendDriver : AutoCloseable {
@@ -12,6 +13,12 @@ internal interface LiquidBackendDriver : AutoCloseable {
 
     /** 只在布局/尺寸变化路径调用，不在 draw 中创建或绑定图形资源。 */
     fun bindBackdrop(source: LiquidBackdropSource)
+
+    /**
+     * 下一次 [drawBackdrop] 使用的材质浓度乘数（null 为默认）。调用方在每次绘制前设置：一个后端为全部表面共用。
+     * 只改 uniform；不支持逐表面光学参数的后端忽略。
+     */
+    fun setMaterial(frame: MaterialOpacityFrame?) = Unit
 
     /**
      * 调用方保证在主线程绘制；实现不得在此创建 Bitmap、Shader 或 RenderEffect。

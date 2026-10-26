@@ -163,6 +163,13 @@ internal class ActivitySkinSession private constructor(
         if (!isClosed) activeEngine.notifyPositionChanged()
     }
 
+    /** Every engine follows, so the dormant frosted fallback already matches when Liquid fails over to it. */
+    @MainThread
+    fun setMaterialOpacity(role: SurfaceRole, value: Float) {
+        if (isClosed) return
+        for (i in engines.indices) engines[i].setMaterialOpacity(role, value)
+    }
+
     @MainThread
     fun notifyPositionChanged(changedView: View) {
         if (!isClosed) activeEngine.notifyPositionChanged(changedView)
