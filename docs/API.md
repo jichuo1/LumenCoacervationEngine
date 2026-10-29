@@ -318,6 +318,16 @@
 - LumenSurfaceListener.onSurfaceState(id, backend, failure, firstVisibleDraw)：异步合并、异常隔离。
 - LumenSurfacePresets.floating / fadingBand / staticPanel：可继续copy调节的配置。
 
+### 可选原生 backdrop（未发布）
+
+| 声明 | 说明 |
+|---|---|
+| `LumenSurfaceBinding.setRenderTargetBackdropEnabled(enabled: Boolean)` | 主线程显式开关，默认 `false`。API 37.2+ 的基础 FROSTED View 背景可选择当前渲染目标中已经绘制的像素；绑定的 View 来源仍作为既有 GPU/软件回退。该开关不改变材质或采样配置的构造及 `copy` 签名 |
+| `LumenSurfaceBinding.renderTargetBackdropState(): LumenRenderTargetBackdropState?` | 主线程按需快照；绑定已关闭、所属会话已关闭或已不存在时为 `null` |
+| `LumenRenderTargetBackdropState(requested: Boolean, active: Boolean, failed: Boolean, draws: Long)` | `requested` 为开关意图；`active` 表示当前已成功使用原生路径；`failed` 为绑定内锁存的原生失败；`draws` 为成功提交原生绘制的累计次数，不代表实际可见帧、像素正确或性能达标 |
+
+仅 `bind(view, surface, source: View?)` 的基础圆角 FROSTED 背景满足条件时启用；自定义来源、draw-only target、复合 Acrylic/Mica/Liquid/Prism、折射、渐隐、增强效果或非完整的透明度/材质权重保留既有采样。软件画布、完整系统版本不足 `3700002`、变换/图层不匹配及后端失败同样回退。既有 `GPU` 诊断同时包含两种 GPU 实现，区分当前路径需读取上述 `active`。完整条件、生命周期、可复制示例和验证边界见 [NATIVE_BACKDROP.md](NATIVE_BACKDROP.md)。
+
 ## 14. 局部增强（自1.2.0）
 
 完整默认值、有效范围、优先级与平台回退见 [VISUAL_EFFECTS.md](VISUAL_EFFECTS.md)。以下配置为不可变data class，构造/copy均校验范围；值类型与JSON编解码不依赖渲染线程，其余渲染/交互入口为主线程。

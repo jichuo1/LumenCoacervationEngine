@@ -48,6 +48,7 @@ ART 执行 `check-cast` 和 `instance-of` 时，**先解析类型、再判断 nu
    - 判断如果封装成属性或函数，**必须**标注 `@ChecksSdkIntAtLeast`。
 4. **不得**用 `runCatching` 或 `try/catch` 代替版本判断。
 5. **不得**用任何反射方式访问高版本 API（见 §3）。
+6. 小版本新增 API 必须判断完整版本。`SDK_INT_FULL` 从 API 36 引入，先检查 `SDK_INT >= 36` 再访问；原生 backdrop 还需完整版本 `>= 3700002`，只判断 `SDK_INT >= 37` 不足以调用 37.2 接口。实际绘制前检查传入 Canvas 的硬件加速状态，版本判断不替代画布判断。
 
 ### 2.3 现有隔离类
 
@@ -58,6 +59,7 @@ ART 执行 `check-cast` 和 `instance-of` 时，**先解析类型、再判断 nu
 | 31 | `GlowContentCaptureApi31`、`GlowChromeGlassApi31`、`GlowChromeBlurApi31`、`LiquidBlurBackendApi31`、`LiquidChromeBackdropApi31`、`LiquidPerformanceHintApi31`、`FrostedChromeGlassApi31`、`SurfaceCaptureApi31`（局部视效会话的节点采样）；lumen-motion：`ScreenCornersApi31`（当前窗口的系统圆角） |
 | 33 | `LiquidRefractionBackendApi33`、`LiquidChromeLensApi33`、`FrostedChromeLensApi33`、`DirectSurfaceProgramApi33`（局部增强的直接着色）、`PrismLensApi33`、`PrismHighlightApi33`（棱镜玻璃的折射与高光）；lumen-motion：`PredictiveBackApi33`（承载 `android.window.*` 返回回调，对外签名一律用 `Any`）、`AnimatorDurationScaleApi33`、`PrismSelectionShaderApi33`（棱镜选中框）；lumen-effects：`ProceduralProgramApi33` |
 | 34 | lumen-motion：`SliderHdrHighlightApi34`（滑块 HDR 高光：显示器 HDR/SDR 余量与扩展范围径向渐变） |
+| 37 | `RenderTargetBackdropApi37`（37.2 当前渲染目标的原生 backdrop；另有完整 SDK 版本门控，详见 [NATIVE_BACKDROP.md](NATIVE_BACKDROP.md)） |
 
 新增或删除隔离类时同步本表。核对命令（列出各模块源码中声明的全部隔离类）：
 

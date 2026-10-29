@@ -1,4 +1,5 @@
 import com.android.build.api.dsl.CommonExtension
+import com.android.build.api.variant.AndroidComponentsExtension
 import org.gradle.api.tasks.testing.Test
 
 plugins {
@@ -20,6 +21,10 @@ subprojects {
         tasks.withType<Test>().configureEach {
             inputs.files(contractSources).withPropertyName("sourceContractInputs")
                 .withPathSensitivity(PathSensitivity.RELATIVE)
+        }
+        // Module compileSdk setters clear the minor level, so set it after each module's DSL.
+        extensions.configure<AndroidComponentsExtension<*, *, *>>("androidComponents") {
+            finalizeDsl { dsl -> (dsl as CommonExtension).compileSdkMinor = providers.gradleProperty("lumen.compileSdkMinor").get().toInt() }
         }
         extensions.configure<CommonExtension>("android") {
             lint.apply {

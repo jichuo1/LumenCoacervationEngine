@@ -37,7 +37,7 @@ class SurfaceSandboxActivity : Activity() {
     internal lateinit var content: View
     internal lateinit var glass: TextView
     internal lateinit var preview: FrameLayout
-    private var surface = LumenSurfaceOptions()
+    private var surface = LumenSurfaceOptions(sampling = LumenSurfaceSampling(blurRadiusDp = 6f, refractionEnabled = false))
     private var limits = LumenSurfaceSessionOptions()
     private var dark = false
     private var enhancements=LumenSurfaceEnhancements.DEFAULT
@@ -58,7 +58,7 @@ class SurfaceSandboxActivity : Activity() {
         content = PatternView()
         glass = TextView(this).apply { text = "局部表面：原窗口与内容层保持原样"; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setPadding(dp(8),dp(8),dp(8),dp(8)) }
         preview.addView(content,FrameLayout.LayoutParams(-1,-1))
-        preview.addView(glass,FrameLayout.LayoutParams(-1,dp(84),Gravity.CENTER).apply { leftMargin=dp(16);rightMargin=dp(16) })
+        preview.addView(glass,FrameLayout.LayoutParams(-1,dp(84),Gravity.CENTER).apply { leftMargin=dp(32);rightMargin=dp(32) })
         root.addView(preview,LinearLayout.LayoutParams(-1,0,1f))
         status = TextView(this).apply { textSize=12f;setPadding(dp(12),dp(4),dp(12),dp(4));setTextColor(Color.BLACK) }
         root.addView(status)
@@ -67,8 +67,13 @@ class SurfaceSandboxActivity : Activity() {
         root.addView(scroll,LinearLayout.LayoutParams(-1,dp(300)))
         setContentView(root)
         session=LumenSurfaceSession(this,LumenPalette.neutral(false),limits)
-        session.setListener { _,backend,failure,_ -> status.text="$backend / $failure · 点击“诊断”查看计数" }
         binding=session.bind(glass,surface,content)
+        binding.setRenderTargetBackdropEnabled(true)
+        session.setListener { _,backend,failure,_ ->
+            val native = binding.renderTargetBackdropState()?.active == true
+            status.text = if (native) "原生 backdrop 已启用 · $backend" else "兼容路径 · $backend / $failure（原生需要 Android 37.2）"
+        }
+        startAnimation()
         buildControls(controls)
         val choices=LumenSlidingSelection(this,ColorDrawable(Color.rgb(211,228,248)),LinearLayout.HORIZONTAL)
         for(label in listOf("推荐","动态","关注"))choices.addOption(TextView(this).apply {text=label;gravity=Gravity.CENTER;setTextColor(Color.BLACK);setPadding(dp(8),dp(14),dp(8),dp(14))},LinearLayout.LayoutParams(0,dp(56),1f))
@@ -143,6 +148,9 @@ class SurfaceSandboxActivity : Activity() {
         toggle("启用局部表面",surface.enabled) { applySurface(surface.copy(enabled=it)) }
         toggle("启用会话",limits.enabled) { applyLimits(limits.copy(enabled=it)) }
         toggle("采样",surface.sampling.enabled) { enabled->applySampling { it.copy(enabled=enabled) } }
+        toggle("当前绘制背景（关闭折射后尝试）",binding.renderTargetBackdropState()?.requested==true) {
+            binding.setRenderTargetBackdropEnabled(it)
+        }
         toggle("模糊",surface.sampling.blurEnabled) { enabled->applySampling { it.copy(blurEnabled=enabled) } }
         toggle("折射",surface.sampling.refractionEnabled) { enabled->applySampling { it.copy(refractionEnabled=enabled) } }
         toggle("GPU 不可用/失败后软件回退",surface.sampling.softwareFallback) { enabled->applySampling { it.copy(softwareFallback=enabled) } }
@@ -183,7 +191,7 @@ class SurfaceSandboxActivity : Activity() {
         slider("控件纵向缩放",.5f,1.5f,glass.scaleY) {glass.scaleY=it;session.notifyPositionChanged()}
         action("暂停") { session.pause() };action("恢复") {session.resume()}
         action("释放图形资源") {session.releaseGraphics()}
-        action("诊断") {status.text=session.diagnostics().toString()+"\n"+binding.diagnostics()}
+        action("诊断") {status.text=session.diagnostics().toString()+"\n"+binding.diagnostics()+"\n"+binding.renderTargetBackdropState()}
         action("状态栏渐隐预设") {
             applySurface(LumenSurfacePresets.fadingBand())
             parent.removeAllViews();buildControls(parent)

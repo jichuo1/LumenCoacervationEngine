@@ -18,6 +18,16 @@ binding.close()
 session.close()
 ```
 
+## 可选原生 backdrop
+
+绑定默认保持显式来源采样。对基础 FROSTED 圆角 View 背景，可调用 `binding.setRenderTargetBackdropEnabled(true)` 请求 API 37.2 的原生 backdrop；它处理当前渲染目标中在本节点之前已绘制的像素，宿主需确认其内容及顺序符合场景。`source` 继续用于来源安全校验与回退，不能用它选择原生路径的输入。完整示例及范围见 [NATIVE_BACKDROP.md](NATIVE_BACKDROP.md)。
+
+必须为硬件 Canvas、完整 SDK 版本不低于 37.2、Session `gpuScale=1`，且未启用有效折射、渐隐或改变视觉的增强效果；透明度/材质权重完整，View 及祖先没有缩放、旋转、独立图层或旧式 Animation。仅允许整数像素平移，背景 View 自身不能有 scroll 偏移，祖先滚动仍可用并按既有位置通知协议更新。包含模糊 halo 的矩形必须完整位于 window/decor 边界内；小数平移和边界裁剪主动回退。自定义内容来源、draw-only target 和复合材质保持显式采样。低版本、软件画布、不匹配及失败时回退，来源可用性、同窗口、防反馈、GPU 区域预算、质量执行预算、隐藏/失焦和释放策略继续生效。
+
+首次成功前保留既有来源录制作为安全回退；同组全部表面已成功使用原生路径后停止该组多余的旧录制和软件采样，混合组继续服务仍需显式来源的表面。切换或回退时重新激活旧路径。原生失败在绑定内锁存，配置更新、暂停/恢复和开关切换不会重试；关闭、暂停、释放和 detach 清理节点资源。`binding.renderTargetBackdropState()` 返回独立状态快照；旧的 `GPU` 后端枚举同时覆盖两种 GPU 路径，应结合 `active` 判断。
+
+原生输入受绘制顺序、离屏图层、裁剪和窗口边界影响，不保证与来源 View 的采样像素相同，也不能读取独立视频 Surface。宿主必须避免自定义祖先 saveLayer/RenderEffect 等隐藏离屏语义；View.layerType 门控只能检测显式层。目前尚无 API 37.2 设备像素及性能证据，不承诺更快或零拷贝。
+
 ## 来源和窗口
 
 source 应当是表面下面的现有内容，不能包含会话注入的任何表面。引擎检查窗口 token 与祖先关系，拒绝不同窗口和反馈回路。

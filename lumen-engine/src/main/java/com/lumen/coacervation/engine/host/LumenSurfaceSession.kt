@@ -218,6 +218,23 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         return false
     }
 
+    internal fun setRenderTargetBackdropEnabled(id: Long, enabled: Boolean) {
+        if (closed) return
+        checkMain()
+        val entry = entries.firstOrNull { it.id == id } ?: return
+        if (entry.nativeRequested == enabled) return
+        entry.nativeRequested = enabled
+        // Rebuild drops both backends and stale software frames. A native failure remains sticky.
+        entry.rebuild()
+    }
+
+    internal fun renderTargetBackdropState(id: Long): LumenRenderTargetBackdropState? {
+        if (closed) return null
+        checkMain()
+        val entry = entries.firstOrNull { it.id == id } ?: return null
+        return LumenRenderTargetBackdropState(entry.nativeRequested, entry.nativeActive, entry.nativeFailed, entry.nativeDraws)
+    }
+
     /** Backend of the binding's latest draw; allocation-free for per-frame reads. */
     internal fun backendOf(id: Long): LumenSurfaceBackend {
         if (closed) return LumenSurfaceBackend.STATIC
@@ -762,6 +779,13 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 if (!entry.needsBackdrop()) continue
                 if(entry.enhanced()&&!entry.nodeCompatible())continue
                 if (failure(host, entry) != LumenSurfaceFailure.NONE) { sampler.unregister(entry.target); entry.releaseGpu(); continue }
+                // Wait for a successful draw on an actual hardware Canvas before retiring explicit capture.
+                // Mixed groups still record once for their remaining explicit-source consumers.
+                if (entry.nativeActive && entry.nativeEligible(host.isHardwareAccelerated)) {
+                    sampler.unregister(entry.target)
+                    continue
+                }
+                if (entry.nativeActive) entry.leaveNative()
                 if (LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, entry.config.sampling.backend, true, entry.gpuFailed)) {
                     wanted = true; interval = minOf(interval, entry.config.sampling.minIntervalMs)
                 }
@@ -892,6 +916,79 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         var direct: DirectSurfaceProgramApi33?=null
         // Composite acrylic applies its own luminosity recipe after the sampled backdrop.
         var preserveBackdropColors = false
+        var nativeRequested = false
+        var nativeActive = false
+        var nativeFailed = false
+        var nativeDraws = 0L
+        var nativeBackdrop: RenderTargetBackdropApi37? = null
+        private val nativeWindowPosition = IntArray(2)
+        private val nativeRootPosition = IntArray(2)
+
+        private fun nativeUntransformed(): Boolean {
+            var current = host.get()
+            while (current != null) {
+                if (current.alpha != 1f || current.scaleX != 1f || current.scaleY != 1f ||
+                    current.rotation != 0f || current.rotationX != 0f || current.rotationY != 0f ||
+                    current.translationX % 1f != 0f || current.translationY % 1f != 0f ||
+                    current.layerType != View.LAYER_TYPE_NONE || current.animation != null) return false
+                current = current.parent as? View
+            }
+            return true
+        }
+
+        private fun nativeWithinWindow(): Boolean {
+            val view = host.get() ?: return false
+            if (view.scrollX != 0 || view.scrollY != 0) return false
+            val root = view.rootView
+            view.getLocationInWindow(nativeWindowPosition)
+            root.getLocationInWindow(nativeRootPosition)
+            val sampling = appearance.sampling
+            val pad = (if (sampling.blurEnabled) sampling.blurRadiusDp * density * 2f else 0f).roundToInt() + 2
+            return RenderTargetBackdropPolicy.windowContains(
+                nativeWindowPosition[0] - nativeRootPosition[0], nativeWindowPosition[1] - nativeRootPosition[1],
+                target.width, target.height, root.width, root.height, pad)
+        }
+
+        fun nativeEligible(hardwareCanvas: Boolean, alpha: Float = 1f): Boolean {
+            if (!nativeRequested || nativeFailed) return false
+            val c = appearance
+            return RenderTargetBackdropPolicy.eligible(
+                requested = nativeRequested,
+                sdkSupported = Build.VERSION.SDK_INT >= 37 && RenderTargetBackdropApi37.isSupported(),
+                hardwareCanvas = hardwareCanvas,
+                viewBackground = installsBackground && group?.source is ViewContentSource,
+                frosted = c.material == LumenSurfaceMaterial.FROSTED,
+                refraction = c.sampling.refractionEnabled && c.sampling.refractionStrength > 0f,
+                fade = c.sampling.fadeEnabled,
+                enhanced = enhanced(),
+                preserveColors = preserveBackdropColors,
+                prism = prism != null,
+                fullOpacity = alpha == 1f && drawable.alpha == 255 && c.opacity == 1f && c.backdropOpacity == 1f &&
+                    materialBackdrop == 1f && materialRadiusBackdrop == 1f && materialBlur == 1f,
+                untransformed = nativeUntransformed() && nativeWithinWindow() && c.clipBackground && options.gpuScale == 1f,
+                gpuAllowed = LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, c.sampling.backend,
+                    c.enabled && c.sampling.enabled, gpuFailed),
+                failed = nativeFailed
+            )
+        }
+
+        fun releaseNative() {
+            // A vendor cleanup failure must not stop the binding's ordinary fallback or teardown.
+            if (Build.VERSION.SDK_INT >= 37) {
+                try { nativeBackdrop?.close() } catch (_: Throwable) { nativeFailed = true }
+            }
+            nativeBackdrop = null
+            nativeActive = false
+        }
+
+        fun leaveNative() {
+            if (!nativeActive && nativeBackdrop == null) return
+            releaseNative()
+            gpuPixels = 0L
+            group?.dirty = true
+            // Restore explicit capture on the following pre-draw, including after a software Canvas draw.
+            invalidateFrame()
+        }
         /** Prism glass recipe for draw-only bindings; null keeps the surface material's chain. */
         var prism: PrismRecipe? = null
         var rawProfile=LumenRawSampleProfile(1f)
@@ -1037,6 +1134,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             view.invalidate()
         }
         fun releaseGpu() {
+            releaseNative()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) gpu?.close()
             if(Build.VERSION.SDK_INT>=33)direct?.close()
             direct=null
@@ -1161,6 +1259,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             var backend = LumenSurfaceBackend.STATIC
             val alpha = c.opacity * alphaValue / 255f * entry.drawAlpha
             val backdropAlpha = alpha * c.backdropOpacity * entry.materialBackdrop
+            if (reason != LumenSurfaceFailure.NONE || !entry.nativeEligible(canvas.isHardwareAccelerated, alpha)) entry.leaveNative()
             var visibleEffect = false
             var enhancedPainted=false
             var sampleGeometryReady = false
@@ -1216,9 +1315,35 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         } else reason=LumenSurfaceFailure.GPU_UNAVAILABLE
                     }
                     else {
+                        if (reason == LumenSurfaceFailure.NONE && entry.nativeEligible(canvas.isHardwareAccelerated, alpha) &&
+                            Build.VERSION.SDK_INT >= 37) {
+                            val pad = (if (c.sampling.blurEnabled) c.sampling.blurRadiusDp * density * 2f else 0f).roundToInt() + 2
+                            val width = bounds.width().toLong() + 2L * pad
+                            val height = bounds.height().toLong() + 2L * pad
+                            val pixels = width * height
+                            if (pixels + surfacePixels() - entry.gpuPixels <= options.maxGpuSurfacePixels &&
+                                (!entry.enhancements.quality.enabled || pixels <= entry.enhancements.quality.maxExecutionPixels) &&
+                                width <= options.maxGpuDimension && height <= options.maxGpuDimension) {
+                                try {
+                                    val native = entry.nativeBackdrop ?: RenderTargetBackdropApi37(density, c.sampling, entry.graphics)
+                                        .also { entry.nativeBackdrop = it }
+                                    if (native.draw(canvas, bounds, c.radiusDp * density)) {
+                                        entry.gpu?.close(); entry.gpu = null
+                                        entry.nativeActive = true; entry.nativeDraws++; entry.gpuPixels = pixels
+                                        backend = LumenSurfaceBackend.GPU; gpuDraws++
+                                        group.sampler.unregister(entry.target)
+                                    } else {
+                                        entry.nativeFailed = true; entry.leaveNative()
+                                    }
+                                } catch (_: Throwable) {
+                                    entry.nativeFailed = true; entry.leaveNative()
+                                }
+                            }
+                        }
+                        if (!entry.nativeActive || backend != LumenSurfaceBackend.GPU) entry.leaveNative()
                         if (c.sampling.backend != LumenSurfaceBackend.SOFTWARE &&
                             (!canvas.isHardwareAccelerated || Build.VERSION.SDK_INT < 31)) reason = LumenSurfaceFailure.GPU_UNAVAILABLE
-                        if (canvas.isHardwareAccelerated && LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, c.sampling.backend, true, entry.gpuFailed || group.failed) &&
+                        if (backend != LumenSurfaceBackend.GPU && canvas.isHardwareAccelerated && LumenSurfacePolicy.gpuAllowed(Build.VERSION.SDK_INT, c.sampling.backend, true, entry.gpuFailed || group.failed) &&
                             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && group.capture?.recorded == true) {
                             try {
                                 if (entry.sourceToTarget(content, sampleMatrix)) {
@@ -1383,6 +1508,14 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
     public fun clearTransientEffects() {session.get()?.clearTransient(id)}
     public fun setQualityPressure(pressure: Float) {session.get()?.qualityHint(id,pressure)}
     public fun diagnostics(): LumenSurfaceState? = session.get()?.state(id)
+    /**
+     * Opt in to the CURRENT render target's already drawn pixels on Android 37.2+, rather than a
+     * selectable content source. Only basic, opaque, untransformed FROSTED View backgrounds qualify.
+     * The bound View source remains the explicit GPU/software fallback. Custom sources and composites
+     * retain explicit sampling. The caller owns drawing order and render-target/layer semantics.
+     */
+    public fun setRenderTargetBackdropEnabled(enabled: Boolean) { session.get()?.setRenderTargetBackdropEnabled(id, enabled) }
+    public fun renderTargetBackdropState(): LumenRenderTargetBackdropState? = session.get()?.renderTargetBackdropState(id)
     override fun setMaterialOpacity(value: Float) { setMaterialOpacity(value, LumenMaterialLegibility.AUTO) }
     /** As [setMaterialOpacity], declaring whether this surface carries text (legibility floor, MATERIAL_OPACITY.md §6). */
     public fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) { session.get()?.setMaterialOpacity(id, value, legibility) }
