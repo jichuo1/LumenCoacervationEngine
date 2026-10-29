@@ -41,6 +41,7 @@ import com.lumen.coacervation.engine.runtime.LumenMemoryPressureHub
 import com.lumen.coacervation.engine.runtime.LumenMemoryPressureListener
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import com.lumen.coacervation.engine.runtime.LumenSourceTimeline
+import com.lumen.coacervation.engine.runtime.LumenSourceObservation
 import com.lumen.coacervation.engine.runtime.LumenSourceGraph
 import com.lumen.coacervation.engine.runtime.MaterialKind
 import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
@@ -651,18 +652,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             return false
         }
         var declaredEpoch=runCatching {(source as? LumenVersionedContentSource)?.sourceEpoch?:0L}.getOrDefault(0L)
-        var declaredVersion=runCatching {(source as? LumenVersionedContentSource)?.contentVersion?:0L}.getOrDefault(0L)
-        var availability=readAvailability()
-        private fun readAvailability(): LumenSourceAvailability {
-            return try {
-                for(i in 0 until trackedSources.size){
-                    val current=trackedSources[i]
-                    if(current.sourceEpoch<0L||current.contentVersion<0L)return LumenSourceAvailability.TEMPORARILY_UNAVAILABLE
-                    if(current.availability!=LumenSourceAvailability.READY)return current.availability
-                }
-                LumenSourceAvailability.READY
-            }catch(_:Throwable){LumenSourceAvailability.TEMPORARILY_UNAVAILABLE}
-        }
+        private var initialRootVersion=LumenSourceObservation.NO_VERSION
+        var declaredVersion=runCatching {(source as? LumenVersionedContentSource)?.contentVersion?.also {initialRootVersion=it}?:0L}.getOrDefault(0L)
+        var availability=readAvailability(source as? LumenVersionedContentSource,initialRootVersion)
+        /** 汇总复用本次已读到的根版本：根的 contentVersion 可能遍历整棵可见子树，同一回调只读一次。 */
+        private fun readAvailability(root: LumenVersionedContentSource?=null,rootVersion: Long=LumenSourceObservation.NO_VERSION): LumenSourceAvailability =
+            LumenSourceObservation.availability(trackedSources,root,rootVersion)
         private val sampleEvents=object:LumenSampleEvents {
             override val sourceEpoch: Long get()=timeline.epoch
             override val contentVersion: Long get()=timeline.contentVersion
@@ -723,9 +718,11 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             if (closed) return true
             val content = source.coordinateView
             val versioned=source as? LumenVersionedContentSource
+            var rootVersion=LumenSourceObservation.NO_VERSION
             if(versioned!=null){
                 try {
                     val epoch=versioned.sourceEpoch;val version=versioned.contentVersion
+                    rootVersion=version
                     require(epoch>=0L&&version>=0L)
                     if(declaredEpoch!=epoch){
                         declaredEpoch=epoch;timeline.sourceChanged();graphResult=sourceGraph(source,trackedSources);trackedEpochs=snapshotEpochs()
@@ -740,7 +737,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 sampler.releaseAll();releaseGpu();dirty=true
                 entries.forEach {if(it.group===this){it.releaseGpu();it.resetState()}}
             }
-            availability=readAvailability()
+            availability=readAvailability(versioned,rootVersion)
             if(graphResult!=LumenSourceGraph.Result.VALID||availability!=LumenSourceAvailability.READY){
                 if(!autoSuspended){
                     timeline.sourceChanged();sampler.suspend();releaseGpu();autoSuspended=true
