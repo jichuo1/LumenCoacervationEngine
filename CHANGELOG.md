@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 修复
+
+- Sample：`SurfaceSandboxActivity` 的原生 backdrop 演示（请求原生、折射关闭、内容持续动画、玻璃边距 32dp）不再无条件写进 `onCreate`，改由演示入口（「局部视效调节实验室」）经 `EXTRA_NATIVE_BACKDROP_DEMO` 显式开启。仪器化测试直接启动该 Activity，1.6.0 的无条件演示让它们拿到的不再是 1.5.6 的静止页面：测试替换 `content` 后动画监听器强转 `PatternView` 抛 `ClassCastException`（API 27 smoke 在 `SurfaceSourceInvalidationTest`、`LocalSurfaceIntegrationTest` 崩溃），「静止页面停止采样」类断言也因持续动画而不成立。直接启动现在与 1.5.6 一致（静止、折射默认开启、边距 16dp），动画监听器对被替换的 `content` 不再强转。新增设备测试 `SurfaceSandboxLaunchModeTest` 固定两种启动方式。
+
 ## [1.6.0] - 2026-10-30
 
 ### 新增
