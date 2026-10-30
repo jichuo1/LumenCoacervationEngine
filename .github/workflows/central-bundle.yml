@@ -1,0 +1,87 @@
+# Maven Central（Central Portal）上传包：对不可变的发布 tag 以 Central 命名空间构建九个库模块，
+# 补齐 POM 元数据与 javadoc 占位包，产出未签名的 bundle.zip。签名在维护者本机完成
+# （tools/central_bundle.py sign），私钥与口令不进仓库也不进 CI。流程见 docs/CENTRAL_PUBLISHING.md。
+#
+# - 手动运行（workflow_dispatch，只能在 main 上）：构建指定已发布 tag，上传 artifact central-bundle-<tag>。
+# - 涉及本工具的 PR：用已发布的 1.6.0 tag 走一遍完整的构建、打包、校验作为演练，不上传。
+name: Central bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '已发布的 Release tag（与该 tag 的 lumen.version 相同）'
+        required: true
+        default: '1.6.1'
+      group:
+        description: 'Central 上已验证的命名空间（groupId）'
+        required: true
+        default: 'io.github.jichuo1'
+  pull_request:
+    paths:
+      - 'tools/central_bundle.py'
+      - 'tools/test_central_bundle.py'
+      - '.github/workflows/central-bundle.yml'
+
+concurrency:
+  group: central-bundle-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  JDK_JAVA_OPTIONS: '-XX:MaxMetaspaceSize=1024m -XX:ReservedCodeCacheSize=512m -XX:+UseCodeCacheFlushing'
+
+jobs:
+  bundle:
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || '1.6.0' }}
+      CENTRAL_GROUP: ${{ github.event_name == 'workflow_dispatch' && inputs.group || 'io.github.jichuo1' }}
+    steps:
+      - name: Validate inputs
+        run: |
+          [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Invalid tag"; exit 1; }
+          [[ "$CENTRAL_GROUP" =~ ^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$ ]] || { echo "::error::Invalid group"; exit 1; }
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          path: source
+          persist-credentials: false
+
+      - name: Test the bundle tool
+        run: python3 -m unittest discover -s automation/tools -p test_central_bundle.py -v
+
+      - uses: actions/setup-java@v6.0.1
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v6.4.0
+
+      - name: Publish the tagged modules under the Central namespace to a local repository
+        working-directory: source
+        run: ./gradlew publishAllPublicationsToProjectLocalRepository -Plumen.group="$CENTRAL_GROUP" --console=plain --no-daemon
+
+      - name: Package and verify the unsigned bundle
+        run: |
+          python3 automation/tools/central_bundle.py package --source source --group "$CENTRAL_GROUP" --tag "$RELEASE_TAG" --output bundle
+          python3 automation/tools/central_bundle.py verify --bundle "bundle/lumen-central-$RELEASE_TAG-unsigned.zip" --group "$CENTRAL_GROUP" --tag "$RELEASE_TAG"
+          unzip -l "bundle/lumen-central-$RELEASE_TAG-unsigned.zip" | tail -n 12
+          cat "bundle/lumen-central-$RELEASE_TAG-manifest.json"
+
+      - name: Upload the unsigned bundle
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: central-bundle-${{ env.RELEASE_TAG }}
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 14

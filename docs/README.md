@@ -12,6 +12,7 @@
 | [BUILD_WORKFLOW.md](BUILD_WORKFLOW.md) | 严格配置缓存、源码契约输入、精确 APK 分发与设备门禁 | 构建、缓存或门禁执行方式变化时 |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | 分层、包职责、管线与扩展点 | 新增包、管线或跨模块协作时 |
 | [VERSIONING.md](VERSIONING.md) | 版本规则、持久化协议、发布检查清单 | 每次发布（编号例外记录在这里） |
+| [CENTRAL_PUBLISHING.md](CENTRAL_PUBLISHING.md) | 发布到 Maven Central：CI 产出未签名 bundle、本机签名、Portal 上传，以及 bundle 内容与边界 | Central 的要求、命名空间或 `tools/central_bundle.py` 变化时 |
 
 ## 现行：功能说明
 
