@@ -51,6 +51,8 @@
 - `internal` 声明、未列入 `API.md` 的公开辅助成员、源码契约测试，都不在承诺范围内。
 - 视觉调参（颜色、模糊半径、光学强度）属于修订：同一宿主在修订版本之间的画面允许有细微差异，但不得出现结构性变化，例如表面缺失、层级错乱。
 
+1.6.1 为修订：只修复演示 Sample 的 `SurfaceSandboxActivity` 启动方式（原生 backdrop 演示改为仅由演示入口显式开启，直接启动恢复静止页面）并新增设备测试 `SurfaceSandboxLaunchModeTest`；九个库模块（`lumen-*`）的源码与 1.6.0 相同，公开 API、契约版本 1、`SkinId` 与持久化协议、minSdk 27 与 1.6.0 一致。1.6.0 的 tag 不可移动，且该版发布时没有走库附件与演示包流水线，所以修复以 1.6.1 发出。
+
 1.6.0 为次版本：新增可选、默认关闭的原生 backdrop 开关（`LumenSurfaceBinding.setRenderTargetBackdropEnabled`、`renderTargetBackdropState`，仅在 API 37.2 且表面满足条件时生效），并包含预绘制内根来源 `contentVersion` 只读一次的性能优化。既有公开入口、`GlowEngine`、`SkinId` 与持久化协议、契约版本 1、minSdk 27 保持兼容；未开启开关时与 1.5.6 行为一致。本次未与 1.5.6 发布 AAR 重新做逐类描述符比对，发布前应补做。
 
 1.5.6 新增可选材质浓度（`LumenMaterialOpacityTarget`、`LumenMaterialOpacityScope`、`LumenMaterialOpacity`、`LumenActivityDelegate.setMaterialOpacity` 与带默认实现的 `GlowEngine.setMaterialOpacity`），并包含实时档功耗优化。新增公开 API 通常属于次版本，本轮按用户明确指定使用 1.5.6，作为编号例外；与 1.5.5 发布 AAR 逐类比对 JVM 公开描述符，九个模块没有删除或改变任何公开成员（变化只在 `internal` 类中），`GlowEngine` 新方法编译为 JVM 默认方法，旧实现保持二进制兼容；契约版本 1、`SkinId` 与持久化协议、minSdk 27 保持。材质浓度默认值 1 与原外观逐位相同。
