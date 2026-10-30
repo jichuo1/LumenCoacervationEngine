@@ -7,6 +7,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import kotlin.math.roundToInt
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -42,19 +43,44 @@ class SurfaceSandboxLaunchModeTest {
         }
     }
 
+    /**
+     * 演示页持续出帧。此前这条用 [ActivityScenario] 启动与关闭，在 API 34 的软件渲染 CI 上停滞到整轮 15 分钟超时
+     * （启动 / 关闭会等主线程空闲，持续出帧时等不到）。所以这里用 ActivityMonitor 拿到 Activity，只用 `runOnMainSync`，并在收尾前先停掉动画。
+     */
     @Test fun demoLaunchRequestsTheNativeBackdropAndASwappedContentViewCannotCrashTheAnimation() {
-        ActivityScenario.launch<SurfaceSandboxActivity>(demoIntent()).use { scenario ->
-            scenario.onActivity { activity ->
-                assertTrue("the demo entry asks for the native backdrop", checkNotNull(activity.binding.renderTargetBackdropState()).requested)
-                assertTrue("the demo entry animates its content", activity.contentAnimating)
-                assertEquals("the demo keeps its wider margins", dp(activity, 32), leftMargin(activity))
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        val monitor = instrumentation.addMonitor(SurfaceSandboxActivity::class.java.name, null, false)
+        var launched: SurfaceSandboxActivity? = null
+        try {
+            instrumentation.targetContext.startActivity(demoIntent().addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            val activity = checkNotNull(monitor.waitForActivityWithTimeout(15_000) as? SurfaceSandboxActivity) { "The demo sandbox did not start" }
+            launched = activity
+            var requested = false
+            var animating = false
+            var margin = 0
+            instrumentation.runOnMainSync {
+                requested = activity.binding.renderTargetBackdropState()?.requested == true
+                animating = activity.contentAnimating
+                margin = leftMargin(activity)
                 // 测试（和宿主）可以把内容换成自己的视图；动画的下一帧不能再把它当成沙盒自己的图案视图。
                 activity.preview.removeView(activity.content)
                 activity.content = View(activity)
                 activity.preview.addView(activity.content, 0, FrameLayout.LayoutParams(-1, -1))
             }
+            assertTrue("the demo entry asks for the native backdrop", requested)
+            assertTrue("the demo entry animates its content", animating)
+            assertEquals("the demo keeps its wider margins", dp(activity, 32), margin)
             SystemClock.sleep(1800) // 超过一个完整的动画周期；若监听器强转失败，进程会在这里崩溃。
-            scenario.onActivity { assertFalse(it.isFinishing) }
+            var stillRunning = false
+            instrumentation.runOnMainSync { stillRunning = activity.contentAnimating; activity.stopContentAnimation() }
+            assertTrue("the animation survives the swapped content view", stillRunning)
+        } finally {
+            instrumentation.removeMonitor(monitor)
+            launched?.let { activity ->
+                instrumentation.runOnMainSync { activity.stopContentAnimation(); activity.finish() }
+                val deadline = SystemClock.uptimeMillis() + 10_000
+                while (!activity.isDestroyed && SystemClock.uptimeMillis() < deadline) SystemClock.sleep(50)
+            }
         }
     }
 }

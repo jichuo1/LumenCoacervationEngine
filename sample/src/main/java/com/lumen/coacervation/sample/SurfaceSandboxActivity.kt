@@ -54,6 +54,7 @@ class SurfaceSandboxActivity : Activity() {
     private var animation: ValueAnimator? = null
     /** 内容图案动画是否在跑；直接启动时为 false（页面静止），只有演示入口或「内容动画」开关会开启。 */
     internal val contentAnimating: Boolean get() = animation?.isRunning == true
+    internal fun stopContentAnimation() { animation?.cancel(); animation = null }
     private val dialogs = ArrayList<Dialog>()
     private var fusedSelection:LumenFusedSelection?=null
     private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
@@ -181,7 +182,7 @@ class SurfaceSandboxActivity : Activity() {
         toggle("诊断回调",limits.diagnosticsEnabled) { applyLimits(limits.copy(diagnosticsEnabled=it)) }
         toggle("监听内存压力",limits.registerMemoryCallbacks) { applyLimits(limits.copy(registerMemoryCallbacks=it)) }
         toggle("解绑恢复原背景",limits.restoreBackgroundOnDetach) { applyLimits(limits.copy(restoreBackgroundOnDetach=it)) }
-        toggle("内容动画（测试静止门控）",animation?.isRunning==true) { if(it) startAnimation() else {animation?.cancel();animation=null} }
+        toggle("内容动画（测试静止门控）",animation?.isRunning==true) { if(it) startAnimation() else stopContentAnimation() }
         slider("圆角 dp",0f,128f,surface.radiusDp) { applySurface(surface.copy(radiusDp=it)) }
         slider("背景透明度",0f,1f,surface.opacity) { applySurface(surface.copy(opacity=it)) }
         slider("实时着色",0f,1f,surface.tintOpacity) { applySurface(surface.copy(tintOpacity=it)) }
