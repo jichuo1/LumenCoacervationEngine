@@ -6,7 +6,7 @@ on:
       tag:
         description: Existing immutable release tag
         required: true
-        default: '1.6.0'
+        default: '1.6.1'
         type: string
       mode:
         description: Publish libraries, or finalize after the Demo and JitPack

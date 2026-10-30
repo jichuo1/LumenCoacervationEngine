@@ -100,7 +100,7 @@
 
 | 项 | 说明 |
 |:---|:---|
-| **引擎版本** | 1.6.0 |
+| **引擎版本** | 1.6.1 |
 | **运行系统** | Android 8.1+（`minSdk 27`） |
 | **编译环境** | `compileSdk 37`；源码构建使用 JDK 17+ |
 | **基础依赖** | 引擎本体依赖 AndroidX core；motion 不要求 AppCompat |
@@ -150,10 +150,10 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.6.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-engine:1.6.1")
     // 按需添加，版本保持一致
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.6.0")
-    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.6.0")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-motion:1.6.1")
+    implementation("com.github.jichuo1.LumenCoacervationEngine:lumen-controls:1.6.1")
 }
 ```
 
