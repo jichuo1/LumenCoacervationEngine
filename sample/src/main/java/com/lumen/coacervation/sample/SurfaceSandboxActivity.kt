@@ -32,12 +32,17 @@ import kotlin.math.roundToInt
 
 /** Interactive, non-persistent local-surface controls; the ordinary Activity root stays untouched. */
 class SurfaceSandboxActivity : Activity() {
+    internal companion object {
+        /** 演示入口（"局部视效调节实验室"）传 true：请求原生 backdrop、关闭折射并让内容持续动画。默认（含仪器化测试）为 false。 */
+        const val EXTRA_NATIVE_BACKDROP_DEMO = "com.lumen.coacervation.sample.NATIVE_BACKDROP_DEMO"
+    }
+
     internal lateinit var session: LumenSurfaceSession
     internal lateinit var binding: LumenSurfaceBinding
     internal lateinit var content: View
     internal lateinit var glass: TextView
     internal lateinit var preview: FrameLayout
-    private var surface = LumenSurfaceOptions(sampling = LumenSurfaceSampling(blurRadiusDp = 6f, refractionEnabled = false))
+    private var surface = LumenSurfaceOptions()
     private var limits = LumenSurfaceSessionOptions()
     private var dark = false
     private var enhancements=LumenSurfaceEnhancements.DEFAULT
@@ -47,18 +52,25 @@ class SurfaceSandboxActivity : Activity() {
     private val fixedTime=LumenFixedFrameClock()
     private lateinit var status: TextView
     private var animation: ValueAnimator? = null
+    /** 内容图案动画是否在跑；直接启动时为 false（页面静止），只有演示入口或「内容动画」开关会开启。 */
+    internal val contentAnimating: Boolean get() = animation?.isRunning == true
     private val dialogs = ArrayList<Dialog>()
     private var fusedSelection:LumenFusedSelection?=null
     private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        // 原生 backdrop 演示（请求原生、折射关闭、持续动画）只在演示入口显式要求时开启；仪器化测试直接启动本 Activity，
+        // 得到的页面、默认参数与 1.5.6 相同：静止、可采样、折射默认开启。
+        val nativeDemo = intent?.getBooleanExtra(EXTRA_NATIVE_BACKDROP_DEMO, false) == true
+        if (nativeDemo) surface = LumenSurfaceOptions(sampling = LumenSurfaceSampling(blurRadiusDp = 6f, refractionEnabled = false))
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setBackgroundColor(Color.rgb(238,240,244)) }
         preview = FrameLayout(this)
         content = PatternView()
         glass = TextView(this).apply { text = "局部表面：原窗口与内容层保持原样"; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setPadding(dp(8),dp(8),dp(8),dp(8)) }
         preview.addView(content,FrameLayout.LayoutParams(-1,-1))
-        preview.addView(glass,FrameLayout.LayoutParams(-1,dp(84),Gravity.CENTER).apply { leftMargin=dp(32);rightMargin=dp(32) })
+        val glassMargin = dp(if (nativeDemo) 32 else 16)
+        preview.addView(glass,FrameLayout.LayoutParams(-1,dp(84),Gravity.CENTER).apply { leftMargin=glassMargin;rightMargin=glassMargin })
         root.addView(preview,LinearLayout.LayoutParams(-1,0,1f))
         status = TextView(this).apply { textSize=12f;setPadding(dp(12),dp(4),dp(12),dp(4));setTextColor(Color.BLACK) }
         root.addView(status)
@@ -68,12 +80,16 @@ class SurfaceSandboxActivity : Activity() {
         setContentView(root)
         session=LumenSurfaceSession(this,LumenPalette.neutral(false),limits)
         binding=session.bind(glass,surface,content)
-        binding.setRenderTargetBackdropEnabled(true)
-        session.setListener { _,backend,failure,_ ->
-            val native = binding.renderTargetBackdropState()?.active == true
-            status.text = if (native) "原生 backdrop 已启用 · $backend" else "兼容路径 · $backend / $failure（原生需要 Android 37.2）"
+        if (nativeDemo) {
+            binding.setRenderTargetBackdropEnabled(true)
+            session.setListener { _,backend,failure,_ ->
+                val native = binding.renderTargetBackdropState()?.active == true
+                status.text = if (native) "原生 backdrop 已启用 · $backend" else "兼容路径 · $backend / $failure（原生需要 Android 37.2）"
+            }
+            startAnimation()
+        } else {
+            session.setListener { _,backend,failure,_ -> status.text="$backend / $failure · 点击“诊断”查看计数" }
         }
-        startAnimation()
         buildControls(controls)
         val choices=LumenSlidingSelection(this,ColorDrawable(Color.rgb(211,228,248)),LinearLayout.HORIZONTAL)
         for(label in listOf("推荐","动态","关注"))choices.addOption(TextView(this).apply {text=label;gravity=Gravity.CENTER;setTextColor(Color.BLACK);setPadding(dp(8),dp(14),dp(8),dp(14))},LinearLayout.LayoutParams(0,dp(56),1f))
@@ -203,7 +219,8 @@ class SurfaceSandboxActivity : Activity() {
         animation?.cancel()
         animation=ValueAnimator.ofFloat(0f,1f).apply {
             duration=1600;repeatCount=ValueAnimator.INFINITE
-            addUpdateListener { (content as PatternView).phase=animatedValue as Float;content.invalidate() }
+            // 测试会把 content 换成自己的视图；动画只驱动沙盒自己的图案视图，不能假定 content 仍是它。
+            addUpdateListener { (content as? PatternView)?.let { view -> view.phase=animatedValue as Float;view.invalidate() } }
             start()
         }
     }

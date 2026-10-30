@@ -25,7 +25,8 @@ import com.lumen.coacervation.engine.widget.CoverableRippleDrawable
  */
 internal fun SampleActivity.buildLayoutPage(content: LinearLayout, palette: LumenPalette) {
     content.addView(sampleAction("局部视效调节实验室") {
-        startActivity(android.content.Intent(this, SurfaceSandboxActivity::class.java))
+        startActivity(android.content.Intent(this, SurfaceSandboxActivity::class.java)
+            .putExtra(SurfaceSandboxActivity.EXTRA_NATIVE_BACKDROP_DEMO, true))
     })
     content.addView(caption("同一套形变、弹性与链式动画，在不同尺寸与排布下各自适配。"))
 
