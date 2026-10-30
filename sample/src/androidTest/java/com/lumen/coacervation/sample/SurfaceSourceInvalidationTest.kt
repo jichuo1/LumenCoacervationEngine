@@ -110,6 +110,47 @@ class SurfaceSourceInvalidationTest {
         }
     }
 
+    /** 统计 contentVersion 被读取的次数；其余行为与 [VersionedSource] 相同。 */
+    private class CountingSource(view: DrawingView) : VersionedSource(view) {
+        val versionReads = java.util.concurrent.atomic.AtomicInteger()
+        override var contentVersion: Long = 0L
+            get() { versionReads.incrementAndGet(); return field }
+    }
+
+    @Test fun rootContentVersionIsReadOncePerPreDrawCallback() {
+        ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->
+            lateinit var source: CountingSource
+            lateinit var content: DrawingView
+            scenario.onActivity {
+                content = configure(it) { view -> CountingSource(view).also { created -> source = created } }
+            }
+            await(scenario, "Versioned source never produced its initial texture") { hasColor(it, Color.RED) }
+            awaitQuiet(scenario)
+            val preDraws = java.util.concurrent.atomic.AtomicInteger()
+            val observer = android.view.ViewTreeObserver.OnPreDrawListener { preDraws.incrementAndGet(); true }
+            var readsBefore = 0
+            scenario.onActivity {
+                content.viewTreeObserver.addOnPreDrawListener(observer)
+                readsBefore = source.versionReads.get()
+            }
+            // 与版本无关的纯重绘请求：每次遍历都会进入会话的 onPreDraw，但内容版本不变，不会触发新的采样。
+            repeat(40) {
+                scenario.onActivity { content.invalidate() }
+                SystemClock.sleep(20)
+            }
+            var reads = 0
+            var traversals = 0
+            scenario.onActivity {
+                content.viewTreeObserver.removeOnPreDrawListener(observer)
+                reads = source.versionReads.get() - readsBefore
+                traversals = preDraws.get()
+            }
+            assertTrue("the probe must have seen several pre-draw callbacks, saw $traversals", traversals >= 10)
+            // 改动前每次回调读两次（预绘制一次、可用性汇总一次）；现在每次回调只读一次。
+            assertTrue("root contentVersion reads ($reads) must not exceed pre-draw callbacks ($traversals)", reads <= traversals)
+        }
+    }
+
     @Test fun versionedSourcesRetainBothDefaultDirtyObservationAndExplicitOptOut() {
         for (observeDirty in listOf(true, false)) {
             ActivityScenario.launch(SurfaceSandboxActivity::class.java).use { scenario ->

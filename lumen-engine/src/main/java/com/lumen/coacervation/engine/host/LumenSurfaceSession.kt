@@ -41,6 +41,7 @@ import com.lumen.coacervation.engine.runtime.LumenMemoryPressureHub
 import com.lumen.coacervation.engine.runtime.LumenMemoryPressureListener
 import com.lumen.coacervation.engine.runtime.LumenGraphicsCounters
 import com.lumen.coacervation.engine.runtime.LumenSourceTimeline
+import com.lumen.coacervation.engine.runtime.LumenSourceObservation
 import com.lumen.coacervation.engine.runtime.LumenSourceGraph
 import com.lumen.coacervation.engine.runtime.MaterialKind
 import com.lumen.coacervation.engine.runtime.MaterialOpacityFrame
@@ -269,15 +270,19 @@ public class LumenSurfaceSession @JvmOverloads constructor(
         entry.applyMaterialWeights(backdrop, fill, edge, shadow, blur, radiusBackdrop)
     }
 
-    /** Public binding opacity: resolves the binding's own material (frosted, liquid or static) through the policy. */
-    internal fun setMaterialOpacity(id: Long, value: Float, legibility: LumenMaterialLegibility) {
+    /**
+     * Public binding opacity: resolves the binding's own material (frosted, liquid or static) through the policy.
+     * A null [legibility] keeps the one declared last, so a scope driving the value does not reset it.
+     */
+    internal fun setMaterialOpacity(id: Long, value: Float, legibility: LumenMaterialLegibility?) {
         if (closed) return
         checkMain()
         val entry = entries.firstOrNull { it.id == id } ?: return
         entry.requestWarm()
         val requested = MaterialOpacityPolicy.sanitize(value, entry.materialOpacity)
-        if (requested == entry.materialOpacity && legibility == entry.materialLegibility) return
-        entry.materialOpacity = requested; entry.materialLegibility = legibility
+        val declared = legibility ?: entry.materialLegibility
+        if (requested == entry.materialOpacity && declared == entry.materialLegibility) return
+        entry.materialOpacity = requested; entry.materialLegibility = declared
         entry.resolveMaterialOpacity()
     }
 
@@ -664,18 +669,12 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             return false
         }
         var declaredEpoch=runCatching {(source as? LumenVersionedContentSource)?.sourceEpoch?:0L}.getOrDefault(0L)
-        var declaredVersion=runCatching {(source as? LumenVersionedContentSource)?.contentVersion?:0L}.getOrDefault(0L)
-        var availability=readAvailability()
-        private fun readAvailability(): LumenSourceAvailability {
-            return try {
-                for(i in 0 until trackedSources.size){
-                    val current=trackedSources[i]
-                    if(current.sourceEpoch<0L||current.contentVersion<0L)return LumenSourceAvailability.TEMPORARILY_UNAVAILABLE
-                    if(current.availability!=LumenSourceAvailability.READY)return current.availability
-                }
-                LumenSourceAvailability.READY
-            }catch(_:Throwable){LumenSourceAvailability.TEMPORARILY_UNAVAILABLE}
-        }
+        private var initialRootVersion=LumenSourceObservation.NO_VERSION
+        var declaredVersion=runCatching {(source as? LumenVersionedContentSource)?.contentVersion?.also {initialRootVersion=it}?:0L}.getOrDefault(0L)
+        var availability=readAvailability(source as? LumenVersionedContentSource,initialRootVersion)
+        /** 汇总复用本次已读到的根版本：根的 contentVersion 可能遍历整棵可见子树，同一回调只读一次。 */
+        private fun readAvailability(root: LumenVersionedContentSource?=null,rootVersion: Long=LumenSourceObservation.NO_VERSION): LumenSourceAvailability =
+            LumenSourceObservation.availability(trackedSources,root,rootVersion)
         private val sampleEvents=object:LumenSampleEvents {
             override val sourceEpoch: Long get()=timeline.epoch
             override val contentVersion: Long get()=timeline.contentVersion
@@ -736,9 +735,11 @@ public class LumenSurfaceSession @JvmOverloads constructor(
             if (closed) return true
             val content = source.coordinateView
             val versioned=source as? LumenVersionedContentSource
+            var rootVersion=LumenSourceObservation.NO_VERSION
             if(versioned!=null){
                 try {
                     val epoch=versioned.sourceEpoch;val version=versioned.contentVersion
+                    rootVersion=version
                     require(epoch>=0L&&version>=0L)
                     if(declaredEpoch!=epoch){
                         declaredEpoch=epoch;timeline.sourceChanged();graphResult=sourceGraph(source,trackedSources);trackedEpochs=snapshotEpochs()
@@ -753,7 +754,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                 sampler.releaseAll();releaseGpu();dirty=true
                 entries.forEach {if(it.group===this){it.releaseGpu();it.resetState()}}
             }
-            availability=readAvailability()
+            availability=readAvailability(versioned,rootVersion)
             if(graphResult!=LumenSourceGraph.Result.VALID||availability!=LumenSourceAvailability.READY){
                 if(!autoSuspended){
                     timeline.sourceChanged();sampler.suspend();releaseGpu();autoSuspended=true
@@ -1308,7 +1309,7 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                                     val source=group.sampler.rawShader(entry.target,2)?:clear
                                     rawMatrix.setScale(group.sampler.rawScale(entry.target),group.sampler.rawScale(entry.target))
                                     rawMatrix.postTranslate(-group.sampler.rawMargin(entry.target),-group.sampler.rawMargin(entry.target))
-                                    source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*backdropAlpha).roundToInt()
+                                    source.setLocalMatrix(rawMatrix);rawPaint.shader=source;rawPaint.alpha=(255*alpha*c.backdropOpacity*entry.materialBackdrop).roundToInt()
                                     canvas.drawRect(rectangle,rawPaint);backend=LumenSurfaceBackend.SOFTWARE;softwareDraws++
                                 }
                             } else reason=if(group.sampler.hasFailed)LumenSurfaceFailure.SOFTWARE_FAILED else if(group.sampler.budgetRejected)LumenSurfaceFailure.BUDGET_EXCEEDED else LumenSurfaceFailure.FRAME_PENDING
@@ -1395,8 +1396,10 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                             val wantedScale = entry.softwareBlurScale()
                             group.sampler.setBlurScale(entry.target, wantedScale)
                             val thinned = wantedScale < 1f && group.sampler.publishedBlurScale(entry.target) == wantedScale
-                            val softwareAlpha = if (thinned) alpha * c.backdropOpacity * entry.materialRadiusBackdrop else backdropAlpha
-                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, (255 * softwareAlpha).roundToInt())) {
+                            // Same evaluation order as before material opacity, so a weight of 1 keeps the exact alpha.
+                            val softwareAlpha = (255 * alpha * c.backdropOpacity *
+                                (if (thinned) entry.materialRadiusBackdrop else entry.materialBackdrop)).roundToInt()
+                            if (group.sampler.draw(canvas, rectangle, c.radiusDp * density, entry.target, softwareAlpha)) {
                                 backend = LumenSurfaceBackend.SOFTWARE; softwareDraws++
                             } else if (group.sampler.hasFailed) reason = LumenSurfaceFailure.SOFTWARE_FAILED
                             else if (group.sampler.budgetRejected) reason = LumenSurfaceFailure.BUDGET_EXCEEDED
@@ -1413,8 +1416,11 @@ public class LumenSurfaceSession @JvmOverloads constructor(
                         c.sampling.backend != LumenSurfaceBackend.STATIC && !clearGlass) reason = LumenSurfaceFailure.FRAME_PENDING
                 }
                 // The static fallback stands in for the backdrop, so it thins out with the backdrop weight.
+                // At full backdrop weight it is exactly the fallback tint (a + (b - a) is not always b in floats).
                 val tint = (if (!c.tintEnabled) 0f else if (backend == LumenSurfaceBackend.STATIC)
-                    c.tintOpacity + (c.fallbackTintOpacity - c.tintOpacity) * entry.materialBackdrop else c.tintOpacity) * entry.materialFill
+                    (if (entry.materialBackdrop >= 1f) c.fallbackTintOpacity
+                        else c.tintOpacity + (c.fallbackTintOpacity - c.tintOpacity) * entry.materialBackdrop)
+                    else c.tintOpacity) * entry.materialFill
                 visibleEffect = backend != LumenSurfaceBackend.STATIC || c.tintEnabled && tint > 0f && colorAlpha > 0 ||
                     c.edgeEnabled && c.edgeWidthDp > 0f && edgeAlpha > 0
                 // Static fallback deliberately remains readable; opacity affects background only.
@@ -1516,7 +1522,8 @@ public class LumenSurfaceBinding internal constructor(session: LumenSurfaceSessi
      */
     public fun setRenderTargetBackdropEnabled(enabled: Boolean) { session.get()?.setRenderTargetBackdropEnabled(id, enabled) }
     public fun renderTargetBackdropState(): LumenRenderTargetBackdropState? = session.get()?.renderTargetBackdropState(id)
-    override fun setMaterialOpacity(value: Float) { setMaterialOpacity(value, LumenMaterialLegibility.AUTO) }
+    /** Keeps the legibility declared last (AUTO until one is declared), like the Fluent and Prism controls. */
+    override fun setMaterialOpacity(value: Float) { session.get()?.setMaterialOpacity(id, value, null) }
     /** As [setMaterialOpacity], declaring whether this surface carries text (legibility floor, MATERIAL_OPACITY.md §6). */
     public fun setMaterialOpacity(value: Float, legibility: LumenMaterialLegibility) { session.get()?.setMaterialOpacity(id, value, legibility) }
     override fun materialOpacity(): Float = session.get()?.materialOpacityOf(id) ?: 1f

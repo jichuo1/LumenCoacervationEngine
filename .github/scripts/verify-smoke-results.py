@@ -6,6 +6,11 @@ import xml.etree.ElementTree as ET
 
 PREFIX = "com.lumen.coacervation.sample."
 REQUIRED = {
+    PREFIX + "MaterialOpacityRegressionTest": {
+        "returningToFullOpacityRestoresTheDefaultPixels",
+        "aSettledOpacityLeavesTheWindowIdle",
+        "clearDecorativeSurfacesStopRecordingTheirSource",
+    },
     PREFIX + "LumenSliderIntegrationTest": {
         "longPressThenDragAdjustsTheSliderInsteadOfTheElasticHold",
         "verticalDragStartingOnTheSliderScrollsThePage",

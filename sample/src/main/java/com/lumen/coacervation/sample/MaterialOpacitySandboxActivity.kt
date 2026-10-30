@@ -50,8 +50,8 @@ import kotlin.math.roundToInt
  * the legibility floor against the decorative setting.
  */
 class MaterialOpacitySandboxActivity : Activity() {
-    private lateinit var session: LumenSurfaceSession
-    private lateinit var scene: ScrollView
+    internal lateinit var session: LumenSurfaceSession
+    internal lateinit var scene: ScrollView
     private lateinit var status: TextView
     private lateinit var seek: SeekBar
     internal lateinit var scope: LumenMaterialOpacityScope
